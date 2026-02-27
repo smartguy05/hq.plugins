@@ -1,0 +1,29 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+	<PropertyGroup>
+		<TargetFramework>net9.0</TargetFramework>
+		<ImplicitUsings>enable</ImplicitUsings>
+		<EnableDynamicLoading>true</EnableDynamicLoading>
+	</PropertyGroup>
+
+	<PropertyGroup>
+		<AppendTargetFrameworkToOutputPath>false</AppendTargetFrameworkToOutputPath>
+		<AppendRuntimeIdentifierToOutputPath>false</AppendRuntimeIdentifierToOutputPath>
+	</PropertyGroup>
+
+	<PropertyGroup Condition=" '$(Configuration)' == 'Debug' ">
+	  <OutputPath>..\..\hq\HQ\bin\Debug\net9.0\Plugins\</OutputPath>
+	</PropertyGroup>
+
+	<ItemGroup>
+		<Reference Include="HQ.Models">
+			<HintPath>..\..\hq\HQ\bin\Debug\net9.0\HQ.Models.dll</HintPath>
+			<Private>false</Private>
+			<ExcludeAssets>runtime</ExcludeAssets>
+		</Reference>
+	</ItemGroup>
+
+	<ItemGroup>
+	  <PackageReference Include="Google.Apis.Calendar.v3" Version="1.68.0.3536" />
+	</ItemGroup>
+</Project>
