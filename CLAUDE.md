@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## What This Is
 
-A sibling repository to the main `hq` orchestrator. Contains 7 command plugins and 1 logging plugin, compiled as dynamically-loaded .NET assemblies that HQ discovers at runtime via `AssemblyLoadContext`.
+A sibling repository to the main `hq` orchestrator. Contains 11 command plugins and 1 logging plugin, compiled as dynamically-loaded .NET assemblies that HQ discovers at runtime via `AssemblyLoadContext`.
 
 ## Build Commands
 
@@ -19,7 +19,20 @@ dotnet build HQ.Plugins.GoogleCalendar/HQ.Plugins.GoogleCalendar.csproj
 dotnet build HQ.Plugins.sln -c Release
 ```
 
-There are no test projects in this repository. Plugin tests live in the main `hq` repo's test suite.
+## Test Commands
+
+```bash
+# Run all plugin tests
+dotnet test HQ.Plugins.Tests/HQ.Plugins.Tests.csproj
+
+# Run tests for a specific plugin
+dotnet test HQ.Plugins.Tests --filter "FullyQualifiedName~Email"
+
+# Exclude integration tests (require live services)
+dotnet test HQ.Plugins.Tests --filter "Category!=Integration"
+```
+
+Plugin tests live alongside the plugins in this repo under `HQ.Plugins.Tests/`.
 
 ## Architecture
 
@@ -45,8 +58,8 @@ public async Task<object> MethodName(ServiceConfig config, ServiceRequest servic
 ```
 
 Two variants exist:
-- **Self-annotating** — annotations on the Command class itself, `GetToolDefinitions()` returns `this.GetServiceToolCalls()`. Used by: HomeAssistantAssist, PythonRunner, Telegram, UseMemos, WebSearch.
-- **Service-class annotating** — annotations on a separate `*Service` class, `GetToolDefinitions()` returns `ServiceExtensions.GetServiceToolCalls<TService>()`. Used by: GoogleCalendar (`CalService`), SupportChannelKb (`SupportChannelKbService`).
+- **Self-annotating** — annotations on the Command class itself, `GetToolDefinitions()` returns `this.GetServiceToolCalls()`. Used by: HomeAssistantAssist, PythonRunner, Telegram, UseMemos, WebSearch, ReportGenerator.
+- **Service-class annotating** — annotations on a separate `*Service` class, `GetToolDefinitions()` returns `ServiceExtensions.GetServiceToolCalls<TService>()`. Used by: GoogleCalendar (`CalService`), SupportChannelKb (`SupportChannelKbService`), HubSpot (`HubSpotService`), LinkedIn (`LinkedInService`), JobBoard (`JobBoardService`).
 
 ### Model Pattern
 
@@ -69,7 +82,10 @@ Debug output targets the host's Plugins directory:
 <OutputPath>..\..\hq\HQ\bin\Debug\net9.0\Plugins\</OutputPath>
 ```
 
-`HQ.Models` must be referenced with `Private=false` and `ExcludeAssets=runtime` to avoid type identity conflicts across assembly load contexts.
+`HQ.Models` is consumed as a NuGet package with `ExcludeAssets="runtime"` to avoid type identity conflicts across assembly load contexts (the host provides the assembly at runtime):
+```xml
+<PackageReference Include="HQ.Models" Version="1.0.0" ExcludeAssets="runtime" PrivateAssets="none" />
+```
 
 ## Key Interfaces (from HQ.Models)
 
@@ -86,3 +102,7 @@ Debug output targets the host's Plugins directory:
 - **GoogleCalendar**: OAuth tokens cached in `GoogleCalendar/` subdirectory next to the DLL via `FileDataStore`. Has a `CalendarMethods` constants class for tool name strings.
 - **UseMemos**: `add_memo` uses a confirmation flow (two-call pattern: first returns a `ConfirmationId`, second validates and executes).
 - **PythonRunner**: writes script to temp file, runs `python` via `Process.Start`, assumes `python` is on PATH.
+- **HubSpot**: CRM integration (10 tools). Uses HubSpot CRM API v3 with Private App token auth. Manages contacts, deals, companies, and notes. Has `HubSpotClient` HTTP wrapper.
+- **LinkedIn**: LinkedIn profile management and Proxycurl enrichment (8 tools). Two API sources: LinkedIn Community Management API (OAuth) for posting, Proxycurl for people/company search. Proxycurl calls cost ~$0.01 each.
+- **ReportGenerator**: Self-annotating (3 tools). Generates reports from Markdown content using Markdig. Outputs HTML or Markdown files. Persists a report index JSON for retrieval.
+- **JobBoard**: Multi-source job aggregator (6 tools). Clients for Indeed (RapidAPI), Upwork (RSS), LinkedIn Jobs (Proxycurl), Toptal (scraping). Includes application tracking persisted to local JSON.

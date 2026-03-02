@@ -12,7 +12,7 @@ namespace HQ.Plugins.Slack;
 
 public class SlackCommand : CommandBase<ServiceRequest, ServiceConfig>, INotificationPlugin
 {
-    public override string Name => "HQ.Plugins.Slack";
+    public override string Name => "Slack";
     public override string Description => "A plugin to send and receive Slack messages";
     protected override INotificationService NotificationService { get; set; }
     private static SlackService _service;

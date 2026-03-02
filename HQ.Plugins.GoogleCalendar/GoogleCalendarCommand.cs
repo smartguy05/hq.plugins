@@ -8,7 +8,7 @@ namespace HQ.Plugins.GoogleCalendar;
 
 public class GoogleCalendarCommand : CommandBase<ServiceRequest,ServiceConfig>
 {
-    public override string Name => "HQ.Plugins.GoogleCalendar";
+    public override string Name => "Google Calendar";
     public override string Description  => "Integration with Google Calendar";
     protected override INotificationService NotificationService { get; set; }
 

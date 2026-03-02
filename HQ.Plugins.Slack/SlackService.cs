@@ -8,6 +8,7 @@ using HQ.Models.Enums;
 using HQ.Models.Interfaces;
 using HQ.Plugins.Slack.Models;
 using HQ.Services;
+using HQ.Services.Orchestration;
 using SlackNet;
 using SlackNet.Blocks;
 using SlackNet.Events;

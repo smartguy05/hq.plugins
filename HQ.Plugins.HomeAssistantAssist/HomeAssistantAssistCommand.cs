@@ -14,7 +14,7 @@ namespace HQ.Plugins.HomeAssistantVoice;
 
 public class HomeAssistantAssistCommand : CommandBase<ServiceRequest, ServiceConfig>
 {
-    public override string Name => "HQ.Plugins.HomeAssistantAssist";
+    public override string Name => "Home Assistant Assist";
     public override string Description => "A plugin to send natural language commands to Home Assistant";
     protected override INotificationService NotificationService { get; set; }
 

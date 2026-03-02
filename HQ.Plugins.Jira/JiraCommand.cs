@@ -8,7 +8,7 @@ namespace HQ.Plugins.Jira;
 
 public class JiraCommand : CommandBase<ServiceRequest, ServiceConfig>
 {
-    public override string Name => "HQ.Plugins.Jira";
+    public override string Name => "Jira";
     public override string Description => "Integration with Jira Cloud for project management";
     protected override INotificationService NotificationService { get; set; }
 

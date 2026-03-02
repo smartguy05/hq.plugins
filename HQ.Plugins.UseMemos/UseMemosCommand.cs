@@ -15,7 +15,7 @@ namespace HQ.Plugins.UseMemos;
 
 public class UseMemosCommand: CommandBase<ServiceRequest,ServiceConfig>
 {
-    public override string Name => "HQ.Plugins.UseMemos";
+    public override string Name => "Use Memos";
     public override string Description  => "Integration with UseMemos server";
     protected override INotificationService NotificationService { get; set; }
 

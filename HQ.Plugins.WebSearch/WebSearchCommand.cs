@@ -13,7 +13,7 @@ namespace HQ.Plugins.WebSearch;
 
 public class WebSearchCommand: CommandBase<ServiceRequest, ServiceConfig>
 {
-    public override string Name => "HQ.Plugins.WebSearch";
+    public override string Name => "Web Search";
     public override string Description => "A plugin to allow searching the web";
     protected override INotificationService NotificationService { get; set; }
 

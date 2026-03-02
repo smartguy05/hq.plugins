@@ -12,7 +12,7 @@ namespace HQ.Plugins.PythonRunner;
 
 public class PythonRunnerCommand: CommandBase<ServiceRequest, ServiceConfig>
 {
-    public override string Name => "HQ.Plugins.PythonRunner";
+    public override string Name => "Python Runner";
     public override string Description => "A plugin to run a python script";
     protected override INotificationService NotificationService { get; set; }
 

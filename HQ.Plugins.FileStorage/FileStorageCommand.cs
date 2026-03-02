@@ -8,7 +8,7 @@ namespace HQ.Plugins.FileStorage;
 
 public class FileStorageCommand : CommandBase<ServiceRequest, ServiceConfig>
 {
-    public override string Name => "HQ.Plugins.FileStorage";
+    public override string Name => "File Storage";
     public override string Description => "Docker-based sandboxed file workspaces with Python and Node.js";
     protected override INotificationService NotificationService { get; set; }
 
