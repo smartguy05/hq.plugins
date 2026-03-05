@@ -11,15 +11,22 @@ using Markdig;
 
 namespace HQ.Plugins.ReportGenerator;
 
-public class ReportGeneratorCommand : CommandBase<ServiceRequest, ServiceConfig>
+public class ReportGeneratorCommand : CommandBase<ServiceRequest, ServiceConfig>, ICommand
 {
     public override string Name => "Report Generator";
     public override string Description => "Generate formatted reports from markdown content as PDF, HTML, or Markdown files";
     protected override INotificationService NotificationService { get; set; }
 
+    private IFileStorageProvider _fileStorage;
+
     public override List<ToolCall> GetToolDefinitions()
     {
         return this.GetServiceToolCalls();
+    }
+
+    void ICommand.SetFileStorageProvider(IFileStorageProvider provider)
+    {
+        _fileStorage = provider;
     }
 
     protected override async Task<object> DoWork(ServiceRequest serviceRequest, ServiceConfig config, IEnumerable<ToolCall> availableToolCalls)
@@ -37,21 +44,18 @@ public class ReportGeneratorCommand : CommandBase<ServiceRequest, ServiceConfig>
         if (string.IsNullOrWhiteSpace(request.Content))
             throw new ArgumentException("Missing required parameter: content");
 
-        var outputDir = config.OutputDirectory ?? Path.Combine(Path.GetTempPath(), "hq-reports");
-        Directory.CreateDirectory(outputDir);
-
         var format = (request.Format ?? "html").ToLowerInvariant();
         var baseName = string.IsNullOrWhiteSpace(request.FileName)
             ? $"{DateTime.Now:yyyy-MM-dd}_{SanitizeFileName(request.Title)}"
             : SanitizeFileName(request.FileName);
 
-        string filePath;
         string outputContent;
+        string extension;
 
         switch (format)
         {
             case "html":
-                filePath = Path.Combine(outputDir, $"{baseName}.html");
+                extension = ".html";
                 var pipeline = new MarkdownPipelineBuilder()
                     .UseAdvancedExtensions()
                     .Build();
@@ -61,7 +65,7 @@ public class ReportGeneratorCommand : CommandBase<ServiceRequest, ServiceConfig>
 
             case "markdown":
             case "md":
-                filePath = Path.Combine(outputDir, $"{baseName}.md");
+                extension = ".md";
                 outputContent = $"# {request.Title}\n\n{request.Content}";
                 break;
 
@@ -69,33 +73,70 @@ public class ReportGeneratorCommand : CommandBase<ServiceRequest, ServiceConfig>
                 throw new ArgumentException($"Unsupported format: {format}. Use 'html' or 'markdown'.");
         }
 
-        await File.WriteAllTextAsync(filePath, outputContent);
-
-        // Save metadata for list_reports / get_report
-        var metadataPath = Path.Combine(outputDir, ".report-index.json");
-        var index = await LoadReportIndex(metadataPath);
-        var reportId = Guid.NewGuid().ToString("N")[..8];
-        index[reportId] = new ReportEntry
+        string filePath;
+        if (_fileStorage != null)
         {
-            Id = reportId,
-            Title = request.Title,
-            FileName = Path.GetFileName(filePath),
-            Format = format,
-            CreatedAt = DateTime.UtcNow.ToString("o"),
-            FilePath = filePath
-        };
-        await SaveReportIndex(metadataPath, index);
+            filePath = $"/workspace/reports/{baseName}{extension}";
+            await _fileStorage.WriteFileAsync(filePath, outputContent);
 
-        await Log(LogLevel.Info, $"Report generated: {filePath}");
+            // Save metadata for list_reports / get_report
+            var index = await LoadReportIndexFromProvider();
+            var reportId = Guid.NewGuid().ToString("N")[..8];
+            index[reportId] = new ReportEntry
+            {
+                Id = reportId,
+                Title = request.Title,
+                FileName = $"{baseName}{extension}",
+                Format = format,
+                CreatedAt = DateTime.UtcNow.ToString("o"),
+                FilePath = filePath
+            };
+            await SaveReportIndexToProvider(index);
 
-        return new
+            await Log(LogLevel.Info, $"Report generated: {filePath}");
+
+            return new
+            {
+                Success = true,
+                ReportId = reportId,
+                FilePath = filePath,
+                Format = format,
+                Message = $"Report '{request.Title}' generated at {filePath}"
+            };
+        }
+        else
         {
-            Success = true,
-            ReportId = reportId,
-            FilePath = filePath,
-            Format = format,
-            Message = $"Report '{request.Title}' generated at {filePath}"
-        };
+            // Local filesystem fallback
+            var outputDir = config.OutputDirectory ?? Path.Combine(Path.GetTempPath(), "hq-reports");
+            Directory.CreateDirectory(outputDir);
+            filePath = Path.Combine(outputDir, $"{baseName}{extension}");
+            await File.WriteAllTextAsync(filePath, outputContent);
+
+            var metadataPath = Path.Combine(outputDir, ".report-index.json");
+            var index = await LoadReportIndexLocal(metadataPath);
+            var reportId = Guid.NewGuid().ToString("N")[..8];
+            index[reportId] = new ReportEntry
+            {
+                Id = reportId,
+                Title = request.Title,
+                FileName = Path.GetFileName(filePath),
+                Format = format,
+                CreatedAt = DateTime.UtcNow.ToString("o"),
+                FilePath = filePath
+            };
+            await SaveReportIndexLocal(metadataPath, index);
+
+            await Log(LogLevel.Info, $"Report generated: {filePath}");
+
+            return new
+            {
+                Success = true,
+                ReportId = reportId,
+                FilePath = filePath,
+                Format = format,
+                Message = $"Report '{request.Title}' generated at {filePath}"
+            };
+        }
     }
 
     [Display(Name = "list_reports")]
@@ -103,21 +144,43 @@ public class ReportGeneratorCommand : CommandBase<ServiceRequest, ServiceConfig>
     [Parameters("""{"type":"object","properties":{},"required":[]}""")]
     public async Task<object> ListReports(ServiceConfig config, ServiceRequest request)
     {
-        var outputDir = config.OutputDirectory ?? Path.Combine(Path.GetTempPath(), "hq-reports");
-        var metadataPath = Path.Combine(outputDir, ".report-index.json");
-        var index = await LoadReportIndex(metadataPath);
-
-        var reports = index.Values.Select(r => new
+        if (_fileStorage != null)
         {
-            r.Id,
-            r.Title,
-            r.FileName,
-            r.Format,
-            r.CreatedAt,
-            Exists = File.Exists(r.FilePath)
-        }).OrderByDescending(r => r.CreatedAt).ToList();
+            var index = await LoadReportIndexFromProvider();
+            var reports = new List<object>();
+            foreach (var r in index.Values.OrderByDescending(r => r.CreatedAt))
+            {
+                var exists = await _fileStorage.FileExistsAsync(r.FilePath);
+                reports.Add(new
+                {
+                    r.Id,
+                    r.Title,
+                    r.FileName,
+                    r.Format,
+                    r.CreatedAt,
+                    Exists = exists
+                });
+            }
+            return new { Total = reports.Count, Reports = reports };
+        }
+        else
+        {
+            var outputDir = config.OutputDirectory ?? Path.Combine(Path.GetTempPath(), "hq-reports");
+            var metadataPath = Path.Combine(outputDir, ".report-index.json");
+            var index = await LoadReportIndexLocal(metadataPath);
 
-        return new { Total = reports.Count, Reports = reports };
+            var reports = index.Values.Select(r => new
+            {
+                r.Id,
+                r.Title,
+                r.FileName,
+                r.Format,
+                r.CreatedAt,
+                Exists = File.Exists(r.FilePath)
+            }).OrderByDescending(r => r.CreatedAt).ToList();
+
+            return new { Total = reports.Count, Reports = reports };
+        }
     }
 
     [Display(Name = "get_report")]
@@ -128,31 +191,95 @@ public class ReportGeneratorCommand : CommandBase<ServiceRequest, ServiceConfig>
         if (string.IsNullOrWhiteSpace(request.ReportId))
             throw new ArgumentException("Missing required parameter: reportId");
 
-        var outputDir = config.OutputDirectory ?? Path.Combine(Path.GetTempPath(), "hq-reports");
-        var metadataPath = Path.Combine(outputDir, ".report-index.json");
-        var index = await LoadReportIndex(metadataPath);
-
-        if (!index.TryGetValue(request.ReportId, out var entry))
-            return new { Success = false, Message = $"Report '{request.ReportId}' not found" };
-
-        if (!File.Exists(entry.FilePath))
-            return new { Success = false, Message = $"Report file not found at {entry.FilePath}" };
-
-        var content = await File.ReadAllTextAsync(entry.FilePath);
-
-        return new
+        if (_fileStorage != null)
         {
-            Success = true,
-            entry.Id,
-            entry.Title,
-            entry.Format,
-            entry.CreatedAt,
-            entry.FilePath,
-            Content = content
-        };
+            var index = await LoadReportIndexFromProvider();
+
+            if (!index.TryGetValue(request.ReportId, out var entry))
+                return new { Success = false, Message = $"Report '{request.ReportId}' not found" };
+
+            var exists = await _fileStorage.FileExistsAsync(entry.FilePath);
+            if (!exists)
+                return new { Success = false, Message = $"Report file not found at {entry.FilePath}" };
+
+            var content = await _fileStorage.ReadFileAsync(entry.FilePath);
+
+            return new
+            {
+                Success = true,
+                entry.Id,
+                entry.Title,
+                entry.Format,
+                entry.CreatedAt,
+                entry.FilePath,
+                Content = content
+            };
+        }
+        else
+        {
+            var outputDir = config.OutputDirectory ?? Path.Combine(Path.GetTempPath(), "hq-reports");
+            var metadataPath = Path.Combine(outputDir, ".report-index.json");
+            var index = await LoadReportIndexLocal(metadataPath);
+
+            if (!index.TryGetValue(request.ReportId, out var entry))
+                return new { Success = false, Message = $"Report '{request.ReportId}' not found" };
+
+            if (!File.Exists(entry.FilePath))
+                return new { Success = false, Message = $"Report file not found at {entry.FilePath}" };
+
+            var content = await File.ReadAllTextAsync(entry.FilePath);
+
+            return new
+            {
+                Success = true,
+                entry.Id,
+                entry.Title,
+                entry.Format,
+                entry.CreatedAt,
+                entry.FilePath,
+                Content = content
+            };
+        }
     }
 
-    // ───────────────────────────── Helpers ─────────────────────────────
+    // ───────────────────────────── Provider-based helpers ─────────────────────────────
+
+    private const string ProviderIndexPath = "/workspace/reports/.report-index.json";
+
+    private async Task<Dictionary<string, ReportEntry>> LoadReportIndexFromProvider()
+    {
+        var json = await _fileStorage.ReadFileAsync(ProviderIndexPath);
+        if (string.IsNullOrWhiteSpace(json))
+            return new Dictionary<string, ReportEntry>();
+        return JsonSerializer.Deserialize<Dictionary<string, ReportEntry>>(json,
+            new JsonSerializerOptions { PropertyNameCaseInsensitive = true }) ?? new Dictionary<string, ReportEntry>();
+    }
+
+    private async Task SaveReportIndexToProvider(Dictionary<string, ReportEntry> index)
+    {
+        var json = JsonSerializer.Serialize(index, new JsonSerializerOptions { WriteIndented = true });
+        await _fileStorage.WriteFileAsync(ProviderIndexPath, json);
+    }
+
+    // ───────────────────────────── Local filesystem helpers ─────────────────────────────
+
+    private static async Task<Dictionary<string, ReportEntry>> LoadReportIndexLocal(string path)
+    {
+        if (!File.Exists(path))
+            return new Dictionary<string, ReportEntry>();
+
+        var json = await File.ReadAllTextAsync(path);
+        return JsonSerializer.Deserialize<Dictionary<string, ReportEntry>>(json,
+            new JsonSerializerOptions { PropertyNameCaseInsensitive = true }) ?? new Dictionary<string, ReportEntry>();
+    }
+
+    private static async Task SaveReportIndexLocal(string path, Dictionary<string, ReportEntry> index)
+    {
+        var json = JsonSerializer.Serialize(index, new JsonSerializerOptions { WriteIndented = true });
+        await File.WriteAllTextAsync(path, json);
+    }
+
+    // ───────────────────────────── Shared helpers ─────────────────────────────
 
     private static string SanitizeFileName(string name)
     {
@@ -190,22 +317,6 @@ public class ReportGeneratorCommand : CommandBase<ServiceRequest, ServiceConfig>
             </body>
             </html>
             """;
-    }
-
-    private static async Task<Dictionary<string, ReportEntry>> LoadReportIndex(string path)
-    {
-        if (!File.Exists(path))
-            return new Dictionary<string, ReportEntry>();
-
-        var json = await File.ReadAllTextAsync(path);
-        return JsonSerializer.Deserialize<Dictionary<string, ReportEntry>>(json,
-            new JsonSerializerOptions { PropertyNameCaseInsensitive = true }) ?? new Dictionary<string, ReportEntry>();
-    }
-
-    private static async Task SaveReportIndex(string path, Dictionary<string, ReportEntry> index)
-    {
-        var json = JsonSerializer.Serialize(index, new JsonSerializerOptions { WriteIndented = true });
-        await File.WriteAllTextAsync(path, json);
     }
 
     private record ReportEntry

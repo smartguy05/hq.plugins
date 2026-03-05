@@ -31,18 +31,41 @@ public class SlackService(
     private static string _activeChannelId;
     private static readonly HttpClient HttpClient = new();
 
-    public async Task Connect(ISlackSocketModeClient socketClient)
+    private static readonly HashSet<string> PermanentErrors = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "not_authed", "invalid_auth", "account_inactive", "token_revoked", "missing_scope",
+        "not_allowed_token_type", "ekm_access_denied"
+    };
+    private const int MaxRetries = 5;
+
+    public async Task Connect(ISlackSocketModeClient socketClient, int attempt = 0)
     {
         try
         {
             await socketClient.Connect();
             await logger(LogLevel.Info, "Slack Socket Mode connected");
         }
+        catch (SlackException se) when (PermanentErrors.Contains(se.ErrorCode))
+        {
+            await logger(LogLevel.Error,
+                $"Slack connection failed with permanent error: {se.ErrorCode}. " +
+                "Please check your Slack plugin configuration (BotToken / AppLevelToken) and re-initialize.", se);
+        }
         catch (Exception e)
         {
-            await logger(LogLevel.Error, "Slack Socket Mode connection failed, retrying in 5s", e);
-            await Task.Delay(5000);
-            await Connect(socketClient);
+            attempt++;
+            if (attempt >= MaxRetries)
+            {
+                await logger(LogLevel.Error,
+                    $"Slack Socket Mode connection failed after {MaxRetries} attempts. Giving up.", e);
+                return;
+            }
+
+            var delay = Math.Min(5000 * attempt, 30000);
+            await logger(LogLevel.Error,
+                $"Slack Socket Mode connection failed (attempt {attempt}/{MaxRetries}), retrying in {delay / 1000}s", e);
+            await Task.Delay(delay);
+            await Connect(socketClient, attempt);
         }
     }
 

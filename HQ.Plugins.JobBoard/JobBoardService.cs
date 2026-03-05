@@ -14,11 +14,13 @@ public class JobBoardService
 {
     private readonly ServiceConfig _config;
     private readonly LogDelegate _logger;
+    private readonly IFileStorageProvider _fileStorage;
 
-    public JobBoardService(ServiceConfig config, LogDelegate logger)
+    public JobBoardService(ServiceConfig config, LogDelegate logger, IFileStorageProvider fileStorage = null)
     {
         _config = config;
         _logger = logger;
+        _fileStorage = fileStorage;
     }
 
     // ───────────────────────────── Job Search ─────────────────────────────
@@ -97,7 +99,7 @@ public class JobBoardService
         }
 
         // Cache results for get_job_details
-        await CacheJobListings(config, allListings);
+        await CacheJobListings(allListings);
 
         return new
         {
@@ -126,7 +128,7 @@ public class JobBoardService
         if (string.IsNullOrWhiteSpace(request.JobId))
             throw new ArgumentException("Missing required parameter: jobId");
 
-        var cache = await LoadJobCache(config);
+        var cache = await LoadJobCache();
 
         if (cache.TryGetValue(request.JobId, out var listing))
         {
@@ -160,8 +162,8 @@ public class JobBoardService
         if (string.IsNullOrWhiteSpace(request.JobId))
             throw new ArgumentException("Missing required parameter: jobId");
 
-        var applications = await LoadApplications(config);
-        var cache = await LoadJobCache(config);
+        var applications = await LoadApplications();
+        var cache = await LoadJobCache();
 
         var appId = Guid.NewGuid().ToString("N")[..8];
         var jobTitle = cache.TryGetValue(request.JobId, out var listing) ? listing.Title : "Unknown";
@@ -179,7 +181,7 @@ public class JobBoardService
             UpdatedAt = DateTime.UtcNow.ToString("o")
         };
 
-        await SaveApplications(config, applications);
+        await SaveApplications(applications);
 
         return new
         {
@@ -199,7 +201,7 @@ public class JobBoardService
         if (string.IsNullOrWhiteSpace(request.Status))
             throw new ArgumentException("Missing required parameter: status");
 
-        var applications = await LoadApplications(config);
+        var applications = await LoadApplications();
 
         if (!applications.TryGetValue(request.ApplicationId, out var app))
             return new { Success = false, Message = $"Application '{request.ApplicationId}' not found" };
@@ -212,7 +214,7 @@ public class JobBoardService
         };
         applications[request.ApplicationId] = app;
 
-        await SaveApplications(config, applications);
+        await SaveApplications(applications);
 
         return new { Success = true, Message = $"Application {request.ApplicationId} updated to '{request.Status}'" };
     }
@@ -222,7 +224,7 @@ public class JobBoardService
     [Parameters("""{"type":"object","properties":{"status":{"type":"string","description":"Filter by status: applied, interviewing, offered, rejected, withdrawn"}},"required":[]}""")]
     public async Task<object> GetApplications(ServiceConfig config, ServiceRequest request)
     {
-        var applications = await LoadApplications(config);
+        var applications = await LoadApplications();
 
         var results = applications.Values.AsEnumerable();
         if (!string.IsNullOrWhiteSpace(request.Status))
@@ -252,10 +254,10 @@ public class JobBoardService
         var searchResult = await SearchJobs(config, searchRequest);
 
         // Load existing applications to exclude already-applied jobs
-        var applications = await LoadApplications(config);
+        var applications = await LoadApplications();
         var appliedJobIds = new HashSet<string>(applications.Values.Select(a => a.JobId));
 
-        var cache = await LoadJobCache(config);
+        var cache = await LoadJobCache();
         var newJobs = cache.Values
             .Where(j => !appliedJobIds.Contains(j.Id))
             .ToList();
@@ -282,46 +284,91 @@ public class JobBoardService
 
     // ───────────────────────────── Persistence ─────────────────────────────
 
-    private static string GetDataDir(ServiceConfig config)
-    {
-        var dir = config.DataDirectory ?? Path.Combine(Path.GetTempPath(), "hq-jobboard");
-        Directory.CreateDirectory(dir);
-        return dir;
-    }
+    private const string ProviderCachePath = "/workspace/jobboard/job-cache.json";
+    private const string ProviderAppsPath = "/workspace/jobboard/applications.json";
 
-    private static async Task CacheJobListings(ServiceConfig config, List<JobListing> listings)
+    private async Task CacheJobListings(List<JobListing> listings)
     {
-        var path = Path.Combine(GetDataDir(config), "job-cache.json");
-        var cache = await LoadJobCache(config);
+        var cache = await LoadJobCache();
         foreach (var listing in listings)
         {
             cache[listing.Id] = listing;
         }
-        await File.WriteAllTextAsync(path, JsonSerializer.Serialize(cache, new JsonSerializerOptions { WriteIndented = true }));
+        var json = JsonSerializer.Serialize(cache, new JsonSerializerOptions { WriteIndented = true });
+
+        if (_fileStorage != null)
+        {
+            await _fileStorage.WriteFileAsync(ProviderCachePath, json);
+        }
+        else
+        {
+            var path = Path.Combine(GetDataDir(), "job-cache.json");
+            await File.WriteAllTextAsync(path, json);
+        }
     }
 
-    private static async Task<Dictionary<string, JobListing>> LoadJobCache(ServiceConfig config)
+    private async Task<Dictionary<string, JobListing>> LoadJobCache()
     {
-        var path = Path.Combine(GetDataDir(config), "job-cache.json");
-        if (!File.Exists(path)) return new Dictionary<string, JobListing>();
-        var json = await File.ReadAllTextAsync(path);
+        string json;
+        if (_fileStorage != null)
+        {
+            json = await _fileStorage.ReadFileAsync(ProviderCachePath);
+        }
+        else
+        {
+            var path = Path.Combine(GetDataDir(), "job-cache.json");
+            if (!File.Exists(path)) return new Dictionary<string, JobListing>();
+            json = await File.ReadAllTextAsync(path);
+        }
+
+        if (string.IsNullOrWhiteSpace(json))
+            return new Dictionary<string, JobListing>();
+
         return JsonSerializer.Deserialize<Dictionary<string, JobListing>>(json,
             new JsonSerializerOptions { PropertyNameCaseInsensitive = true }) ?? new Dictionary<string, JobListing>();
     }
 
-    private static async Task<Dictionary<string, ApplicationEntry>> LoadApplications(ServiceConfig config)
+    private async Task<Dictionary<string, ApplicationEntry>> LoadApplications()
     {
-        var path = Path.Combine(GetDataDir(config), "applications.json");
-        if (!File.Exists(path)) return new Dictionary<string, ApplicationEntry>();
-        var json = await File.ReadAllTextAsync(path);
+        string json;
+        if (_fileStorage != null)
+        {
+            json = await _fileStorage.ReadFileAsync(ProviderAppsPath);
+        }
+        else
+        {
+            var path = Path.Combine(GetDataDir(), "applications.json");
+            if (!File.Exists(path)) return new Dictionary<string, ApplicationEntry>();
+            json = await File.ReadAllTextAsync(path);
+        }
+
+        if (string.IsNullOrWhiteSpace(json))
+            return new Dictionary<string, ApplicationEntry>();
+
         return JsonSerializer.Deserialize<Dictionary<string, ApplicationEntry>>(json,
             new JsonSerializerOptions { PropertyNameCaseInsensitive = true }) ?? new Dictionary<string, ApplicationEntry>();
     }
 
-    private static async Task SaveApplications(ServiceConfig config, Dictionary<string, ApplicationEntry> applications)
+    private async Task SaveApplications(Dictionary<string, ApplicationEntry> applications)
     {
-        var path = Path.Combine(GetDataDir(config), "applications.json");
-        await File.WriteAllTextAsync(path, JsonSerializer.Serialize(applications, new JsonSerializerOptions { WriteIndented = true }));
+        var json = JsonSerializer.Serialize(applications, new JsonSerializerOptions { WriteIndented = true });
+
+        if (_fileStorage != null)
+        {
+            await _fileStorage.WriteFileAsync(ProviderAppsPath, json);
+        }
+        else
+        {
+            var path = Path.Combine(GetDataDir(), "applications.json");
+            await File.WriteAllTextAsync(path, json);
+        }
+    }
+
+    private string GetDataDir()
+    {
+        var dir = _config.DataDirectory ?? Path.Combine(Path.GetTempPath(), "hq-jobboard");
+        Directory.CreateDirectory(dir);
+        return dir;
     }
 
     private record ApplicationEntry

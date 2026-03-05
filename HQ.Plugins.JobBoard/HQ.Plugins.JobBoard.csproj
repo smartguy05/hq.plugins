@@ -16,7 +16,7 @@
     </PropertyGroup>
 
     <ItemGroup>
-        <PackageReference Include="HQ.Models" Version="1.0.0" ExcludeAssets="runtime" PrivateAssets="none" />
+        <PackageReference Include="HQ.Models" Version="1.2.0" ExcludeAssets="runtime" PrivateAssets="none" />
     </ItemGroup>
 
     <ItemGroup>

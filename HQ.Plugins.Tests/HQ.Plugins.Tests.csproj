@@ -24,7 +24,9 @@
         <ProjectReference Include="..\HQ.Plugins.LinkedIn\HQ.Plugins.LinkedIn.csproj" />
         <ProjectReference Include="..\HQ.Plugins.ReportGenerator\HQ.Plugins.ReportGenerator.csproj" />
         <ProjectReference Include="..\HQ.Plugins.JobBoard\HQ.Plugins.JobBoard.csproj" />
-        <PackageReference Include="HQ.Models" Version="1.0.0" />
+        <ProjectReference Include="..\HQ.Plugins.FileStorage\HQ.Plugins.FileStorage.csproj" />
+        <ProjectReference Include="..\HQ.Plugins.Slack\HQ.Plugins.Slack.csproj" />
+        <PackageReference Include="HQ.Models" Version="1.2.0" />
     </ItemGroup>
 
     <ItemGroup>

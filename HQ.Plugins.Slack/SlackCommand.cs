@@ -116,6 +116,18 @@ public class SlackCommand : CommandBase<ServiceRequest, ServiceConfig>, INotific
         try
         {
             var config = configString.ReadPluginConfig<ServiceConfig>();
+
+            if (string.IsNullOrWhiteSpace(config.BotToken) || string.IsNullOrWhiteSpace(config.AppLevelToken))
+            {
+                var missing = new List<string>();
+                if (string.IsNullOrWhiteSpace(config.BotToken)) missing.Add("BotToken");
+                if (string.IsNullOrWhiteSpace(config.AppLevelToken)) missing.Add("AppLevelToken");
+                await log(LogLevel.Warning,
+                    $"Slack plugin not configured — {string.Join(" and ", missing)} required. Skipping connection. " +
+                    "Configure the plugin settings and re-initialize to enable Slack.");
+                return null;
+            }
+
             _config ??= config;
 
             var builder = new SlackNet.SlackServiceBuilder()
