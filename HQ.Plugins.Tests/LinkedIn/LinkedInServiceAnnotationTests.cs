@@ -20,7 +20,7 @@ public class LinkedInServiceAnnotationTests
     public void LinkedInService_HasExpectedToolMethodCount()
     {
         var methods = GetToolMethods();
-        Assert.Equal(8, methods.Count());
+        Assert.Equal(12, methods.Count());
     }
 
     [Fact]

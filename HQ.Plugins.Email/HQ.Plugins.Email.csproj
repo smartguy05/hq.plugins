@@ -16,11 +16,17 @@
 	</PropertyGroup>
 
 	<ItemGroup>
-		<PackageReference Include="HQ.Models" Version="1.2.0" ExcludeAssets="runtime" PrivateAssets="none" />
+		<PackageReference Include="HQ.Models" Version="1.4.1" ExcludeAssets="runtime" PrivateAssets="none">
+		  <IncludeAssets>compile; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+		</PackageReference>
 	</ItemGroup>
 
 	<ItemGroup>
 	  <PackageReference Include="HtmlAgilityPack" Version="1.12.0" />
 	  <PackageReference Include="MailKit" Version="4.7.1.1" />
+	  <PackageReference Include="Microsoft.Data.Sqlite" Version="9.0.0" />
+	  <PackageReference Include="ChromaDB.Client" Version="1.0.0" />
+	  <PackageReference Include="OpenAI" Version="2.1.0" />
+	  <PackageReference Include="System.ClientModel" Version="1.3.0" />
 	</ItemGroup>
 </Project>

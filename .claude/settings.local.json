@@ -1,0 +1,17 @@
+{
+  "permissions": {
+    "allow": [
+      "WebSearch",
+      "WebFetch(domain:www.nuget.org)",
+      "WebFetch(domain:github.com)",
+      "WebFetch(domain:raw.githubusercontent.com)",
+      "Bash(dotnet build:*)",
+      "Bash(dotnet nuget:*)",
+      "Bash(dotnet add:*)",
+      "WebFetch(domain:developer.atlassian.com)",
+      "WebFetch(domain:support.atlassian.com)",
+      "WebFetch(domain:community.developer.atlassian.com)",
+      "Bash(dotnet test:*)"
+    ]
+  }
+}

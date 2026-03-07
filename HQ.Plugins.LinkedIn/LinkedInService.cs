@@ -129,6 +129,119 @@ public class LinkedInService
         return new { Success = true, Message = $"Post {request.PostUrn} deleted" };
     }
 
+    // ───────────────────────────── Engagement ─────────────────────────────
+
+    [Display(Name = "react_to_post")]
+    [Description("React to a LinkedIn post with a reaction type (LIKE, CELEBRATE, SUPPORT, LOVE, INSIGHTFUL, FUNNY). Defaults to LIKE.")]
+    [Parameters("""{"type":"object","properties":{"postUrn":{"type":"string","description":"The post URN to react to (e.g. urn:li:share:1234567890)"},"reactionType":{"type":"string","description":"Reaction type: LIKE, CELEBRATE, SUPPORT, LOVE, INSIGHTFUL, FUNNY (default: LIKE)"}},"required":["postUrn"]}""")]
+    public async Task<object> ReactToPost(ServiceConfig config, ServiceRequest request)
+    {
+        if (string.IsNullOrWhiteSpace(request.PostUrn))
+            throw new ArgumentException("Missing required parameter: postUrn");
+
+        var reactionType = string.IsNullOrWhiteSpace(request.ReactionType) ? "LIKE" : request.ReactionType.ToUpperInvariant();
+
+        var body = new
+        {
+            root = request.PostUrn,
+            reactionType,
+            actor = _linkedIn.PersonUrn
+        };
+
+        await _linkedIn.PostAsync("/rest/reactions", body);
+
+        return new { Success = true, Message = $"Reacted to post with {reactionType}", PostUrn = request.PostUrn };
+    }
+
+    [Display(Name = "comment_on_post")]
+    [Description("Comment on a LinkedIn post. Write a thoughtful, personalized comment.")]
+    [Parameters("""{"type":"object","properties":{"postUrn":{"type":"string","description":"The post URN to comment on (e.g. urn:li:share:1234567890)"},"commentText":{"type":"string","description":"The comment text to post"}},"required":["postUrn","commentText"]}""")]
+    public async Task<object> CommentOnPost(ServiceConfig config, ServiceRequest request)
+    {
+        if (string.IsNullOrWhiteSpace(request.PostUrn))
+            throw new ArgumentException("Missing required parameter: postUrn");
+        if (string.IsNullOrWhiteSpace(request.CommentText))
+            throw new ArgumentException("Missing required parameter: commentText");
+
+        var encodedUrn = Uri.EscapeDataString(request.PostUrn);
+        var body = new
+        {
+            actor = _linkedIn.PersonUrn,
+            message = new { text = request.CommentText }
+        };
+
+        var result = await _linkedIn.PostAsync($"/rest/socialActions/{encodedUrn}/comments", body);
+
+        return new { Success = true, Message = "Comment posted", PostUrn = request.PostUrn };
+    }
+
+    [Display(Name = "repost_post")]
+    [Description("Repost (reshare) a LinkedIn post to your feed with optional commentary.")]
+    [Parameters("""{"type":"object","properties":{"postUrn":{"type":"string","description":"The original post URN to repost (e.g. urn:li:share:1234567890)"},"content":{"type":"string","description":"Optional commentary to add to the repost"}},"required":["postUrn"]}""")]
+    public async Task<object> RepostPost(ServiceConfig config, ServiceRequest request)
+    {
+        if (string.IsNullOrWhiteSpace(request.PostUrn))
+            throw new ArgumentException("Missing required parameter: postUrn");
+
+        var body = new Dictionary<string, object>
+        {
+            ["author"] = _linkedIn.PersonUrn,
+            ["lifecycleState"] = "PUBLISHED",
+            ["visibility"] = "PUBLIC",
+            ["distribution"] = new
+            {
+                feedDistribution = "MAIN_FEED",
+                targetEntities = Array.Empty<object>(),
+                thirdPartyDistributionChannels = Array.Empty<object>()
+            },
+            ["reshareContext"] = new { parent = request.PostUrn }
+        };
+
+        if (!string.IsNullOrWhiteSpace(request.Content))
+        {
+            body["commentary"] = request.Content;
+        }
+
+        await _linkedIn.PostAsync("/rest/posts", body);
+
+        return new { Success = true, Message = "Post reposted", OriginalPostUrn = request.PostUrn };
+    }
+
+    [Display(Name = "get_post_comments")]
+    [Description("Get comments on a LinkedIn post.")]
+    [Parameters("""{"type":"object","properties":{"postUrn":{"type":"string","description":"The post URN to get comments for (e.g. urn:li:share:1234567890)"},"maxResults":{"type":"integer","description":"Maximum number of comments to return (default 10)"}},"required":["postUrn"]}""")]
+    public async Task<object> GetPostComments(ServiceConfig config, ServiceRequest request)
+    {
+        if (string.IsNullOrWhiteSpace(request.PostUrn))
+            throw new ArgumentException("Missing required parameter: postUrn");
+
+        var maxResults = request.MaxResults ?? 10;
+        var encodedUrn = Uri.EscapeDataString(request.PostUrn);
+        var result = await _linkedIn.GetAsync($"/rest/socialActions/{encodedUrn}/comments?count={maxResults}");
+
+        var comments = new List<object>();
+        if (result.TryGetProperty("elements", out var elements))
+        {
+            foreach (var comment in elements.EnumerateArray())
+            {
+                var messageText = "";
+                if (comment.TryGetProperty("message", out var message) && message.TryGetProperty("text", out var text))
+                {
+                    messageText = text.GetString();
+                }
+
+                comments.Add(new
+                {
+                    Actor = GetStringOrNull(comment, "actor"),
+                    Message = messageText,
+                    Created = comment.TryGetProperty("created", out var created) ? created.GetRawText() : null
+                });
+            }
+        }
+
+        return new { PostUrn = request.PostUrn, Comments = comments };
+    }
+
     // ───────────────────────────── Proxycurl Enrichment ─────────────────────────────
 
     [Display(Name = "lookup_person")]

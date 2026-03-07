@@ -6,6 +6,7 @@ using System.Web;
 using HQ.Models;
 using HQ.Models.Helpers;
 using HQ.Models.Interfaces;
+using HQ.Plugins.Email.Data;
 using HQ.Plugins.Email.Models;
 using MailKit;
 using MailKit.Net.Imap;
@@ -18,11 +19,18 @@ namespace HQ.Plugins.Email;
 public class EmailService
 {
     private readonly INotificationService _notificationService;
+    private readonly LocalEmailStore _store;
+    private readonly EmailVectorService _vectorService;
+    private readonly EmailSyncEngine _syncEngine;
     private const string PluginName = "HQ.Plugins.Email";
 
-    public EmailService(INotificationService notificationService = null)
+    public EmailService(INotificationService notificationService = null,
+        LocalEmailStore store = null, EmailVectorService vectorService = null, EmailSyncEngine syncEngine = null)
     {
         _notificationService = notificationService;
+        _store = store;
+        _vectorService = vectorService;
+        _syncEngine = syncEngine;
     }
 
     #region Private Helpers
@@ -65,21 +73,19 @@ public class EmailService
 
     private static async Task<IMailFolder> GetFolderAsync(ImapClient client, string name)
     {
-        // Try direct name first
         try
         {
             var folder = await client.GetFolderAsync(name);
             if (folder != null) return folder;
         }
-        catch { /* fall through to Gmail prefix */ }
+        catch { }
 
-        // Try with [Gmail]/ prefix
         try
         {
             var folder = await client.GetFolderAsync($"[Gmail]/{name}");
             if (folder != null) return folder;
         }
-        catch { /* not found */ }
+        catch { }
 
         throw new Exception($"Folder '{name}' not found");
     }
@@ -206,13 +212,10 @@ public class EmailService
 
     #endregion
 
-    #region Read-Only Operations (Group A)
+    #region Read-Only Operations
 
-    /// <summary>
-    /// Gets a specific email by the supplied Message Id
-    /// </summary>
     [Display(Name = "get_email")]
-    [Description("Use this tool to get a specific email")]
+    [Description("Use this tool to get a specific email. Reads from local store first, falls back to IMAP.")]
     [Parameters("""
                 {
                   "type": "object",
@@ -234,8 +237,38 @@ public class EmailService
         if (string.IsNullOrWhiteSpace(request.MessageId))
             throw new Exception("MessageId is required");
 
-        var account = GetMailAccount(request, config);
-        using var client = await ConnectImapAsync(account);
+        // Try local store first
+        if (_store != null)
+        {
+            var account = GetMailAccount(request, config);
+            var local = await _store.GetByMessageIdAsync(request.MessageId, account.Name);
+            if (local != null)
+            {
+                return new
+                {
+                    Success = true,
+                    Source = "local",
+                    Result = new
+                    {
+                        local.MessageId,
+                        local.Subject,
+                        From = local.FromName ?? local.FromAddress,
+                        local.ToAddress,
+                        local.DateSent,
+                        Body = local.BodyText,
+                        local.HasAttachments,
+                        local.AttachmentNames,
+                        local.IsRead,
+                        local.IsFlagged,
+                        local.Folder
+                    }
+                };
+            }
+        }
+
+        // Fallback to IMAP
+        var mailAccount = GetMailAccount(request, config);
+        using var client = await ConnectImapAsync(mailAccount);
         try
         {
             await client.Inbox.OpenAsync(FolderAccess.ReadOnly);
@@ -244,7 +277,7 @@ public class EmailService
                 return new { Success = false, Message = "Email not found" };
 
             var message = await found.Value.folder.GetMessageAsync(found.Value.uid);
-            return new { Success = true, Result = MapToMailMessage(message) };
+            return new { Success = true, Source = "imap", Result = MapToMailMessage(message) };
         }
         finally
         {
@@ -252,9 +285,6 @@ public class EmailService
         }
     }
 
-    /// <summary>
-    /// Retrieves a list of draft emails.
-    /// </summary>
     [Display(Name = "get_drafts")]
     [Description("Use this tool to get a list of draft emails")]
     [Parameters("""
@@ -295,11 +325,8 @@ public class EmailService
         }
     }
 
-    /// <summary>
-    /// Returns a summary of emails based on the supplied filter criteria.
-    /// </summary>
     [Display(Name = "get_email_summary")]
-    [Description("Use this tool to get a list of emails using the supplied criteria. You might use this if the user asks something like 'Who sent that last email?', or 'When did I get that email from Google'")]
+    [Description("Use this tool to get a list of emails using the supplied criteria. Reads from local store first, falls back to IMAP.")]
     [Parameters("""
                 {
                   "type": "object",
@@ -350,8 +377,38 @@ public class EmailService
                 """)]
     public async Task<object> GetEmailSummary(ServiceConfig config, ServiceRequest request)
     {
-        var account = GetMailAccount(request, config);
-        using var client = await ConnectImapAsync(account);
+        // Try local store first
+        if (_store != null)
+        {
+            var account = GetMailAccount(request, config);
+            var totalCount = await _store.GetTotalEmailCountAsync(account.Name);
+            if (totalCount > 0)
+            {
+                var localResults = await _store.SearchAsync(
+                    accountName: account.Name,
+                    subject: request.SearchSubject ?? request.Subject,
+                    sender: request.Sender,
+                    maxResults: request.MaxReturnedEmails);
+
+                var summaries = localResults.Select(e => new
+                {
+                    e.MessageId,
+                    e.Subject,
+                    From = e.FromName ?? e.FromAddress,
+                    Date = e.DateSent,
+                    Preview = GetPreview(e.BodyText),
+                    e.IsRead,
+                    e.IsFlagged,
+                    e.Folder
+                }).ToList();
+
+                return new { Success = true, Source = "local", Total = totalCount, Result = summaries };
+            }
+        }
+
+        // Fallback to IMAP
+        var mailAccount = GetMailAccount(request, config);
+        using var client = await ConnectImapAsync(mailAccount);
         try
         {
             await client.Inbox.OpenAsync(FolderAccess.ReadOnly);
@@ -359,7 +416,6 @@ public class EmailService
             var searchQuery = BuildSearchQuery(request);
             var uids = await client.Inbox.SearchAsync(searchQuery);
 
-            // Apply SearchSubject filter client-side (partial match)
             var emailIds = uids.Distinct().ToList();
             var messageCount = Math.Min(emailIds.Any() ? emailIds.Count : client.Inbox.Count, request.MaxReturnedEmails);
 
@@ -392,7 +448,7 @@ public class EmailService
                 }
             }
 
-            return new { Success = true, Total = emailIds.Any() ? emailIds.Count : client.Inbox.Count, Result = summaries };
+            return new { Success = true, Source = "imap", Total = emailIds.Any() ? emailIds.Count : client.Inbox.Count, Result = summaries };
         }
         finally
         {
@@ -414,55 +470,6 @@ public class EmailService
         }
     }
 
-    /// <summary>
-    /// Retrieves all available labels associated with the email account.
-    /// </summary>
-    [Display(Name = "get_labels")]
-    [Description("Use this tool to get a list of available email labels")]
-    [Parameters("""
-                {
-                  "type": "object",
-                  "properties": {
-                    "account": {
-                      "type": "string",
-                      "description": "The email account you want to access. This is optional, if not supplied the default account will be used."
-                    }
-                  },
-                  "required": []
-                }
-                """)]
-    public async Task<object> GetLabels(ServiceConfig config, ServiceRequest request)
-    {
-        var account = GetMailAccount(request, config);
-        using var client = await ConnectImapAsync(account);
-        try
-        {
-            var labels = new List<string>();
-
-            var personal = client.PersonalNamespaces[0];
-            var folders = await client.GetFoldersAsync(personal);
-            labels.AddRange(folders.Select(f => f.FullName));
-
-            // Also enumerate [Gmail] subfolders
-            try
-            {
-                var gmailFolder = await client.GetFolderAsync("[Gmail]");
-                var gmailSubfolders = await gmailFolder.GetSubfoldersAsync();
-                labels.AddRange(gmailSubfolders.Select(f => f.FullName));
-            }
-            catch { /* Gmail folder may not exist */ }
-
-            return new { Success = true, Result = labels.Distinct().OrderBy(l => l).ToList() };
-        }
-        finally
-        {
-            await client.DisconnectAsync(true);
-        }
-    }
-
-    /// <summary>
-    /// Retrieves the attachments associated with a specific email.
-    /// </summary>
     [Display(Name = "get_attachments")]
     [Description("Use this tool to get the attachments of the supplied email message id.")]
     [Parameters("""
@@ -526,11 +533,183 @@ public class EmailService
 
     #endregion
 
-    #region Write Operations - No Confirmation (Group B)
+    #region New Tools - Search & Sync
 
-    /// <summary>
-    /// Marks the specified email as read/unread.
-    /// </summary>
+    [Display(Name = "search_emails")]
+    [Description("Search emails using natural language semantic search. Requires ChromaDB to be configured. Returns emails ranked by relevance to your query.")]
+    [Parameters("""
+                {
+                  "type": "object",
+                  "properties": {
+                    "query": {
+                      "type": "string",
+                      "description": "Natural language search query, e.g. 'emails about the project deadline' or 'messages from John about invoices'"
+                    },
+                    "maxResults": {
+                      "type": "number",
+                      "description": "Maximum number of results to return. Default 10."
+                    }
+                  },
+                  "required": ["query"]
+                }
+                """)]
+    public async Task<object> SearchEmails(ServiceConfig config, ServiceRequest request)
+    {
+        if (string.IsNullOrWhiteSpace(request.Query))
+            throw new Exception("Query is required for semantic search");
+
+        if (_vectorService == null)
+            return new { Success = false, Message = "Semantic search is not configured. Set ChromaUrl and OpenAiApiKey in the plugin config." };
+
+        var maxResults = request.MaxResults ?? 10;
+        var results = await _vectorService.SearchAsync(request.Query, maxResults);
+
+        // Enrich with local store data if available
+        var enriched = new List<object>();
+        foreach (var (messageId, subject, snippet, distance) in results)
+        {
+            var email = _store != null ? await _store.GetByMessageIdAsync(messageId) : null;
+            enriched.Add(new
+            {
+                MessageId = messageId,
+                Subject = email?.Subject ?? subject,
+                From = email != null ? (email.FromName ?? email.FromAddress) : null,
+                Date = email?.DateSent,
+                Preview = email != null ? GetPreview(email.BodyText, 200) : snippet,
+                Similarity = 1.0f - distance,
+                Folder = email?.Folder
+            });
+        }
+
+        return new { Success = true, Total = enriched.Count, Result = enriched };
+    }
+
+    [Display(Name = "search_emails_local")]
+    [Description("Search emails by keyword in subject, sender, or body text using the local email database.")]
+    [Parameters("""
+                {
+                  "type": "object",
+                  "properties": {
+                    "account": {
+                      "type": "string",
+                      "description": "The email account to search. Optional, searches all accounts if not specified."
+                    },
+                    "searchText": {
+                      "type": "string",
+                      "description": "Text to search for in email subject, sender, and body"
+                    },
+                    "folder": {
+                      "type": "string",
+                      "description": "Limit search to a specific folder. Optional."
+                    },
+                    "sender": {
+                      "type": "string",
+                      "description": "Filter by sender name or address. Optional."
+                    },
+                    "subject": {
+                      "type": "string",
+                      "description": "Filter by subject text. Optional."
+                    },
+                    "maxResults": {
+                      "type": "number",
+                      "description": "Maximum number of results. Default 20."
+                    }
+                  },
+                  "required": []
+                }
+                """)]
+    public async Task<object> SearchEmailsLocal(ServiceConfig config, ServiceRequest request)
+    {
+        if (_store == null)
+            return new { Success = false, Message = "Local email store is not configured. Set SqliteConnectionString in the plugin config." };
+
+        var account = !string.IsNullOrWhiteSpace(request.Account)
+            ? GetMailAccount(request, config)
+            : null;
+
+        var maxResults = request.MaxResults ?? 20;
+        var results = await _store.SearchAsync(
+            accountName: account?.Name,
+            folder: request.Folder,
+            subject: request.Subject ?? request.SearchText,
+            sender: request.Sender,
+            bodyText: request.SearchText,
+            maxResults: maxResults);
+
+        var summaries = results.Select(e => new
+        {
+            e.MessageId,
+            e.Subject,
+            From = e.FromName ?? e.FromAddress,
+            Date = e.DateSent,
+            Preview = GetPreview(e.BodyText, 200),
+            e.IsRead,
+            e.IsFlagged,
+            e.Folder
+        }).ToList();
+
+        return new { Success = true, Total = summaries.Count, Result = summaries };
+    }
+
+    [Display(Name = "sync_emails")]
+    [Description("Manually trigger email sync to download new emails to the local store. Returns sync status.")]
+    [Parameters("""
+                {
+                  "type": "object",
+                  "properties": {
+                    "account": {
+                      "type": "string",
+                      "description": "Specific account to sync. Optional, syncs all accounts if not specified."
+                    }
+                  },
+                  "required": []
+                }
+                """)]
+    public async Task<object> SyncEmails(ServiceConfig config, ServiceRequest request)
+    {
+        if (_syncEngine == null)
+            return new { Success = false, Message = "Email sync is not configured. Set SqliteConnectionString in the plugin config." };
+
+        return await _syncEngine.SyncAllAccountsAsync();
+    }
+
+    [Display(Name = "get_folders")]
+    [Description("List synced email folders with message counts for the specified account.")]
+    [Parameters("""
+                {
+                  "type": "object",
+                  "properties": {
+                    "account": {
+                      "type": "string",
+                      "description": "The email account. Optional, uses default account."
+                    }
+                  },
+                  "required": []
+                }
+                """)]
+    public async Task<object> GetFolders(ServiceConfig config, ServiceRequest request)
+    {
+        if (_store == null)
+            return new { Success = false, Message = "Local email store is not configured. Set SqliteConnectionString in the plugin config." };
+
+        var account = GetMailAccount(request, config);
+        var folders = await _store.GetFoldersAsync(account.Name);
+
+        var result = folders.Select(f => new
+        {
+            Name = f.FolderName,
+            Messages = f.MessageCount,
+            Unread = f.UnreadCount,
+            SpecialUse = f.SpecialUse
+        }).ToList();
+
+        return new { Success = true, Account = account.Name, Result = result };
+    }
+
+    #endregion
+
+    #region Write Operations - No Confirmation
+
     [Display(Name = "mark_as_read")]
     [Description("Use this tool to mark the specified email as read.")]
     [Parameters("""
@@ -572,6 +751,10 @@ public class EmailService
             else
                 await found.Value.folder.RemoveFlagsAsync(found.Value.uid, MessageFlags.Seen, true);
 
+            // Update local store
+            if (_store != null)
+                await _store.UpdateFlagsAsync(request.MessageId, isRead: request.MarkAsRead);
+
             var status = request.MarkAsRead == true ? "read" : "unread";
             return new { Success = true, Message = $"Email marked as {status}" };
         }
@@ -581,11 +764,8 @@ public class EmailService
         }
     }
 
-    /// <summary>
-    /// Stars/unstars the specified email.
-    /// </summary>
-    [Display(Name = "star")]
-    [Description("Use this tool to star/unstar an email")]
+    [Display(Name = "flag_email")]
+    [Description("Use this tool to flag/unflag an email using the standard IMAP Flagged flag")]
     [Parameters("""
                 {
                   "type": "object",
@@ -598,15 +778,15 @@ public class EmailService
                       "type": "string",
                       "description": "The message Id of the email message to update"
                     },
-                    "star": {
+                    "flag": {
                       "type": "boolean",
-                      "description": "Set to true to star the email, false to unstar"
+                      "description": "Set to true to flag the email, false to unflag"
                     }
                   },
-                  "required": ["messageId","star"]
+                  "required": ["messageId","flag"]
                 }
                 """)]
-    public async Task<object> Star(ServiceConfig config, ServiceRequest request)
+    public async Task<object> FlagEmail(ServiceConfig config, ServiceRequest request)
     {
         if (string.IsNullOrWhiteSpace(request.MessageId))
             throw new Exception("MessageId is required");
@@ -620,12 +800,16 @@ public class EmailService
             if (found == null)
                 return new { Success = false, Message = "Email not found" };
 
-            if (request.Star == true)
+            if (request.Flag == true)
                 await found.Value.folder.AddFlagsAsync(found.Value.uid, MessageFlags.Flagged, true);
             else
                 await found.Value.folder.RemoveFlagsAsync(found.Value.uid, MessageFlags.Flagged, true);
 
-            var status = request.Star == true ? "starred" : "unstarred";
+            // Update local store
+            if (_store != null)
+                await _store.UpdateFlagsAsync(request.MessageId, isFlagged: request.Flag);
+
+            var status = request.Flag == true ? "flagged" : "unflagged";
             return new { Success = true, Message = $"Email {status}" };
         }
         finally
@@ -634,78 +818,6 @@ public class EmailService
         }
     }
 
-    /// <summary>
-    /// Archives/Unarchives the specified email.
-    /// </summary>
-    [Display(Name = "archive")]
-    [Description("Use this tool to archive/unarchive an email")]
-    [Parameters("""
-                {
-                  "type": "object",
-                  "properties": {
-                    "account": {
-                      "type": "string",
-                      "description": "The email account you want to access. This is optional, if not supplied the default account will be used."
-                    },
-                    "messageId": {
-                      "type": "string",
-                      "description": "The message Id of the email message to archive"
-                    },
-                    "archive": {
-                      "type": "boolean",
-                      "description": "Set to true to archive the email, false to unarchive"
-                    }
-                  },
-                  "required": ["messageId","archive"]
-                }
-                """)]
-    public async Task<object> Archive(ServiceConfig config, ServiceRequest request)
-    {
-        if (string.IsNullOrWhiteSpace(request.MessageId))
-            throw new Exception("MessageId is required");
-
-        var account = GetMailAccount(request, config);
-        using var client = await ConnectImapAsync(account);
-        try
-        {
-            if (request.Archive == true)
-            {
-                // Archive: move from Inbox to All Mail
-                await client.Inbox.OpenAsync(FolderAccess.ReadWrite);
-                var found = await FindMessageAsync(client.Inbox, request.MessageId);
-                if (found == null)
-                    return new { Success = false, Message = "Email not found in Inbox" };
-
-                var allMailFolder = await GetFolderAsync(client, "All Mail");
-                await allMailFolder.OpenAsync(FolderAccess.ReadWrite);
-                await found.Value.folder.MoveToAsync(found.Value.uid, allMailFolder);
-
-                return new { Success = true, Message = "Email archived" };
-            }
-            else
-            {
-                // Unarchive: move from All Mail to Inbox
-                var allMailFolder = await GetFolderAsync(client, "All Mail");
-                await allMailFolder.OpenAsync(FolderAccess.ReadWrite);
-                var found = await FindMessageAsync(allMailFolder, request.MessageId);
-                if (found == null)
-                    return new { Success = false, Message = "Email not found in All Mail" };
-
-                await client.Inbox.OpenAsync(FolderAccess.ReadWrite);
-                await found.Value.folder.MoveToAsync(found.Value.uid, client.Inbox);
-
-                return new { Success = true, Message = "Email unarchived" };
-            }
-        }
-        finally
-        {
-            await client.DisconnectAsync(true);
-        }
-    }
-
-    /// <summary>
-    /// Moves a specific email to the folder specified in the request.
-    /// </summary>
     [Display(Name = "move_to_folder")]
     [Description("Use this tool to move the specified email to the specified email folder.")]
     [Parameters("""
@@ -747,7 +859,11 @@ public class EmailService
 
             var destFolder = await GetFolderAsync(client, request.Folder);
             await destFolder.OpenAsync(FolderAccess.ReadWrite);
-            await found.Value.folder.MoveToAsync(found.Value.uid, destFolder);
+            var newUid = await found.Value.folder.MoveToAsync(found.Value.uid, destFolder);
+
+            // Update local store
+            if (_store != null && newUid.HasValue)
+                await _store.UpdateFolderAsync(request.MessageId, request.Folder, newUid.Value.Id);
 
             return new { Success = true, Message = $"Email moved to {request.Folder}" };
         }
@@ -757,117 +873,10 @@ public class EmailService
         }
     }
 
-    /// <summary>
-    /// Adds a label to an email.
-    /// </summary>
-    [Display(Name = "add_label")]
-    [Description("Use this tool to add a label to an email")]
-    [Parameters("""
-                {
-                  "type": "object",
-                  "properties": {
-                    "account": {
-                      "type": "string",
-                      "description": "The email account you want to access. This is optional, if not supplied the default account will be used."
-                    },
-                    "messageId": {
-                      "type": "string",
-                      "description": "The message Id of the email message to label"
-                    },
-                    "label": {
-                      "type": "string",
-                      "description": "The label you want to add to the email"
-                    }
-                  },
-                  "required": ["messageId","label"]
-                }
-                """)]
-    public async Task<object> AddLabel(ServiceConfig config, ServiceRequest request)
-    {
-        if (string.IsNullOrWhiteSpace(request.MessageId))
-            throw new Exception("MessageId is required");
-
-        if (string.IsNullOrWhiteSpace(request.Label))
-            throw new Exception("Label is required");
-
-        var account = GetMailAccount(request, config);
-        using var client = await ConnectImapAsync(account);
-        try
-        {
-            await client.Inbox.OpenAsync(FolderAccess.ReadWrite);
-            var found = await FindMessageAsync(client.Inbox, request.MessageId);
-            if (found == null)
-                return new { Success = false, Message = "Email not found" };
-
-            await found.Value.folder.AddLabelsAsync(found.Value.uid, new[] { request.Label }, true);
-
-            return new { Success = true, Message = $"Label '{request.Label}' added" };
-        }
-        finally
-        {
-            await client.DisconnectAsync(true);
-        }
-    }
-
-    /// <summary>
-    /// Removes a label from an email.
-    /// </summary>
-    [Display(Name = "remove_label")]
-    [Description("Use this tool to remove a label from an email")]
-    [Parameters("""
-                {
-                  "type": "object",
-                  "properties": {
-                    "account": {
-                      "type": "string",
-                      "description": "The email account you want to access. This is optional, if not supplied the default account will be used."
-                    },
-                    "messageId": {
-                      "type": "string",
-                      "description": "The message Id of the email message to update"
-                    },
-                    "label": {
-                      "type": "string",
-                      "description": "The label you want to remove from the email"
-                    }
-                  },
-                  "required": ["messageId","label"]
-                }
-                """)]
-    public async Task<object> RemoveLabel(ServiceConfig config, ServiceRequest request)
-    {
-        if (string.IsNullOrWhiteSpace(request.MessageId))
-            throw new Exception("MessageId is required");
-
-        if (string.IsNullOrWhiteSpace(request.Label))
-            throw new Exception("Label is required");
-
-        var account = GetMailAccount(request, config);
-        using var client = await ConnectImapAsync(account);
-        try
-        {
-            await client.Inbox.OpenAsync(FolderAccess.ReadWrite);
-            var found = await FindMessageAsync(client.Inbox, request.MessageId);
-            if (found == null)
-                return new { Success = false, Message = "Email not found" };
-
-            await found.Value.folder.RemoveLabelsAsync(found.Value.uid, new[] { request.Label }, true);
-
-            return new { Success = true, Message = $"Label '{request.Label}' removed" };
-        }
-        finally
-        {
-            await client.DisconnectAsync(true);
-        }
-    }
-
     #endregion
 
-    #region Write Operations - With Confirmation (Group C)
+    #region Write Operations - With Confirmation
 
-    /// <summary>
-    /// Sends an email using the supplied criteria.
-    /// </summary>
     [Display(Name = "send_email")]
     [Description("Use this tool to send emails from the user's already set up email account. Always format the email body using HTML for attractive styling, including appropriate use of paragraphs, headings, bold text, lists, and other HTML tags to improve readability and visual appeal. Use this tool when asked something like 'Send an email to mom telling her I will be late'")]
     [Parameters("""
@@ -907,82 +916,83 @@ public class EmailService
         if (string.IsNullOrWhiteSpace(request.MessageId) && string.IsNullOrWhiteSpace(request.To))
             throw new Exception("Must supply existing draft email Id or a To address to send an email.");
 
-        // Confirmation flow
-        if (string.IsNullOrWhiteSpace(request.ConfirmationId))
+        if (config.RequiresConfirmation)
         {
-            var confirmation = new Confirmation
+            // Confirmation flow
+            if (string.IsNullOrWhiteSpace(request.ConfirmationId))
             {
-                ConfirmationMessage = "Are you sure you want to send this email?",
-                Content = request.Body,
-                Options = new Dictionary<string, bool>
+                var confirmation = new Confirmation
                 {
-                    { "Yes", true },
-                    { "No", false }
-                },
-                Id = Guid.NewGuid()
-            };
-            return await _notificationService.RequestConfirmation(PluginName, confirmation, request);
+                    ConfirmationMessage = "Are you sure you want to send this email?",
+                    Content = request.Body,
+                    Options = new Dictionary<string, bool>
+                    {
+                        { "Yes", true },
+                        { "No", false }
+                    },
+                    Id = Guid.NewGuid()
+                };
+                return await _notificationService.RequestConfirmation(PluginName, confirmation, request);
+            }
+
+            if (!_notificationService.DoesConfirmationExist(Guid.Parse(request.ConfirmationId), out _))
+                return new { Success = false, Error = "Unable to send email without valid confirmation" };
         }
 
-        if (_notificationService.DoesConfirmationExist(Guid.Parse(request.ConfirmationId), out _))
+        return await ExecuteSendEmailAsync(config, request);
+    }
+
+    private async Task<object> ExecuteSendEmailAsync(ServiceConfig config, ServiceRequest request)
+    {
+        var account = GetMailAccount(request, config);
+
+        MimeMessage message;
+        if (!string.IsNullOrWhiteSpace(request.MessageId))
         {
-            var account = GetMailAccount(request, config);
-
-            MimeMessage message;
-            if (!string.IsNullOrWhiteSpace(request.MessageId))
-            {
-                // Send existing draft
-                using var imapClient = await ConnectImapAsync(account);
-                try
-                {
-                    var draftsFolder = imapClient.GetFolder(SpecialFolder.Drafts);
-                    await draftsFolder.OpenAsync(FolderAccess.ReadWrite);
-                    var found = await FindMessageAsync(draftsFolder, request.MessageId);
-                    if (found == null)
-                        return new { Success = false, Message = "Draft not found" };
-
-                    message = await found.Value.folder.GetMessageAsync(found.Value.uid);
-
-                    // Delete the draft after retrieving it
-                    await found.Value.folder.AddFlagsAsync(found.Value.uid, MessageFlags.Deleted, true);
-                    await found.Value.folder.ExpungeAsync();
-                }
-                finally
-                {
-                    await imapClient.DisconnectAsync(true);
-                }
-            }
-            else
-            {
-                // Build new message
-                message = new MimeMessage
-                {
-                    Subject = request.Subject,
-                    Body = new TextPart("html") { Text = request.Body }
-                };
-                message.From.Add(new MailboxAddress(account.DisplayName, account.Email));
-                message.To.Add(new MailboxAddress(request.RecipientName, request.To));
-            }
-
-            // Send via SMTP
-            using var smtpClient = await ConnectSmtpAsync(account);
+            using var imapClient = await ConnectImapAsync(account);
             try
             {
-                await smtpClient.SendAsync(message);
-                return await _notificationService.SendNotification("Email Sent!");
+                var draftsFolder = imapClient.GetFolder(SpecialFolder.Drafts);
+                await draftsFolder.OpenAsync(FolderAccess.ReadWrite);
+                var found = await FindMessageAsync(draftsFolder, request.MessageId);
+                if (found == null)
+                    return new { Success = false, Message = "Draft not found" };
+
+                message = await found.Value.folder.GetMessageAsync(found.Value.uid);
+
+                await found.Value.folder.AddFlagsAsync(found.Value.uid, MessageFlags.Deleted, true);
+                await found.Value.folder.ExpungeAsync();
             }
             finally
             {
-                await smtpClient.DisconnectAsync(true);
+                await imapClient.DisconnectAsync(true);
             }
         }
+        else
+        {
+            message = new MimeMessage
+            {
+                Subject = request.Subject,
+                Body = new TextPart("html") { Text = request.Body }
+            };
+            message.From.Add(new MailboxAddress(account.DisplayName, account.Email));
+            message.To.Add(new MailboxAddress(request.RecipientName, request.To));
+        }
 
-        return new { Success = false, Error = "Unable to send email without valid confirmation" };
+        using var smtpClient = await ConnectSmtpAsync(account);
+        try
+        {
+            await smtpClient.SendAsync(message);
+            return _notificationService != null
+                ? await _notificationService.SendNotification("Email Sent!")
+                : new { Success = true, Message = "Email Sent!" };
+        }
+        finally
+        {
+            await smtpClient.DisconnectAsync(true);
+        }
     }
 
-    /// <summary>
-    /// Deletes the specified email by the supplied Message Id.
-    /// </summary>
     [Display(Name = "delete_email")]
     [Description("Use this tool to delete emails from the user's already set up email account, for example when asked something like 'delete that email', or 'delete my last email'")]
     [Parameters("""
@@ -1006,63 +1016,77 @@ public class EmailService
         if (string.IsNullOrWhiteSpace(request.MessageId))
             throw new Exception("MessageId is required");
 
-        // Confirmation flow
-        if (string.IsNullOrWhiteSpace(request.ConfirmationId))
+        if (config.RequiresConfirmation)
         {
-            return await _notificationService.RequestConfirmation(
-                PluginName,
-                new Confirmation
-                {
-                    ConfirmationMessage = "Are you sure you want to delete this email?",
-                    Content = request.Body,
-                    Options = new Dictionary<string, bool>
+            // Confirmation flow
+            if (string.IsNullOrWhiteSpace(request.ConfirmationId))
+            {
+                return await _notificationService.RequestConfirmation(
+                    PluginName,
+                    new Confirmation
                     {
-                        { "Yes", true },
-                        { "No", false }
+                        ConfirmationMessage = "Are you sure you want to delete this email?",
+                        Content = request.Body,
+                        Options = new Dictionary<string, bool>
+                        {
+                            { "Yes", true },
+                            { "No", false }
+                        },
+                        Id = Guid.NewGuid()
                     },
-                    Id = Guid.NewGuid()
-                },
-                request);
+                    request);
+            }
+
+            if (!_notificationService.DoesConfirmationExist(Guid.Parse(request.ConfirmationId), out _))
+                return new { Success = false, Error = "Unable to delete email without valid confirmation" };
         }
 
-        if (_notificationService.DoesConfirmationExist(Guid.Parse(request.ConfirmationId), out _))
+        return await ExecuteDeleteEmailAsync(config, request);
+    }
+
+    private async Task<object> ExecuteDeleteEmailAsync(ServiceConfig config, ServiceRequest request)
+    {
+        var account = GetMailAccount(request, config);
+        int deletedCount = 0;
+
+        using var client = await ConnectImapAsync(account);
+        try
         {
-            var account = GetMailAccount(request, config);
-            int deletedCount = 0;
+            await client.Inbox.OpenAsync(FolderAccess.ReadWrite);
+            var uids = await client.Inbox.SearchAsync(SearchOptions.All, SearchQuery.HeaderContains("Message-Id", request.MessageId));
 
-            using var client = await ConnectImapAsync(account);
-            try
+            foreach (var uid in uids.UniqueIds)
             {
-                await client.Inbox.OpenAsync(FolderAccess.ReadWrite);
-                var uids = await client.Inbox.SearchAsync(SearchOptions.All, SearchQuery.HeaderContains("Message-Id", request.MessageId));
-
-                foreach (var uid in uids.UniqueIds)
-                {
-                    await client.Inbox.AddFlagsAsync(uid, MessageFlags.Deleted, true);
-                    deletedCount++;
-                }
-
-                await client.Inbox.ExpungeAsync();
-
-                var message = deletedCount > 0 ? "Email(s) Deleted!" : "Unable to delete email(s)!";
-                return await _notificationService.SendNotification(message);
+                await client.Inbox.AddFlagsAsync(uid, MessageFlags.Deleted, true);
+                deletedCount++;
             }
-            finally
+
+            await client.Inbox.ExpungeAsync();
+
+            // Remove from local store and vector store
+            if (_store != null)
             {
-                await client.DisconnectAsync(true);
+                var localEmail = await _store.GetByMessageIdAsync(request.MessageId);
+                if (localEmail?.VectorId != null && _vectorService != null)
+                    await _vectorService.DeleteByVectorIdAsync(localEmail.VectorId);
+                await _store.DeleteByMessageIdAsync(request.MessageId);
             }
+
+            var message = deletedCount > 0 ? "Email(s) Deleted!" : "Unable to delete email(s)!";
+            return _notificationService != null
+                ? await _notificationService.SendNotification(message)
+                : new { Success = true, Message = message };
         }
-
-        return new { Success = false, Error = "Unable to delete email without valid confirmation" };
+        finally
+        {
+            await client.DisconnectAsync(true);
+        }
     }
 
     #endregion
 
-    #region Draft CRUD (Group D)
+    #region Draft CRUD
 
-    /// <summary>
-    /// Creates and saves a draft email.
-    /// </summary>
     [Display(Name = "create_draft")]
     [Description("Use this tool to create a draft email using the supplied criteria.")]
     [Parameters("""
@@ -1121,9 +1145,6 @@ public class EmailService
         }
     }
 
-    /// <summary>
-    /// Removes a draft email by Message Id.
-    /// </summary>
     [Display(Name = "delete_draft")]
     [Description("Use this tool to delete a saved draft email.")]
     [Parameters("""
@@ -1169,9 +1190,6 @@ public class EmailService
         }
     }
 
-    /// <summary>
-    /// Adds an attachment to a specified draft email.
-    /// </summary>
     [Display(Name = "add_attachment_to_draft")]
     [Description("Use this tool to add attachments to a previously saved draft email.")]
     [Parameters("""
@@ -1212,7 +1230,6 @@ public class EmailService
 
             var originalMessage = await found.Value.folder.GetMessageAsync(found.Value.uid);
 
-            // Parse attachment from request
             var attachmentJson = request.Attachment?.ToString();
             if (string.IsNullOrWhiteSpace(attachmentJson))
                 return new { Success = false, Message = "Attachment data is required" };
@@ -1222,16 +1239,13 @@ public class EmailService
             var contentType = attachmentData.GetProperty("contentType").GetString();
             var data = Convert.FromBase64String(attachmentData.GetProperty("data").GetString());
 
-            // Rebuild body with existing content + new attachment
             var builder = new BodyBuilder();
 
-            // Preserve existing body
             if (originalMessage.HtmlBody != null)
                 builder.HtmlBody = originalMessage.HtmlBody;
             if (originalMessage.TextBody != null)
                 builder.TextBody = originalMessage.TextBody;
 
-            // Preserve existing attachments
             foreach (var existingAttachment in originalMessage.Attachments)
             {
                 if (existingAttachment is MimePart mp)
@@ -1242,10 +1256,8 @@ public class EmailService
                 }
             }
 
-            // Add new attachment
             builder.Attachments.Add(fileName, data, ContentType.Parse(contentType));
 
-            // Create new draft message (IMAP messages are immutable)
             var newMessage = new MimeMessage();
             newMessage.From.AddRange(originalMessage.From);
             newMessage.To.AddRange(originalMessage.To);
@@ -1254,7 +1266,6 @@ public class EmailService
             newMessage.Subject = originalMessage.Subject;
             newMessage.Body = builder.ToMessageBody();
 
-            // Delete old draft and append new one
             await found.Value.folder.AddFlagsAsync(found.Value.uid, MessageFlags.Deleted, true);
             await found.Value.folder.ExpungeAsync();
             await draftsFolder.AppendAsync(newMessage, MessageFlags.Draft);
@@ -1267,9 +1278,6 @@ public class EmailService
         }
     }
 
-    /// <summary>
-    /// Removes an attachment from the specified draft email.
-    /// </summary>
     [Display(Name = "remove_attachment_from_draft")]
     [Description("Use this tool to remove an attachment from a previously saved draft email.")]
     [Parameters("""
@@ -1314,7 +1322,6 @@ public class EmailService
             if (string.IsNullOrWhiteSpace(attachmentToRemove))
                 return new { Success = false, Message = "Attachment identifier is required" };
 
-            // Rebuild body without the specified attachment
             var builder = new BodyBuilder();
 
             if (originalMessage.HtmlBody != null)
@@ -1327,7 +1334,6 @@ public class EmailService
             {
                 if (existingAttachment is MimePart mp)
                 {
-                    // Skip the attachment to remove (match by filename or content-id)
                     if (string.Equals(mp.FileName, attachmentToRemove, StringComparison.OrdinalIgnoreCase) ||
                         string.Equals(mp.ContentId, attachmentToRemove, StringComparison.OrdinalIgnoreCase))
                     {
@@ -1344,7 +1350,6 @@ public class EmailService
             if (!removed)
                 return new { Success = false, Message = $"Attachment '{attachmentToRemove}' not found" };
 
-            // Create new draft message
             var newMessage = new MimeMessage();
             newMessage.From.AddRange(originalMessage.From);
             newMessage.To.AddRange(originalMessage.To);
@@ -1353,7 +1358,6 @@ public class EmailService
             newMessage.Subject = originalMessage.Subject;
             newMessage.Body = builder.ToMessageBody();
 
-            // Delete old, append new
             await found.Value.folder.AddFlagsAsync(found.Value.uid, MessageFlags.Deleted, true);
             await found.Value.folder.ExpungeAsync();
             await draftsFolder.AppendAsync(newMessage, MessageFlags.Draft);

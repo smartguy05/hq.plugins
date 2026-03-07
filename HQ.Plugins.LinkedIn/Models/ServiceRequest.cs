@@ -26,6 +26,11 @@ public record ServiceRequest : IPluginServiceRequest
     public string Industry { get; set; }
     public int? MaxResults { get; set; } = 10;
 
-    // Profile
+    // Post reference
     public string PostUrn { get; set; }
+
+    // Engagement
+    public string ReactionType { get; set; }
+    public string CommentText { get; set; }
+    public string OriginalPostUrn { get; set; }
 }

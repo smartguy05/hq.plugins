@@ -23,7 +23,11 @@ public record ServiceRequest: IPluginServiceRequest
     public string Label { get; set; }
     public string Folder { get; set; }
     public bool? MarkAsRead { get; set; }
-    public bool? Archive { get; set; }
-    public bool? Star { get; set; }
+    public bool? Flag { get; set; }
     public object Attachment { get; set; }
+
+    // Semantic/local search
+    public string Query { get; set; }
+    public string SearchText { get; set; }
+    public int? MaxResults { get; set; }
 }

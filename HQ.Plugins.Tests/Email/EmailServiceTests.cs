@@ -60,54 +60,56 @@ public class EmailServiceTests
     [Fact]
     public void Constructor_AcceptsNullNotificationService()
     {
-        // Arrange & Act
         var service = new EmailService();
-
-        // Assert
         Assert.NotNull(service);
     }
 
     [Fact]
     public void Constructor_AcceptsNotificationService()
     {
-        // Arrange & Act
         var service = new EmailService(_mockNotification.Object);
-
-        // Assert
         Assert.NotNull(service);
     }
 
     [Fact]
     public void GetServiceFunctions_ReturnsAll17Tools()
     {
-        // Arrange & Act
         var tools = _service.GetServiceFunctions();
-
-        // Assert
         Assert.Equal(17, tools.Count);
     }
 
     [Fact]
     public void GetServiceFunctions_ContainsExpectedToolNames()
     {
-        // Arrange
         var expectedNames = new[]
         {
             "get_email", "get_drafts", "get_email_summary", "send_email",
-            "delete_email", "move_to_folder", "mark_as_read", "get_labels",
-            "add_label", "remove_label", "archive", "star",
+            "delete_email", "move_to_folder", "mark_as_read", "flag_email",
             "create_draft", "delete_draft", "get_attachments",
-            "add_attachment_to_draft", "remove_attachment_from_draft"
+            "add_attachment_to_draft", "remove_attachment_from_draft",
+            "search_emails", "search_emails_local", "sync_emails", "get_folders"
         };
 
-        // Act
         var tools = _service.GetServiceFunctions();
         var toolNames = tools.Select(t => t.FunctionName).ToList();
 
-        // Assert
         foreach (var name in expectedNames)
         {
             Assert.Contains(name, toolNames);
+        }
+    }
+
+    [Fact]
+    public void GetServiceFunctions_DoesNotContainRemovedTools()
+    {
+        var removedNames = new[] { "archive", "add_label", "remove_label", "get_labels", "star" };
+
+        var tools = _service.GetServiceFunctions();
+        var toolNames = tools.Select(t => t.FunctionName).ToList();
+
+        foreach (var name in removedNames)
+        {
+            Assert.DoesNotContain(name, toolNames);
         }
     }
 
@@ -118,30 +120,37 @@ public class EmailServiceTests
     [Fact]
     public async Task ProcessRequest_RoutesToGetEmail()
     {
-        // Arrange
         var request = new ServiceRequest { Method = "get_email", MessageId = "test-id-123" };
 
-        // Act & Assert - should not throw "not supported", should attempt IMAP connection
-        // (will fail with auth/connection error since no real server, but that proves routing works)
         var ex = await Assert.ThrowsAnyAsync<Exception>(
             () => _service.ProcessRequest(request, _config, _mockNotification.Object));
-        // The error should be about IMAP connection, NOT "not supported"
         Assert.DoesNotContain("not supported", ex.Message, StringComparison.OrdinalIgnoreCase);
     }
 
     [Fact]
     public async Task ProcessRequest_ReturnsNotSupported_ForInvalidMethod()
     {
-        // Arrange
         var request = new ServiceRequest { Method = "invalid_method" };
 
-        // Act
         var result = await _service.ProcessRequest(request, _config, _mockNotification.Object);
 
-        // Assert
         var msgProp = result.GetType().GetProperty("Message");
         Assert.NotNull(msgProp);
         Assert.Contains("not supported", (string)msgProp.GetValue(result));
+    }
+
+    [Fact]
+    public async Task ProcessRequest_ReturnsNotSupported_ForRemovedMethods()
+    {
+        foreach (var method in new[] { "archive", "add_label", "remove_label", "get_labels", "star" })
+        {
+            var request = new ServiceRequest { Method = method };
+            var result = await _service.ProcessRequest(request, _config, _mockNotification.Object);
+
+            var msgProp = result.GetType().GetProperty("Message");
+            Assert.NotNull(msgProp);
+            Assert.Contains("not supported", (string)msgProp.GetValue(result));
+        }
     }
 
     #endregion
@@ -151,10 +160,8 @@ public class EmailServiceTests
     [Fact]
     public async Task GetEmail_ThrowsWhenMessageIdMissing()
     {
-        // Arrange
         var request = new ServiceRequest { MessageId = null };
 
-        // Act & Assert
         var ex = await Assert.ThrowsAsync<Exception>(
             () => _service.GetEmail(_config, request));
         Assert.Contains("MessageId is required", ex.Message);
@@ -163,10 +170,8 @@ public class EmailServiceTests
     [Fact]
     public async Task DeleteEmail_ThrowsWhenMessageIdMissing()
     {
-        // Arrange
         var request = new ServiceRequest { MessageId = null };
 
-        // Act & Assert
         var ex = await Assert.ThrowsAsync<Exception>(
             () => _service.DeleteEmail(_config, request));
         Assert.Contains("MessageId is required", ex.Message);
@@ -175,10 +180,8 @@ public class EmailServiceTests
     [Fact]
     public async Task SendEmail_ThrowsWhenNoToOrMessageId()
     {
-        // Arrange
         var request = new ServiceRequest { To = null, MessageId = null };
 
-        // Act & Assert
         var ex = await Assert.ThrowsAsync<Exception>(
             () => _service.SendEmail(_config, request));
         Assert.Contains("Must supply", ex.Message);
@@ -187,10 +190,8 @@ public class EmailServiceTests
     [Fact]
     public async Task MoveToFolder_ThrowsWhenMessageIdMissing()
     {
-        // Arrange
         var request = new ServiceRequest { Folder = "Archive" };
 
-        // Act & Assert
         var ex = await Assert.ThrowsAsync<Exception>(
             () => _service.MoveToFolder(_config, request));
         Assert.Contains("MessageId is required", ex.Message);
@@ -199,10 +200,8 @@ public class EmailServiceTests
     [Fact]
     public async Task MoveToFolder_ThrowsWhenFolderMissing()
     {
-        // Arrange
         var request = new ServiceRequest { MessageId = "test-id", Folder = null };
 
-        // Act & Assert
         var ex = await Assert.ThrowsAsync<Exception>(
             () => _service.MoveToFolder(_config, request));
         Assert.Contains("Folder is required", ex.Message);
@@ -211,82 +210,28 @@ public class EmailServiceTests
     [Fact]
     public async Task MarkAsRead_ThrowsWhenMessageIdMissing()
     {
-        // Arrange
         var request = new ServiceRequest();
 
-        // Act & Assert
         var ex = await Assert.ThrowsAsync<Exception>(
             () => _service.MarkAsRead(_config, request));
         Assert.Contains("MessageId is required", ex.Message);
     }
 
     [Fact]
-    public async Task AddLabel_ThrowsWhenMessageIdMissing()
+    public async Task FlagEmail_ThrowsWhenMessageIdMissing()
     {
-        // Arrange
-        var request = new ServiceRequest { Label = "Important" };
-
-        // Act & Assert
-        var ex = await Assert.ThrowsAsync<Exception>(
-            () => _service.AddLabel(_config, request));
-        Assert.Contains("MessageId is required", ex.Message);
-    }
-
-    [Fact]
-    public async Task AddLabel_ThrowsWhenLabelMissing()
-    {
-        // Arrange
-        var request = new ServiceRequest { MessageId = "test-id" };
-
-        // Act & Assert
-        var ex = await Assert.ThrowsAsync<Exception>(
-            () => _service.AddLabel(_config, request));
-        Assert.Contains("Label is required", ex.Message);
-    }
-
-    [Fact]
-    public async Task RemoveLabel_ThrowsWhenMessageIdMissing()
-    {
-        // Arrange
-        var request = new ServiceRequest { Label = "Important" };
-
-        // Act & Assert
-        var ex = await Assert.ThrowsAsync<Exception>(
-            () => _service.RemoveLabel(_config, request));
-        Assert.Contains("MessageId is required", ex.Message);
-    }
-
-    [Fact]
-    public async Task Archive_ThrowsWhenMessageIdMissing()
-    {
-        // Arrange
         var request = new ServiceRequest();
 
-        // Act & Assert
         var ex = await Assert.ThrowsAsync<Exception>(
-            () => _service.Archive(_config, request));
-        Assert.Contains("MessageId is required", ex.Message);
-    }
-
-    [Fact]
-    public async Task Star_ThrowsWhenMessageIdMissing()
-    {
-        // Arrange
-        var request = new ServiceRequest();
-
-        // Act & Assert
-        var ex = await Assert.ThrowsAsync<Exception>(
-            () => _service.Star(_config, request));
+            () => _service.FlagEmail(_config, request));
         Assert.Contains("MessageId is required", ex.Message);
     }
 
     [Fact]
     public async Task DeleteDraft_ThrowsWhenMessageIdMissing()
     {
-        // Arrange
         var request = new ServiceRequest();
 
-        // Act & Assert
         var ex = await Assert.ThrowsAsync<Exception>(
             () => _service.DeleteDraft(_config, request));
         Assert.Contains("MessageId is required", ex.Message);
@@ -295,10 +240,8 @@ public class EmailServiceTests
     [Fact]
     public async Task GetAttachments_ThrowsWhenMessageIdMissing()
     {
-        // Arrange
         var request = new ServiceRequest();
 
-        // Act & Assert
         var ex = await Assert.ThrowsAsync<Exception>(
             () => _service.GetAttachments(_config, request));
         Assert.Contains("MessageId is required", ex.Message);
@@ -307,10 +250,8 @@ public class EmailServiceTests
     [Fact]
     public async Task AddAttachmentToDraft_ThrowsWhenMessageIdMissing()
     {
-        // Arrange
         var request = new ServiceRequest();
 
-        // Act & Assert
         var ex = await Assert.ThrowsAsync<Exception>(
             () => _service.AddAttachmentToDraft(_config, request));
         Assert.Contains("MessageId is required", ex.Message);
@@ -319,10 +260,8 @@ public class EmailServiceTests
     [Fact]
     public async Task RemoveAttachmentFromDraft_ThrowsWhenMessageIdMissing()
     {
-        // Arrange
         var request = new ServiceRequest();
 
-        // Act & Assert
         var ex = await Assert.ThrowsAsync<Exception>(
             () => _service.RemoveAttachmentFromDraft(_config, request));
         Assert.Contains("MessageId is required", ex.Message);
@@ -331,13 +270,10 @@ public class EmailServiceTests
     [Fact]
     public async Task GetDrafts_DoesNotRequireMessageId()
     {
-        // Arrange - GetDrafts should NOT require MessageId (it lists all drafts)
         var request = new ServiceRequest { Account = "personal" };
 
-        // Act & Assert - should attempt IMAP, not throw validation error
         var ex = await Assert.ThrowsAnyAsync<Exception>(
             () => _service.GetDrafts(_config, request));
-        // Should fail on IMAP connection, NOT on "MessageId is required"
         Assert.DoesNotContain("MessageId is required", ex.Message);
     }
 
@@ -348,10 +284,8 @@ public class EmailServiceTests
     [Fact]
     public async Task GetEmail_UsesDefaultAccountWhenNoneSpecified()
     {
-        // Arrange
         var request = new ServiceRequest { MessageId = "test-id" };
 
-        // Act & Assert - will fail on IMAP but proves account resolution works
         var ex = await Assert.ThrowsAnyAsync<Exception>(
             () => _service.GetEmail(_config, request));
         Assert.DoesNotContain("No mail accounts found", ex.Message);
@@ -360,10 +294,8 @@ public class EmailServiceTests
     [Fact]
     public async Task GetEmail_UsesNamedAccount()
     {
-        // Arrange
         var request = new ServiceRequest { MessageId = "test-id", Account = "work" };
 
-        // Act & Assert
         var ex = await Assert.ThrowsAnyAsync<Exception>(
             () => _service.GetEmail(_config, request));
         Assert.DoesNotContain("No mail accounts found", ex.Message);
@@ -372,7 +304,6 @@ public class EmailServiceTests
     [Fact]
     public async Task GetEmail_ThrowsWhenAccountNotFound()
     {
-        // Arrange
         var configNoDefault = new ServiceConfig
         {
             Name = "test",
@@ -383,7 +314,6 @@ public class EmailServiceTests
         };
         var request = new ServiceRequest { MessageId = "test-id", Account = "nonexistent" };
 
-        // Act & Assert
         var ex = await Assert.ThrowsAsync<Exception>(
             () => _service.GetEmail(configNoDefault, request));
         Assert.Contains("No mail accounts found", ex.Message);
@@ -396,7 +326,6 @@ public class EmailServiceTests
     [Fact]
     public async Task SendEmail_RequestsConfirmation_WhenNoConfirmationId()
     {
-        // Arrange
         var request = new ServiceRequest
         {
             To = "recipient@example.com",
@@ -410,10 +339,8 @@ public class EmailServiceTests
                 It.IsAny<IPluginServiceRequest>()))
             .ReturnsAsync(new { Success = true, AwaitingConfirmation = true });
 
-        // Act
         var result = await _service.SendEmail(_config, request);
 
-        // Assert
         _mockNotification.Verify(n => n.RequestConfirmation(
             "HQ.Plugins.Email",
             It.Is<Confirmation>(c => c.ConfirmationMessage.Contains("send this email")),
@@ -423,7 +350,6 @@ public class EmailServiceTests
     [Fact]
     public async Task SendEmail_ReturnsError_WhenConfirmationIdInvalid()
     {
-        // Arrange
         var confirmId = Guid.NewGuid();
         var request = new ServiceRequest
         {
@@ -435,10 +361,8 @@ public class EmailServiceTests
             .Setup(n => n.DoesConfirmationExist(confirmId, out outConf))
             .Returns(false);
 
-        // Act
         var result = await _service.SendEmail(_config, request);
 
-        // Assert
         var successProp = result.GetType().GetProperty("Success");
         Assert.False((bool)successProp.GetValue(result));
     }
@@ -450,7 +374,6 @@ public class EmailServiceTests
     [Fact]
     public async Task DeleteEmail_RequestsConfirmation_WhenNoConfirmationId()
     {
-        // Arrange
         var request = new ServiceRequest { MessageId = "test-id" };
         _mockNotification
             .Setup(n => n.RequestConfirmation(
@@ -459,10 +382,8 @@ public class EmailServiceTests
                 It.IsAny<IPluginServiceRequest>()))
             .ReturnsAsync(new { Success = true, AwaitingConfirmation = true });
 
-        // Act
         var result = await _service.DeleteEmail(_config, request);
 
-        // Assert
         _mockNotification.Verify(n => n.RequestConfirmation(
             "HQ.Plugins.Email",
             It.Is<Confirmation>(c => c.ConfirmationMessage.Contains("delete this email")),
@@ -472,7 +393,6 @@ public class EmailServiceTests
     [Fact]
     public async Task DeleteEmail_ReturnsError_WhenConfirmationIdInvalid()
     {
-        // Arrange
         var confirmId = Guid.NewGuid();
         var request = new ServiceRequest
         {
@@ -484,12 +404,63 @@ public class EmailServiceTests
             .Setup(n => n.DoesConfirmationExist(confirmId, out outConf))
             .Returns(false);
 
-        // Act
         var result = await _service.DeleteEmail(_config, request);
 
-        // Assert
         var successProp = result.GetType().GetProperty("Success");
         Assert.False((bool)successProp.GetValue(result));
+    }
+
+    #endregion
+
+    #region RequiresConfirmation = false
+
+    [Fact]
+    public async Task SendEmail_SkipsConfirmation_WhenRequiresConfirmationFalse()
+    {
+        var noConfirmConfig = new ServiceConfig
+        {
+            Name = "test",
+            Description = "Test",
+            RequiresConfirmation = false,
+            EmailAccounts = _config.EmailAccounts
+        };
+        var request = new ServiceRequest
+        {
+            To = "recipient@example.com",
+            Subject = "Test",
+            Body = "<p>Hello</p>"
+        };
+
+        // Should skip confirmation and go straight to IMAP (which will fail on connection)
+        var ex = await Assert.ThrowsAnyAsync<Exception>(
+            () => _service.SendEmail(noConfirmConfig, request));
+        // Should NOT have called RequestConfirmation
+        _mockNotification.Verify(n => n.RequestConfirmation(
+            It.IsAny<string>(),
+            It.IsAny<Confirmation>(),
+            It.IsAny<IPluginServiceRequest>()), Times.Never);
+    }
+
+    [Fact]
+    public async Task DeleteEmail_SkipsConfirmation_WhenRequiresConfirmationFalse()
+    {
+        var noConfirmConfig = new ServiceConfig
+        {
+            Name = "test",
+            Description = "Test",
+            RequiresConfirmation = false,
+            EmailAccounts = _config.EmailAccounts
+        };
+        var request = new ServiceRequest { MessageId = "test-id" };
+
+        // Should skip confirmation and go straight to IMAP (which will fail on connection)
+        var ex = await Assert.ThrowsAnyAsync<Exception>(
+            () => _service.DeleteEmail(noConfirmConfig, request));
+        // Should NOT have called RequestConfirmation
+        _mockNotification.Verify(n => n.RequestConfirmation(
+            It.IsAny<string>(),
+            It.IsAny<Confirmation>(),
+            It.IsAny<IPluginServiceRequest>()), Times.Never);
     }
 
     #endregion
@@ -499,10 +470,8 @@ public class EmailServiceTests
     [Fact]
     public async Task GetEmailSummary_UsesDefaultAccount()
     {
-        // Arrange
         var request = new ServiceRequest();
 
-        // Act & Assert - will fail on IMAP connection, not validation
         var ex = await Assert.ThrowsAnyAsync<Exception>(
             () => _service.GetEmailSummary(_config, request));
         Assert.DoesNotContain("No mail accounts found", ex.Message);
@@ -510,18 +479,60 @@ public class EmailServiceTests
 
     #endregion
 
-    #region GetLabels
+    #region New Tools - No Store Configured
 
     [Fact]
-    public async Task GetLabels_UsesDefaultAccount()
+    public async Task SearchEmails_ReturnsNotConfigured_WhenNoVectorService()
     {
-        // Arrange
-        var request = new ServiceRequest();
+        var request = new ServiceRequest { Query = "test query" };
+        var result = await _service.SearchEmails(_config, request);
 
-        // Act & Assert
-        var ex = await Assert.ThrowsAnyAsync<Exception>(
-            () => _service.GetLabels(_config, request));
-        Assert.DoesNotContain("No mail accounts found", ex.Message);
+        var msgProp = result.GetType().GetProperty("Message");
+        Assert.NotNull(msgProp);
+        Assert.Contains("not configured", (string)msgProp.GetValue(result));
+    }
+
+    [Fact]
+    public async Task SearchEmails_ThrowsWhenQueryMissing()
+    {
+        var request = new ServiceRequest { Query = null };
+
+        var ex = await Assert.ThrowsAsync<Exception>(
+            () => _service.SearchEmails(_config, request));
+        Assert.Contains("Query is required", ex.Message);
+    }
+
+    [Fact]
+    public async Task SearchEmailsLocal_ReturnsNotConfigured_WhenNoStore()
+    {
+        var request = new ServiceRequest { SearchText = "test" };
+        var result = await _service.SearchEmailsLocal(_config, request);
+
+        var msgProp = result.GetType().GetProperty("Message");
+        Assert.NotNull(msgProp);
+        Assert.Contains("not configured", (string)msgProp.GetValue(result));
+    }
+
+    [Fact]
+    public async Task SyncEmails_ReturnsNotConfigured_WhenNoSyncEngine()
+    {
+        var request = new ServiceRequest();
+        var result = await _service.SyncEmails(_config, request);
+
+        var msgProp = result.GetType().GetProperty("Message");
+        Assert.NotNull(msgProp);
+        Assert.Contains("not configured", (string)msgProp.GetValue(result));
+    }
+
+    [Fact]
+    public async Task GetFolders_ReturnsNotConfigured_WhenNoStore()
+    {
+        var request = new ServiceRequest();
+        var result = await _service.GetFolders(_config, request);
+
+        var msgProp = result.GetType().GetProperty("Message");
+        Assert.NotNull(msgProp);
+        Assert.Contains("not configured", (string)msgProp.GetValue(result));
     }
 
     #endregion
@@ -531,7 +542,6 @@ public class EmailServiceTests
     [Fact]
     public async Task CreateDraft_UsesDefaultAccount()
     {
-        // Arrange
         var request = new ServiceRequest
         {
             To = "test@example.com",
@@ -539,7 +549,6 @@ public class EmailServiceTests
             Body = "<p>Draft body</p>"
         };
 
-        // Act & Assert - will fail on IMAP connection
         var ex = await Assert.ThrowsAnyAsync<Exception>(
             () => _service.CreateDraft(_config, request));
         Assert.DoesNotContain("No mail accounts found", ex.Message);

@@ -58,13 +58,13 @@ public class EmailServiceIntegrationTests
     [Fact]
     [Trait("Category", "Integration")]
     [Trait("Dependency", "Gmail")]
-    public async Task GetLabels_ReturnsLabels()
+    public async Task GetFolders_ReturnsFolders()
     {
         // Arrange
         var request = new ServiceRequest();
 
         // Act
-        var result = await _service.GetLabels(_config, request);
+        var result = await _service.GetFolders(_config, request);
 
         // Assert
         Assert.NotNull(result);

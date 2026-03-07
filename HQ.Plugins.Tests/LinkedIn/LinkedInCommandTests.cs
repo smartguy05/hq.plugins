@@ -9,7 +9,7 @@ public class LinkedInCommandTests
     {
         var command = new LinkedInCommand();
         var tools = command.GetToolDefinitions();
-        Assert.Equal(8, tools.Count);
+        Assert.Equal(12, tools.Count);
     }
 
     [Fact]

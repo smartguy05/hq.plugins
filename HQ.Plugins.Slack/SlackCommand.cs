@@ -141,7 +141,7 @@ public class SlackCommand : CommandBase<ServiceRequest, ServiceConfig>, INotific
             builder.RegisterBlockActionHandler<SlackNet.Blocks.ButtonAction>(SlackService.ConfirmationActionId, _service);
 
             _socketModeClient = builder.GetSocketModeClient();
-
+            
             return _service.Connect(_socketModeClient);
         }
         catch (Exception e)
@@ -197,6 +197,11 @@ public class SlackCommand : CommandBase<ServiceRequest, ServiceConfig>, INotific
     public Task Dispose()
     {
         _service?.Dispose();
+        if (_socketModeClient?.Connected ?? false)
+        {
+            _socketModeClient.Disconnect();
+        }
+        _socketModeClient?.Dispose();
         return Task.CompletedTask;
     }
 }
