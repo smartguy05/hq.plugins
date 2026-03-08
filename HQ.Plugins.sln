@@ -1,4 +1,4 @@
-
+﻿
 Microsoft Visual Studio Solution File, Format Version 12.00
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "HQ.Plugins.UseMemos", "HQ.Plugins.UseMemos\HQ.Plugins.UseMemos.csproj", "{319721ED-89DC-4275-BB54-69C7B98DACD8}"
 EndProject
@@ -39,6 +39,8 @@ EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Test_Plugin", "Test_Plugin\Test_Plugin.csproj", "{A7618DB5-91C3-445A-AC12-7E9C82994250}"
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "HQ.Plugins.Teams", "HQ.Plugins.Teams\HQ.Plugins.Teams.csproj", "{4F39D9AF-29AB-49CA-AF00-235B99F40FD8}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "HQ.Plugins.HeadlessBrowser", "HQ.Plugins.HeadlessBrowser\HQ.Plugins.HeadlessBrowser.csproj", "{FB40EFEB-E323-4F5D-BF05-A68F385690AA}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
@@ -288,6 +290,18 @@ Global
 		{4F39D9AF-29AB-49CA-AF00-235B99F40FD8}.Release|x64.Build.0 = Release|Any CPU
 		{4F39D9AF-29AB-49CA-AF00-235B99F40FD8}.Release|x86.ActiveCfg = Release|Any CPU
 		{4F39D9AF-29AB-49CA-AF00-235B99F40FD8}.Release|x86.Build.0 = Release|Any CPU
+		{FB40EFEB-E323-4F5D-BF05-A68F385690AA}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{FB40EFEB-E323-4F5D-BF05-A68F385690AA}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{FB40EFEB-E323-4F5D-BF05-A68F385690AA}.Debug|x64.ActiveCfg = Debug|Any CPU
+		{FB40EFEB-E323-4F5D-BF05-A68F385690AA}.Debug|x64.Build.0 = Debug|Any CPU
+		{FB40EFEB-E323-4F5D-BF05-A68F385690AA}.Debug|x86.ActiveCfg = Debug|Any CPU
+		{FB40EFEB-E323-4F5D-BF05-A68F385690AA}.Debug|x86.Build.0 = Debug|Any CPU
+		{FB40EFEB-E323-4F5D-BF05-A68F385690AA}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{FB40EFEB-E323-4F5D-BF05-A68F385690AA}.Release|Any CPU.Build.0 = Release|Any CPU
+		{FB40EFEB-E323-4F5D-BF05-A68F385690AA}.Release|x64.ActiveCfg = Release|Any CPU
+		{FB40EFEB-E323-4F5D-BF05-A68F385690AA}.Release|x64.Build.0 = Release|Any CPU
+		{FB40EFEB-E323-4F5D-BF05-A68F385690AA}.Release|x86.ActiveCfg = Release|Any CPU
+		{FB40EFEB-E323-4F5D-BF05-A68F385690AA}.Release|x86.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE

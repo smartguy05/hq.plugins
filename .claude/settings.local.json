@@ -11,7 +11,8 @@
       "WebFetch(domain:developer.atlassian.com)",
       "WebFetch(domain:support.atlassian.com)",
       "WebFetch(domain:community.developer.atlassian.com)",
-      "Bash(dotnet test:*)"
+      "Bash(dotnet test:*)",
+      "Bash(dotnet sln:*)"
     ]
   }
 }
