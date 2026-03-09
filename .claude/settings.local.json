@@ -14,7 +14,12 @@
       "Bash(dotnet test:*)",
       "Bash(dotnet sln:*)",
       "Bash(ls:*)",
-      "Bash(grep:*)"
+      "Bash(grep:*)",
+      "Bash(for file in ./HQ.Models/Extensions/OrchestratorRequestExtensions.cs ./HQ.Services/Orchestration/TaskScheduler.cs ./HQ.Services/Logging/NotificationService.cs ./HQ.Services/Llm/ChatService.cs ./HQ/Controllers/InteractionController.cs)",
+      "Bash(do echo \"=== $file ===\")",
+      "Read(//home/anthony/Code/hq.plugins/**)",
+      "Bash(done)",
+      "WebFetch(domain:ai.google.dev)"
     ]
   }
 }

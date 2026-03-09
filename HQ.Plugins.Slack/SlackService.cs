@@ -14,6 +14,7 @@ using SlackNet.Blocks;
 using SlackNet.Events;
 using SlackNet.Interaction;
 using SlackNet.SocketMode;
+using Microsoft.Extensions.DependencyInjection;
 using SlackNet.WebApi;
 
 namespace HQ.Plugins.Slack;
@@ -40,16 +41,18 @@ public class SlackService(
 
     public async Task Connect(ISlackSocketModeClient socketClient, int attempt = 0)
     {
+        await logger(LogLevel.Info, $"Slack Socket Mode connecting (attempt {attempt})...");
         try
         {
             await socketClient.Connect();
-            await logger(LogLevel.Info, "Slack Socket Mode connected");
+            await logger(LogLevel.Info, "Slack Socket Mode connected successfully");
         }
         catch (SlackException se) when (PermanentErrors.Contains(se.ErrorCode))
         {
             await logger(LogLevel.Error,
                 $"Slack connection failed with permanent error: {se.ErrorCode}. " +
                 "Please check your Slack plugin configuration (BotToken / AppLevelToken) and re-initialize.", se);
+            throw;
         }
         catch (Exception e)
         {
@@ -58,7 +61,7 @@ public class SlackService(
             {
                 await logger(LogLevel.Error,
                     $"Slack Socket Mode connection failed after {MaxRetries} attempts. Giving up.", e);
-                return;
+                throw;
             }
 
             var delay = Math.Min(5000 * attempt, 30000);
@@ -72,7 +75,7 @@ public class SlackService(
     public async Task Handle(MessageEvent slackEvent)
     {
         // Skip bot messages and subtypes (edits, joins, etc.)
-        if (slackEvent.BotId != null || slackEvent.Subtype != null)
+        if (slackEvent.BotId != null || (slackEvent.Subtype != null && slackEvent.Subtype != "file_share"))
             return;
 
         try
@@ -140,13 +143,19 @@ public class SlackService(
             var request = new OrchestratorRequest
             {
                 Service = config.AiPlugin,
-                ServiceRequest = serviceRequestJson
+                ServiceRequest = serviceRequestJson,
+                AgentId = config.AgentId
             };
+
+            // Add thinking indicator
+            try { await client.Reactions.AddToMessage("thinking_face", slackEvent.Channel, slackEvent.Ts); }
+            catch (Exception e) { await logger(LogLevel.Warning, $"Failed to add thinking reaction: {e.Message}"); }
 
             var tryAgain = false;
             try
             {
-                var orchestrator = ServiceResolver.GetOrchestrator();
+                using var scope = ServiceResolver.CreateScope();
+                var orchestrator = scope.ServiceProvider.GetRequiredService<IOrchestrator>();
                 var result = await orchestrator.ProcessRequest(request);
 
                 var aiResponse = result?.GetType().GetProperty("Result");
@@ -184,7 +193,8 @@ public class SlackService(
             {
                 try
                 {
-                    var orchestrator = ServiceResolver.GetOrchestrator();
+                    using var scope = ServiceResolver.CreateScope();
+                    var orchestrator = scope.ServiceProvider.GetRequiredService<IOrchestrator>();
                     var result = await orchestrator.ProcessRequest(request);
 
                     var aiResponse = result?.GetType().GetProperty("Result");
@@ -202,6 +212,10 @@ public class SlackService(
                         slackEvent.Channel);
                 }
             }
+
+            // Remove thinking indicator
+            try { await client.Reactions.RemoveFromMessage("thinking_face", slackEvent.Channel, slackEvent.Ts); }
+            catch { /* best-effort — may already be removed or message deleted */ }
         }
         catch (Exception e)
         {

@@ -7,6 +7,7 @@ using HQ.Models.Interfaces;
 using HQ.Plugins.Telegram.Models;
 using HQ.Services;
 using HQ.Services.Orchestration;
+using Microsoft.Extensions.DependencyInjection;
 using Telegram.Bot;
 using Telegram.Bot.Types;
 using Telegram.Bot.Types.Enums;
@@ -195,9 +196,13 @@ public class TelegramService(TelegramBotClient client, LogDelegate logger, Servi
                         ServiceRequest = serviceRequestJson
                     };
 
+                    try { await client.SendChatAction(lastMessage.Message.Chat.Id, ChatAction.Typing); }
+                    catch { /* best-effort typing indicator */ }
+
                     try
                     {
-                        var orchestrator = ServiceResolver.GetOrchestrator();
+                        using var scope = ServiceResolver.CreateScope();
+                        var orchestrator = scope.ServiceProvider.GetRequiredService<IOrchestrator>();
                         var result = await orchestrator.ProcessRequest(request);
                 
                         var aiResponse = result?.GetType().GetProperty("Result");

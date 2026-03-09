@@ -7,6 +7,7 @@ using HQ.Models.Interfaces;
 using HQ.Plugins.Teams.Models;
 using HQ.Services;
 using HQ.Services.Orchestration;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Bot.Builder;
 using Microsoft.Bot.Builder.Teams;
 using Microsoft.Bot.Schema;
@@ -75,13 +76,37 @@ public class TeamsBot : TeamsActivityHandler
                 PendingConfirmation = null;
             }
 
+            // Send typing indicator
+            try { await turnContext.SendActivityAsync(new Activity { Type = ActivityTypes.Typing }, cancellationToken); }
+            catch { /* best-effort typing indicator */ }
+
+            // Download file attachments
+            string fileBase64 = null;
+            var attachments = turnContext.Activity.Attachments?
+                .Where(a => a.ContentUrl != null && !a.ContentType.StartsWith("application/vnd.microsoft.card"))
+                .ToList();
+            if (attachments is { Count: > 0 })
+            {
+                var lastAttachment = attachments.Last();
+                try
+                {
+                    using var httpClient = new HttpClient();
+                    var bytes = await httpClient.GetByteArrayAsync(lastAttachment.ContentUrl);
+                    fileBase64 = Convert.ToBase64String(bytes);
+                }
+                catch (Exception e)
+                {
+                    await _logger(LogLevel.Error, $"Failed to download Teams attachment: {e.Message}", e);
+                }
+            }
+
             // Route to orchestrator
             var serviceRequest = new
             {
                 SystemPrompt = (string)null,
                 UserPrompt = messageText,
                 ConversationId = conversationId,
-                Photo = (string)null
+                Photo = fileBase64
             };
             var serviceRequestJson = JsonSerializer.Serialize(serviceRequest);
 
@@ -94,7 +119,8 @@ public class TeamsBot : TeamsActivityHandler
             var tryAgain = false;
             try
             {
-                var orchestrator = ServiceResolver.GetOrchestrator();
+                using var scope = ServiceResolver.CreateScope();
+                var orchestrator = scope.ServiceProvider.GetRequiredService<IOrchestrator>();
                 var result = await orchestrator.ProcessRequest(request);
 
                 var aiResponse = result?.GetType().GetProperty("Result");
@@ -133,7 +159,8 @@ public class TeamsBot : TeamsActivityHandler
             {
                 try
                 {
-                    var orchestrator = ServiceResolver.GetOrchestrator();
+                    using var scope = ServiceResolver.CreateScope();
+                    var orchestrator = scope.ServiceProvider.GetRequiredService<IOrchestrator>();
                     var result = await orchestrator.ProcessRequest(request);
 
                     var aiResponse = result?.GetType().GetProperty("Result");

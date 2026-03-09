@@ -28,7 +28,10 @@ public class SlackCommand : CommandBase<ServiceRequest, ServiceConfig>, INotific
 
     protected override async Task<object> DoWork(ServiceRequest serviceRequest, ServiceConfig config, IEnumerable<ToolCall> availableToolCalls)
     {
-        return await this.ProcessRequest(serviceRequest, config, NotificationService);
+        await Log(LogLevel.Info, $"Slack DoWork called with method: {serviceRequest.Method}");
+        var result = await this.ProcessRequest(serviceRequest, config, NotificationService);
+        await Log(LogLevel.Info, $"Slack DoWork completed for method: {serviceRequest.Method}");
+        return result;
     }
 
     [Display(Name = "send_slack_message")]
@@ -36,6 +39,7 @@ public class SlackCommand : CommandBase<ServiceRequest, ServiceConfig>, INotific
     [Parameters("""{"type":"object","properties":{"channelId":{"type":"string","description":"The Slack channel or DM ID to send the message to. Optional, defaults to configured notification channel."},"messageText":{"type":"string","description":"The message text to send"},"fileContent":{"type":"string","description":"Optional base64-encoded file content to attach"},"fileName":{"type":"string","description":"Optional filename for the attachment"},"fileType":{"type":"string","description":"Optional MIME type for the attachment"}},"required":["messageText"]}""")]
     public async Task<object> SendSlackMessage(ServiceConfig config, ServiceRequest serviceRequest)
     {
+        await Log(LogLevel.Info, $"SendSlackMessage called - ChannelId: {serviceRequest.ChannelId}, MessageText length: {serviceRequest.MessageText?.Length ?? 0}");
         if (string.IsNullOrEmpty(config.BotToken))
             throw new ArgumentException("Bot token is required");
 
@@ -110,7 +114,7 @@ public class SlackCommand : CommandBase<ServiceRequest, ServiceConfig>, INotific
 
     public override async Task<object> Initialize(string configString, LogDelegate log, INotificationService notificationService)
     {
-        NotificationService ??= notificationService;
+        NotificationService = notificationService;
         _staticConfirmationService = notificationService;
         await log(LogLevel.Info, "Initializing Slack");
         try
@@ -128,21 +132,39 @@ public class SlackCommand : CommandBase<ServiceRequest, ServiceConfig>, INotific
                 return null;
             }
 
-            _config ??= config;
+            _config = config;
 
             var builder = new SlackNet.SlackServiceBuilder()
                 .UseApiToken(config.BotToken)
                 .UseAppLevelToken(config.AppLevelToken);
 
-            _apiClient ??= builder.GetApiClient();
+            _apiClient = builder.GetApiClient();
             _service = new SlackService(_apiClient, log, config, notificationService, Confirm);
 
             builder.RegisterEventHandler<SlackNet.Events.MessageEvent>(_service);
             builder.RegisterBlockActionHandler<SlackNet.Blocks.ButtonAction>(SlackService.ConfirmationActionId, _service);
 
-            _socketModeClient = builder.GetSocketModeClient();
-            
-            return _service.Connect(_socketModeClient);
+            try
+            {
+                _socketModeClient = builder.GetSocketModeClient();
+                await log(LogLevel.Info, "Slack Socket Mode client created, connecting...");
+            }
+            catch (Exception ex)
+            {
+                await log(LogLevel.Error, $"Failed to create Socket Mode client: {ex.Message}", ex);
+                throw;
+            }
+
+            try
+            {
+                await _service.Connect(_socketModeClient);
+                return new { Success = true, Message = "Slack initialized and connected" };
+            }
+            catch (Exception ex)
+            {
+                await log(LogLevel.Error, $"Failed during Connect: {ex.Message}", ex);
+                throw;
+            }
         }
         catch (Exception e)
         {
@@ -197,11 +219,16 @@ public class SlackCommand : CommandBase<ServiceRequest, ServiceConfig>, INotific
     public Task Dispose()
     {
         _service?.Dispose();
+        _service = null;
         if (_socketModeClient?.Connected ?? false)
         {
             _socketModeClient.Disconnect();
         }
         _socketModeClient?.Dispose();
+        _socketModeClient = null;
+        _apiClient = null;
+        _config = null;
+        _staticConfirmationService = null;
         return Task.CompletedTask;
     }
 }

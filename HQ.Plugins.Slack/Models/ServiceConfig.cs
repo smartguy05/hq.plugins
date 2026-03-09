@@ -8,6 +8,11 @@ public class ServiceConfig : IPluginConfig
     public string Name { get; set; }
     public string Description { get; set; }
 
+    /// <summary>
+    /// Injected by the host during initialization — identifies the agent that owns this plugin config.
+    /// </summary>
+    public Guid? AgentId { get; set; }
+
     [Tooltip("Slack app-level token starting with xapp-. Found under Basic Information > App-Level Tokens.")]
     public string AppLevelToken { get; set; }
 
