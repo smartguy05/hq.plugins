@@ -1,7 +1,6 @@
 ﻿using System.ComponentModel;
 using System.ComponentModel.DataAnnotations;
 using System.Globalization;
-using System.Reflection;
 using HQ.Models;
 using HQ.Models.Enums;
 using HQ.Models.Helpers;
@@ -9,10 +8,11 @@ using HQ.Models.Interfaces;
 using HQ.Plugins.GoogleCalendar.Exceptions;
 using HQ.Plugins.GoogleCalendar.Models;
 using Google.Apis.Auth.OAuth2;
+using Google.Apis.Auth.OAuth2.Flows;
+using Google.Apis.Auth.OAuth2.Responses;
 using Google.Apis.Calendar.v3;
 using Google.Apis.Calendar.v3.Data;
 using Google.Apis.Services;
-using Google.Apis.Util.Store;
 
 namespace HQ.Plugins.GoogleCalendar;
 
@@ -24,39 +24,23 @@ public class CalService
     public CalService(ServiceConfig config, LogDelegate logDelegate)
     {
         _logger = logDelegate;
-        var directory = $"{Path.GetDirectoryName(Assembly.GetExecutingAssembly().Location)}/GoogleCalendar";
-        var files = Directory.GetFiles(directory, "*.TokenResponse-user");
-        ICredential credential = null;
 
-        if (files.Any())
+        var flow = new GoogleAuthorizationCodeFlow(new GoogleAuthorizationCodeFlow.Initializer
         {
-            if (files.Length == 1)
-            {
-                var fileName = files[0];
-                credential = GoogleCredential.FromFile($"{directory}/{fileName}")
-                    .CreateScoped(CalendarService.Scope.Calendar);   
-            }
-            else
-            {
-                foreach (var file in files)
-                {
-                    File.Delete(file);
-                }
-            }
-        }
-        
-        credential ??= GoogleWebAuthorizationBroker.AuthorizeAsync(
-            new ClientSecrets
+            ClientSecrets = new ClientSecrets
             {
                 ClientId = config.Credentials.ClientId,
                 ClientSecret = config.Credentials.ClientSecret
-            }, new[] { CalendarService.Scope.Calendar },
-            config.Credentials.GoogleUser,
-            CancellationToken.None,
-            new FileDataStore(directory, true),
-            new LocalServerCodeReceiver(config.LocalApiUrl)).Result;
+            },
+            Scopes = [CalendarService.Scope.Calendar]
+        });
 
-        _calendarService = new CalendarService(new BaseClientService.Initializer()
+        var credential = new UserCredential(flow, config.Credentials.GoogleUser, new TokenResponse
+        {
+            RefreshToken = config.Credentials.RefreshToken
+        });
+
+        _calendarService = new CalendarService(new BaseClientService.Initializer
         {
             HttpClientInitializer = credential,
             ApplicationName = "Ai Orchestrator - Google Calendar Plugin",

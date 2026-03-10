@@ -14,7 +14,7 @@ namespace HQ.Plugins.Telegram;
 
 public class TelegramCommand: CommandBase<ServiceRequest, ServiceConfig>, INotificationPlugin
 {
-    public override string Name => "HQ.Plugins.Telegram";
+    public override string Name => "Telegram";
     public override string Description => "A plugin to send and receive telegram messages";
     protected override INotificationService NotificationService { get; set; }
     private static TelegramService _service;

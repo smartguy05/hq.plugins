@@ -1,0 +1,33 @@
+{
+  "permissions": {
+    "allow": [
+      "WebSearch",
+      "WebFetch(domain:www.nuget.org)",
+      "WebFetch(domain:github.com)",
+      "WebFetch(domain:raw.githubusercontent.com)",
+      "Bash(dotnet build:*)",
+      "Bash(dotnet nuget:*)",
+      "Bash(dotnet add:*)",
+      "WebFetch(domain:developer.atlassian.com)",
+      "WebFetch(domain:support.atlassian.com)",
+      "WebFetch(domain:community.developer.atlassian.com)",
+      "Bash(dotnet test:*)",
+      "Bash(dotnet sln:*)",
+      "Bash(ls:*)",
+      "Bash(grep:*)",
+      "Bash(for file in ./HQ.Models/Extensions/OrchestratorRequestExtensions.cs ./HQ.Services/Orchestration/TaskScheduler.cs ./HQ.Services/Logging/NotificationService.cs ./HQ.Services/Llm/ChatService.cs ./HQ/Controllers/InteractionController.cs)",
+      "Bash(do echo \"=== $file ===\")",
+      "Read(//home/anthony/Code/hq.plugins/**)",
+      "Bash(done)",
+      "WebFetch(domain:ai.google.dev)",
+      "Bash(/tmp/test.cs:*)",
+      "Read(//tmp/**)",
+      "WebFetch(domain:www.upwork.com)",
+      "WebFetch(domain:rapidapi.com)",
+      "WebFetch(domain:nubela.co)",
+      "WebFetch(domain:en.blog.mantiks.io)",
+      "Bash(dotnet tool:*)",
+      "Bash(npx tsc:*)"
+    ]
+  }
+}

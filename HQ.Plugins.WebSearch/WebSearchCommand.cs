@@ -13,7 +13,7 @@ namespace HQ.Plugins.WebSearch;
 
 public class WebSearchCommand: CommandBase<ServiceRequest, ServiceConfig>
 {
-    public override string Name => "HQ.Plugins.WebSearch";
+    public override string Name => "Web Search";
     public override string Description => "A plugin to allow searching the web";
     protected override INotificationService NotificationService { get; set; }
 
@@ -32,6 +32,12 @@ public class WebSearchCommand: CommandBase<ServiceRequest, ServiceConfig>
     [Parameters("""{"type":"object","properties":{"query":{"type":"string","description":"The search query to look up on the web"},"maxResults":{"type":"integer","description":"Maximum number of results to return. Defaults to 5."}},"required":["query"]}""")]
     public async Task<object> WebSearch(ServiceConfig config, ServiceRequest serviceRequest)
     {
+        if (string.IsNullOrWhiteSpace(config.WebSearchUrl))
+        {
+            await Log(LogLevel.Warning, "WebSearchUrl is not configured");
+            return new { Success = false, Error = "WebSearchUrl is not configured" };
+        }
+
         using var httpClient = new HttpClient();
         httpClient.DefaultRequestHeaders.Accept.Add(
             new MediaTypeWithQualityHeaderValue("application/json"));

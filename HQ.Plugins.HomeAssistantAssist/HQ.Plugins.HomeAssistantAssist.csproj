@@ -17,10 +17,6 @@
 	</PropertyGroup>
 
 	<ItemGroup>
-		<Reference Include="HQ.Models">
-			<HintPath>..\..\hq\HQ\bin\Debug\net9.0\HQ.Models.dll</HintPath>
-			<Private>false</Private>
-			<ExcludeAssets>runtime</ExcludeAssets>
-		</Reference>
+		<PackageReference Include="HQ.Models" Version="1.4.3" ExcludeAssets="runtime" PrivateAssets="none" />
 	</ItemGroup>
 </Project>

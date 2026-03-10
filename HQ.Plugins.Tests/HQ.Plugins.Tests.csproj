@@ -1,0 +1,47 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+    <PropertyGroup>
+        <TargetFramework>net9.0</TargetFramework>
+        <ImplicitUsings>enable</ImplicitUsings>
+        <Nullable>disable</Nullable>
+        <IsPackable>false</IsPackable>
+        <IsTestProject>true</IsTestProject>
+    </PropertyGroup>
+
+    <ItemGroup>
+        <PackageReference Include="coverlet.collector" Version="6.0.0" />
+        <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.8.0" />
+        <PackageReference Include="Moq" Version="4.20.70" />
+        <PackageReference Include="xunit" Version="2.5.3" />
+        <PackageReference Include="xunit.runner.visualstudio" Version="2.5.3" />
+        <PackageReference Include="ChromaDB.Client" Version="1.0.0" />
+        <PackageReference Include="Microsoft.Data.Sqlite" Version="9.0.0" />
+    </ItemGroup>
+
+    <ItemGroup>
+        <ProjectReference Include="..\HQ.Logging.FileLogger\HQ.Logging.FileLogger.csproj" />
+        <ProjectReference Include="..\HQ.Plugins.Email\HQ.Plugins.Email.csproj" />
+        <ProjectReference Include="..\HQ.Plugins.GoogleCalendar\HQ.Plugins.GoogleCalendar.csproj" />
+        <ProjectReference Include="..\HQ.Plugins.HomeAssistantAssist\HQ.Plugins.HomeAssistantAssist.csproj" />
+        <ProjectReference Include="..\HQ.Plugins.Jira\HQ.Plugins.Jira.csproj" />
+        <ProjectReference Include="..\HQ.Plugins.Memories\HQ.Plugins.Memories.csproj" />
+        <ProjectReference Include="..\HQ.Plugins.HubSpot\HQ.Plugins.HubSpot.csproj" />
+        <ProjectReference Include="..\HQ.Plugins.LinkedIn\HQ.Plugins.LinkedIn.csproj" />
+        <ProjectReference Include="..\HQ.Plugins.PythonRunner\HQ.Plugins.PythonRunner.csproj" />
+        <ProjectReference Include="..\HQ.Plugins.ReportGenerator\HQ.Plugins.ReportGenerator.csproj" />
+        <ProjectReference Include="..\HQ.Plugins.FileStorage\HQ.Plugins.FileStorage.csproj" />
+        <ProjectReference Include="..\HQ.Plugins.Slack\HQ.Plugins.Slack.csproj" />
+        <PackageReference Include="HQ.Models" Version="1.4.3" />
+        <ProjectReference Include="..\HQ.Plugins.SupportChannelKb\HQ.Plugins.SupportChannelKb.csproj" />
+        <ProjectReference Include="..\HQ.Plugins.Teams\HQ.Plugins.Teams.csproj" />
+        <ProjectReference Include="..\HQ.Plugins.Telegram\HQ.Plugins.Telegram.csproj" />
+        <ProjectReference Include="..\HQ.Plugins.UseMemos\HQ.Plugins.UseMemos.csproj" />
+        <ProjectReference Include="..\HQ.Plugins.WebSearch\HQ.Plugins.WebSearch.csproj" />
+        <ProjectReference Include="..\Test_Plugin\Test_Plugin.csproj" />
+    </ItemGroup>
+
+    <ItemGroup>
+        <Using Include="Xunit" />
+    </ItemGroup>
+
+</Project>
