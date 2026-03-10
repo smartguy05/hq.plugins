@@ -29,10 +29,9 @@
         <ProjectReference Include="..\HQ.Plugins.LinkedIn\HQ.Plugins.LinkedIn.csproj" />
         <ProjectReference Include="..\HQ.Plugins.PythonRunner\HQ.Plugins.PythonRunner.csproj" />
         <ProjectReference Include="..\HQ.Plugins.ReportGenerator\HQ.Plugins.ReportGenerator.csproj" />
-        <ProjectReference Include="..\HQ.Plugins.JobBoard\HQ.Plugins.JobBoard.csproj" />
         <ProjectReference Include="..\HQ.Plugins.FileStorage\HQ.Plugins.FileStorage.csproj" />
         <ProjectReference Include="..\HQ.Plugins.Slack\HQ.Plugins.Slack.csproj" />
-        <PackageReference Include="HQ.Models" Version="1.4.1" />
+        <PackageReference Include="HQ.Models" Version="1.4.3" />
         <ProjectReference Include="..\HQ.Plugins.SupportChannelKb\HQ.Plugins.SupportChannelKb.csproj" />
         <ProjectReference Include="..\HQ.Plugins.Teams\HQ.Plugins.Teams.csproj" />
         <ProjectReference Include="..\HQ.Plugins.Telegram\HQ.Plugins.Telegram.csproj" />

@@ -15,7 +15,7 @@ public record ServiceConfig : IPluginConfig
     public int DefaultTimeoutMs { get; set; } = 30000;
 
     [Tooltip("Custom user agent string. Leave blank for default Chromium UA.")]
-    public string UserAgent { get; set; }
+    public string UserAgent { get; set; } = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36";
 
     [Tooltip("Browser viewport width in pixels (default 1280).")]
     public int ViewportWidth { get; set; } = 1280;

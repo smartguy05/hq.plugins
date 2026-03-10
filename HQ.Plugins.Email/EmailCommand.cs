@@ -24,8 +24,16 @@ public class EmailCommand: CommandBase<ServiceRequest,ServiceConfig>
 
     protected override async Task<object> DoWork(ServiceRequest serviceRequest, ServiceConfig config, IEnumerable<ToolCall> enumerableToolCalls)
     {
-        var emailService = new EmailService(NotificationService, _store, _vectorService, _syncEngine);
-        return await emailService.ProcessRequest(serviceRequest, config, NotificationService);
+        try
+        {
+            var emailService = new EmailService(NotificationService, _store, _vectorService, _syncEngine, Logger);
+            return await emailService.ProcessRequest(serviceRequest, config, NotificationService);
+        }
+        catch (Exception e)
+        {
+            await Log(LogLevel.Error, $"Error executing action '{serviceRequest.Method}'", e);
+            return new { Success = false, Message = $"Error: {e.Message}" };
+        }
     }
 
     public override async Task<object> Initialize(string configString, LogDelegate logFunction, INotificationService notificationService)

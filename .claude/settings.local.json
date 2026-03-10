@@ -19,7 +19,15 @@
       "Bash(do echo \"=== $file ===\")",
       "Read(//home/anthony/Code/hq.plugins/**)",
       "Bash(done)",
-      "WebFetch(domain:ai.google.dev)"
+      "WebFetch(domain:ai.google.dev)",
+      "Bash(/tmp/test.cs:*)",
+      "Read(//tmp/**)",
+      "WebFetch(domain:www.upwork.com)",
+      "WebFetch(domain:rapidapi.com)",
+      "WebFetch(domain:nubela.co)",
+      "WebFetch(domain:en.blog.mantiks.io)",
+      "Bash(dotnet tool:*)",
+      "Bash(npx tsc:*)"
     ]
   }
 }

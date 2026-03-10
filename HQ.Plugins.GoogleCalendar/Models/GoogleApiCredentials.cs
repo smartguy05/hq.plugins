@@ -12,4 +12,7 @@ public record GoogleApiCredentials
 
     [Tooltip("Google account email to access calendars for, e.g. user@gmail.com")]
     public string GoogleUser { get; init; }
+
+    [Tooltip("OAuth 2.0 Refresh Token from Google OAuth Playground")]
+    public string RefreshToken { get; init; }
 }

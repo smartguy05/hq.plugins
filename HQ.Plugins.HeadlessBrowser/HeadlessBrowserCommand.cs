@@ -3,6 +3,7 @@ using HQ.Models.Extensions;
 using HQ.Models.Interfaces;
 using HQ.Models.Tools;
 using HQ.Plugins.HeadlessBrowser.Models;
+using Microsoft.Playwright;
 
 namespace HQ.Plugins.HeadlessBrowser;
 
@@ -17,6 +18,24 @@ public class HeadlessBrowserCommand : CommandBase<ServiceRequest, ServiceConfig>
     public override List<ToolCall> GetToolDefinitions()
     {
         return ServiceExtensions.GetServiceToolCalls<HeadlessBrowserService>();
+    }
+
+    public override async Task<object> Initialize(string configString, LogDelegate logFunction, INotificationService notificationService)
+    {
+        await base.Initialize(configString, logFunction, notificationService);
+
+        try
+        {
+            var exitCode = Program.Main(["install", "chromium"]);
+            if (exitCode != 0)
+                await logFunction(LogLevel.Warning, $"Playwright browser install returned exit code {exitCode}");
+        }
+        catch (Exception ex)
+        {
+            await logFunction(LogLevel.Warning, $"Failed to install Playwright browsers: {ex.Message}");
+        }
+
+        return null;
     }
 
     protected override async Task<object> DoWork(ServiceRequest serviceRequest, ServiceConfig config, IEnumerable<ToolCall> availableToolCalls)

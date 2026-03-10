@@ -10,7 +10,4 @@ public record ServiceConfig: IPluginConfig
 
     [Tooltip("Google OAuth 2.0 credentials for calendar access")]
     public GoogleApiCredentials Credentials { get; set; }
-
-    [Tooltip("URL of the local Google Calendar API proxy, e.g. http://127.0.0.1:5100")]
-    public string LocalApiUrl { get; set; }
 }

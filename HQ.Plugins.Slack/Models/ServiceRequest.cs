@@ -14,4 +14,5 @@ public class ServiceRequest : IPluginServiceRequest
     public string FileName { get; set; }
     public string FileType { get; set; }
     public string FileId { get; set; }
+    public string UserIds { get; set; }
 }

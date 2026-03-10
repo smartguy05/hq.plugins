@@ -4,6 +4,7 @@ using System.Text.Json;
 using System.Text.RegularExpressions;
 using System.Web;
 using HQ.Models;
+using HQ.Models.Enums;
 using HQ.Models.Helpers;
 using HQ.Models.Interfaces;
 using HQ.Plugins.Email.Data;
@@ -22,15 +23,18 @@ public class EmailService
     private readonly LocalEmailStore _store;
     private readonly EmailVectorService _vectorService;
     private readonly EmailSyncEngine _syncEngine;
+    private readonly LogDelegate _log;
     private const string PluginName = "HQ.Plugins.Email";
 
     public EmailService(INotificationService notificationService = null,
-        LocalEmailStore store = null, EmailVectorService vectorService = null, EmailSyncEngine syncEngine = null)
+        LocalEmailStore store = null, EmailVectorService vectorService = null,
+        EmailSyncEngine syncEngine = null, LogDelegate log = null)
     {
         _notificationService = notificationService;
         _store = store;
         _vectorService = vectorService;
         _syncEngine = syncEngine;
+        _log = log;
     }
 
     #region Private Helpers
@@ -918,8 +922,11 @@ public class EmailService
 
         if (config.RequiresConfirmation)
         {
-            // Confirmation flow
-            if (string.IsNullOrWhiteSpace(request.ConfirmationId))
+            if (_notificationService == null)
+            {
+                _log?.Invoke(LogLevel.Warning, "Skipping confirmation — no notification service configured");
+            }
+            else if (string.IsNullOrWhiteSpace(request.ConfirmationId))
             {
                 var confirmation = new Confirmation
                 {
@@ -934,9 +941,10 @@ public class EmailService
                 };
                 return await _notificationService.RequestConfirmation(PluginName, confirmation, request);
             }
-
-            if (!_notificationService.DoesConfirmationExist(Guid.Parse(request.ConfirmationId), out _))
+            else if (!_notificationService.DoesConfirmationExist(Guid.Parse(request.ConfirmationId), out _))
+            {
                 return new { Success = false, Error = "Unable to send email without valid confirmation" };
+            }
         }
 
         return await ExecuteSendEmailAsync(config, request);
@@ -983,9 +991,7 @@ public class EmailService
         try
         {
             await smtpClient.SendAsync(message);
-            return _notificationService != null
-                ? await _notificationService.SendNotification("Email Sent!")
-                : new { Success = true, Message = "Email Sent!" };
+            return new { Success = true, Message = "Email Sent!" };
         }
         finally
         {
@@ -1018,8 +1024,11 @@ public class EmailService
 
         if (config.RequiresConfirmation)
         {
-            // Confirmation flow
-            if (string.IsNullOrWhiteSpace(request.ConfirmationId))
+            if (_notificationService == null)
+            {
+                _log?.Invoke(LogLevel.Warning, "Skipping confirmation — no notification service configured");
+            }
+            else if (string.IsNullOrWhiteSpace(request.ConfirmationId))
             {
                 return await _notificationService.RequestConfirmation(
                     PluginName,
@@ -1036,9 +1045,10 @@ public class EmailService
                     },
                     request);
             }
-
-            if (!_notificationService.DoesConfirmationExist(Guid.Parse(request.ConfirmationId), out _))
+            else if (!_notificationService.DoesConfirmationExist(Guid.Parse(request.ConfirmationId), out _))
+            {
                 return new { Success = false, Error = "Unable to delete email without valid confirmation" };
+            }
         }
 
         return await ExecuteDeleteEmailAsync(config, request);
@@ -1073,9 +1083,9 @@ public class EmailService
             }
 
             var message = deletedCount > 0 ? "Email(s) Deleted!" : "Unable to delete email(s)!";
-            return _notificationService != null
-                ? await _notificationService.SendNotification(message)
-                : new { Success = true, Message = message };
+            if (config.RequiresConfirmation && _notificationService != null)
+                return await _notificationService.SendNotification(message);
+            return new { Success = true, Message = message };
         }
         finally
         {

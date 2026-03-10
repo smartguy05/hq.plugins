@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using System.ComponentModel;
 using System.ComponentModel.DataAnnotations;
 using HQ.Models;
@@ -15,11 +16,36 @@ public class SlackCommand : CommandBase<ServiceRequest, ServiceConfig>, INotific
     public override string Name => "Slack";
     public override string Description => "A plugin to send and receive Slack messages";
     protected override INotificationService NotificationService { get; set; }
-    private static SlackService _service;
-    private static SlackNet.ISlackApiClient _apiClient;
-    private static SlackNet.ISlackSocketModeClient _socketModeClient;
-    private static ServiceConfig _config;
-    private static INotificationService _staticConfirmationService;
+
+    /// <summary>
+    /// Per-connection state keyed by bot user ID (from auth.test). This is the stable identity
+    /// of a Slack connection — it doesn't depend on mutable instance fields or agent context
+    /// that may not be available during incoming Socket Mode events.
+    /// </summary>
+    private static readonly ConcurrentDictionary<string, SlackConnectionState> ConnectionsByBotUser = new();
+
+    /// <summary>
+    /// Reverse lookup: AgentId → botUserId, so outgoing paths (tool calls, confirmations)
+    /// that only have an AgentId can find the right connection.
+    /// </summary>
+    private static readonly ConcurrentDictionary<Guid, string> AgentToBotUserMap = new();
+
+    private class SlackConnectionState
+    {
+        public SlackService Service;
+        public SlackNet.ISlackApiClient ApiClient;
+        public SlackNet.ISlackSocketModeClient SocketModeClient;
+        public ServiceConfig Config;
+        public INotificationService ConfirmationService;
+        public string BotUserId;
+        public Guid? AgentId;
+    }
+
+    /// <summary>
+    /// The bot user ID for the connection this instance initialized. Set once in Initialize(),
+    /// used in Dispose() to find the right connection to tear down.
+    /// </summary>
+    private string _myBotUserId;
 
     public override List<ToolCall> GetToolDefinitions()
     {
@@ -48,11 +74,11 @@ public class SlackCommand : CommandBase<ServiceRequest, ServiceConfig>, INotific
             serviceRequest.ChannelId = config.NotificationChannelId;
         }
 
-        _service = GetSlackService(config, NotificationService, Log);
+        var service = GetSlackService(config, NotificationService, Log);
 
         if (!string.IsNullOrWhiteSpace(serviceRequest.FileContent) && !string.IsNullOrWhiteSpace(serviceRequest.FileName))
         {
-            var uploadResult = await _service.UploadFile(
+            var uploadResult = await service.UploadFile(
                 serviceRequest.FileContent,
                 serviceRequest.FileName,
                 serviceRequest.FileType,
@@ -60,13 +86,13 @@ public class SlackCommand : CommandBase<ServiceRequest, ServiceConfig>, INotific
 
             if (!string.IsNullOrWhiteSpace(serviceRequest.MessageText))
             {
-                await _service.SendMessage(serviceRequest.MessageText, serviceRequest.ChannelId);
+                await service.SendMessage(serviceRequest.MessageText, serviceRequest.ChannelId);
             }
 
             return uploadResult;
         }
 
-        return await _service.SendMessage(serviceRequest.MessageText, serviceRequest.ChannelId);
+        return await service.SendMessage(serviceRequest.MessageText, serviceRequest.ChannelId);
     }
 
     [Display(Name = "upload_slack_file")]
@@ -77,9 +103,9 @@ public class SlackCommand : CommandBase<ServiceRequest, ServiceConfig>, INotific
         if (string.IsNullOrEmpty(config.BotToken))
             throw new ArgumentException("Bot token is required");
 
-        _service = GetSlackService(config, NotificationService, Log);
+        var service = GetSlackService(config, NotificationService, Log);
 
-        return await _service.UploadFile(
+        return await service.UploadFile(
             serviceRequest.FileContent,
             serviceRequest.FileName,
             serviceRequest.FileType,
@@ -94,9 +120,35 @@ public class SlackCommand : CommandBase<ServiceRequest, ServiceConfig>, INotific
         if (string.IsNullOrEmpty(config.BotToken))
             throw new ArgumentException("Bot token is required");
 
-        _service = GetSlackService(config, NotificationService, Log);
+        var service = GetSlackService(config, NotificationService, Log);
 
-        return await _service.DownloadFile(serviceRequest.FileId);
+        return await service.DownloadFile(serviceRequest.FileId);
+    }
+
+    [Display(Name = "open_slack_dm")]
+    [Description("Opens or resumes a direct message conversation with one or more Slack users. Returns the DM channel ID that can be used with send_slack_message. For a single user, opens a 1:1 DM. For multiple users, opens a group DM.")]
+    [Parameters("""{"type":"object","properties":{"userIds":{"type":"string","description":"Comma-separated Slack user IDs to open a DM with"}},"required":["userIds"]}""")]
+    public async Task<object> OpenSlackDm(ServiceConfig config, ServiceRequest serviceRequest)
+    {
+        if (string.IsNullOrEmpty(config.BotToken))
+            throw new ArgumentException("Bot token is required");
+
+        var service = GetSlackService(config, NotificationService, Log);
+
+        return await service.OpenConversation(serviceRequest.UserIds);
+    }
+
+    [Display(Name = "list_slack_users")]
+    [Description("Lists workspace users with their IDs, names, and display names. Use this to find user IDs for opening DMs.")]
+    [Parameters("""{"type":"object","properties":{}}""")]
+    public async Task<object> ListSlackUsers(ServiceConfig config, ServiceRequest serviceRequest)
+    {
+        if (string.IsNullOrEmpty(config.BotToken))
+            throw new ArgumentException("Bot token is required");
+
+        var service = GetSlackService(config, NotificationService, Log);
+
+        return await service.ListUsers();
     }
 
     [Display(Name = "list_slack_channels")]
@@ -107,15 +159,14 @@ public class SlackCommand : CommandBase<ServiceRequest, ServiceConfig>, INotific
         if (string.IsNullOrEmpty(config.BotToken))
             throw new ArgumentException("Bot token is required");
 
-        _service = GetSlackService(config, NotificationService, Log);
+        var service = GetSlackService(config, NotificationService, Log);
 
-        return await _service.ListChannels();
+        return await service.ListChannels();
     }
 
     public override async Task<object> Initialize(string configString, LogDelegate log, INotificationService notificationService)
     {
         NotificationService = notificationService;
-        _staticConfirmationService = notificationService;
         await log(LogLevel.Info, "Initializing Slack");
         try
         {
@@ -132,21 +183,39 @@ public class SlackCommand : CommandBase<ServiceRequest, ServiceConfig>, INotific
                 return null;
             }
 
-            _config = config;
-
             var builder = new SlackNet.SlackServiceBuilder()
                 .UseApiToken(config.BotToken)
                 .UseAppLevelToken(config.AppLevelToken);
 
-            _apiClient = builder.GetApiClient();
-            _service = new SlackService(_apiClient, log, config, notificationService, Confirm);
+            var apiClient = builder.GetApiClient();
 
-            builder.RegisterEventHandler<SlackNet.Events.MessageEvent>(_service);
-            builder.RegisterBlockActionHandler<SlackNet.Blocks.ButtonAction>(SlackService.ConfirmationActionId, _service);
+            var authResponse = await apiClient.Auth.Test();
+            var botUserId = authResponse.UserId;
+            _myBotUserId = botUserId;
+            await log(LogLevel.Info, $"Slack bot user ID: {botUserId} (agent: {config.AgentId})");
+
+            // Store connection state keyed by the bot user ID — the stable connection identity
+            var conn = ConnectionsByBotUser.GetOrAdd(botUserId, _ => new SlackConnectionState());
+            conn.ApiClient = apiClient;
+            conn.Config = config;
+            conn.ConfirmationService = notificationService;
+            conn.BotUserId = botUserId;
+            conn.AgentId = config.AgentId;
+
+            // Reverse map so outgoing paths can find the connection by AgentId
+            if (config.AgentId.HasValue)
+                AgentToBotUserMap[config.AgentId.Value] = botUserId;
+
+            conn.Service = new SlackService(apiClient, log, config, notificationService,
+                (confirmationId, value) => ConfirmForBotUser(confirmationId, value, botUserId), botUserId);
+
+            builder.RegisterEventHandler<SlackNet.Events.MessageEvent>(conn.Service);
+            builder.RegisterBlockActionHandler<SlackNet.Blocks.ButtonAction>($"{SlackService.ConfirmationActionId}_0", conn.Service);
+            builder.RegisterBlockActionHandler<SlackNet.Blocks.ButtonAction>($"{SlackService.ConfirmationActionId}_1", conn.Service);
 
             try
             {
-                _socketModeClient = builder.GetSocketModeClient();
+                conn.SocketModeClient = builder.GetSocketModeClient();
                 await log(LogLevel.Info, "Slack Socket Mode client created, connecting...");
             }
             catch (Exception ex)
@@ -157,7 +226,7 @@ public class SlackCommand : CommandBase<ServiceRequest, ServiceConfig>, INotific
 
             try
             {
-                await _service.Connect(_socketModeClient);
+                await conn.Service.Connect(conn.SocketModeClient);
                 return new { Success = true, Message = "Slack initialized and connected" };
             }
             catch (Exception ex)
@@ -173,62 +242,129 @@ public class SlackCommand : CommandBase<ServiceRequest, ServiceConfig>, INotific
         }
     }
 
+    /// <summary>
+    /// Finds the connection state for a given config, using AgentId → botUserId reverse lookup.
+    /// </summary>
+    private SlackConnectionState FindConnection(ServiceConfig config)
+    {
+        // Try AgentId reverse lookup first
+        if (config.AgentId.HasValue &&
+            AgentToBotUserMap.TryGetValue(config.AgentId.Value, out var botUserId) &&
+            ConnectionsByBotUser.TryGetValue(botUserId, out var conn))
+        {
+            return conn;
+        }
+
+        // Fallback: if there's only one connection, use it
+        if (ConnectionsByBotUser.Count == 1)
+        {
+            return ConnectionsByBotUser.Values.First();
+        }
+
+        return null;
+    }
+
     private SlackService GetSlackService(ServiceConfig config, INotificationService notificationService, LogDelegate log)
     {
-        if (_service != null) return _service;
+        var conn = FindConnection(config);
+        if (conn?.Service != null) return conn.Service;
 
-        _config ??= config;
+        // No existing connection — create a minimal one for outgoing-only use
+        conn ??= new SlackConnectionState();
+        conn.Config ??= config;
         log ??= Log;
         NotificationService ??= notificationService;
 
-        if (_apiClient == null)
+        if (conn.ApiClient == null)
         {
             var builder = new SlackNet.SlackServiceBuilder()
                 .UseApiToken(config.BotToken)
                 .UseAppLevelToken(config.AppLevelToken);
-            _apiClient = builder.GetApiClient();
+            conn.ApiClient = builder.GetApiClient();
         }
 
-        _service = new SlackService(_apiClient, log, config, notificationService, Confirm);
-        return _service;
+        conn.Service = new SlackService(conn.ApiClient, log, config, notificationService,
+            (confirmationId, value) => ConfirmForBotUser(confirmationId, value, conn.BotUserId), conn.BotUserId);
+        return conn.Service;
     }
 
     public Task<object> RequestConfirmation(Confirmation confirmation, OrchestratorRequest request)
     {
-        if (_apiClient == null || _config == null || _staticConfirmationService == null)
+        // Find connection via AgentId from the orchestrator request
+        SlackConnectionState conn = null;
+        if (request.AgentId.HasValue &&
+            AgentToBotUserMap.TryGetValue(request.AgentId.Value, out var botUserId))
+        {
+            ConnectionsByBotUser.TryGetValue(botUserId, out conn);
+        }
+
+        // Fallback: single connection
+        conn ??= ConnectionsByBotUser.Count == 1 ? ConnectionsByBotUser.Values.First() : null;
+
+        if (conn?.ApiClient == null || conn.Config == null || conn.ConfirmationService == null)
         {
             throw new InvalidOperationException(
-                $"SlackCommand is not fully initialized. Status: " +
-                $"ApiClient is {(_apiClient == null ? "null" : "not null")}, " +
-                $"Config is {(_config == null ? "null" : "not null")}, " +
-                $"ConfirmationService is {(_staticConfirmationService == null ? "null" : "not null")}."
+                $"SlackCommand is not fully initialized for agent {request.AgentId}. " +
+                "Ensure Initialize() has been called for this agent."
             );
         }
 
-        SlackService.PendingConfirmation = confirmation;
-        _service ??= new SlackService(_apiClient, Log, _config, NotificationService, Confirm);
-        return _service.SendConfirmationMessage(confirmation, _config.NotificationChannelId);
+        conn.Service ??= new SlackService(conn.ApiClient, Log, conn.Config, NotificationService,
+            (confirmationId, value) => ConfirmForBotUser(confirmationId, value, conn.BotUserId), conn.BotUserId);
+        conn.Service.PendingConfirmation = confirmation;
+        return conn.Service.SendConfirmationMessage(confirmation, conn.Config.NotificationChannelId);
     }
 
     public async ValueTask<object> Confirm(string confirmationId, bool confirm)
     {
+        // Direct Confirm (not via closure) — try any available connection
+        return await ConfirmForBotUser(confirmationId, confirm, _myBotUserId);
+    }
+
+    private async ValueTask<object> ConfirmForBotUser(string confirmationId, bool confirm, string botUserId)
+    {
         var guid = Guid.Parse(confirmationId);
-        return await _staticConfirmationService.Confirm(guid, confirm);
+
+        if (botUserId != null &&
+            ConnectionsByBotUser.TryGetValue(botUserId, out var conn) &&
+            conn.ConfirmationService != null)
+        {
+            return await conn.ConfirmationService.Confirm(guid, confirm);
+        }
+
+        // Fallback: search all connections
+        foreach (var kvp in ConnectionsByBotUser)
+        {
+            if (kvp.Value.ConfirmationService != null)
+            {
+                return await kvp.Value.ConfirmationService.Confirm(guid, confirm);
+            }
+        }
+
+        throw new InvalidOperationException("No confirmation service available");
     }
 
     public Task Dispose()
     {
-        _service?.Dispose();
-        _service = null;
-        if (_socketModeClient?.Connected ?? false)
+        // Use the bot user ID stored during Initialize — no dependency on mutable agent state
+        if (_myBotUserId != null && ConnectionsByBotUser.TryRemove(_myBotUserId, out var conn))
         {
-            _socketModeClient.Disconnect();
+            // Also clean up the reverse map
+            if (conn.AgentId.HasValue)
+                AgentToBotUserMap.TryRemove(conn.AgentId.Value, out _);
+
+            conn.Service?.Dispose();
+            conn.Service = null;
+            if (conn.SocketModeClient?.Connected ?? false)
+            {
+                conn.SocketModeClient.Disconnect();
+            }
+            conn.SocketModeClient?.Dispose();
+            conn.SocketModeClient = null;
+            conn.ApiClient = null;
+            conn.Config = null;
+            conn.ConfirmationService = null;
         }
-        _socketModeClient?.Dispose();
-        _socketModeClient = null;
-        _apiClient = null;
-        _config = null;
-        _staticConfirmationService = null;
         return Task.CompletedTask;
     }
 }

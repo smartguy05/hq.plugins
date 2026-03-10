@@ -24,12 +24,13 @@ public class SlackService(
     LogDelegate logger,
     ServiceConfig config,
     INotificationService notificationService,
-    Func<string, bool, ValueTask<object>> confirm)
+    Func<string, bool, ValueTask<object>> confirm,
+    string botUserId = null)
     : IEventHandler<MessageEvent>, IBlockActionHandler<ButtonAction>, IDisposable
 {
-    public static Confirmation PendingConfirmation;
+    public Confirmation PendingConfirmation;
     public const string ConfirmationActionId = "hq_confirmation_action";
-    private static string _activeChannelId;
+    private string _activeChannelId;
     private static readonly HttpClient HttpClient = new();
 
     private static readonly HashSet<string> PermanentErrors = new(StringComparer.OrdinalIgnoreCase)
@@ -74,23 +75,84 @@ public class SlackService(
 
     public async Task Handle(MessageEvent slackEvent)
     {
-        // Skip bot messages and subtypes (edits, joins, etc.)
-        if (slackEvent.BotId != null || (slackEvent.Subtype != null && slackEvent.Subtype != "file_share"))
+        // Skip subtypes (edits, joins, etc.) but allow file_share and bot_message
+        if (slackEvent.Subtype != null && slackEvent.Subtype != "file_share" && slackEvent.Subtype != "bot_message")
             return;
+
+        // Skip bot messages unless this bot is explicitly @mentioned
+        if (slackEvent.BotId != null)
+        {
+            var mentionTag = !string.IsNullOrEmpty(botUserId) ? $"<@{botUserId}>" : null;
+            if (mentionTag == null || slackEvent.Text == null || !slackEvent.Text.Contains(mentionTag))
+                return;
+        }
 
         try
         {
             _activeChannelId ??= slackEvent.Channel;
 
-            var conversationId = slackEvent.Channel.StartsWith("D")
-                ? $"slack-{slackEvent.User}"
-                : $"slack-{slackEvent.Channel}";
+            var isDm = slackEvent.Channel.StartsWith("D");
+
+            // For DMs, use user ID as the reply target — Slack's chat.postMessage accepts
+            // user IDs and auto-opens/finds the DM conversation. This avoids channel_not_found
+            // errors when the bot token lacks im:read/im:write scopes.
+            var replyTo = isDm ? slackEvent.User : slackEvent.Channel;
+
+            // In channels (not DMs), only respond when @mentioned
+            if (!isDm && !string.IsNullOrEmpty(botUserId))
+            {
+                var mentionTag = $"<@{botUserId}>";
+                if (slackEvent.Text == null || !slackEvent.Text.Contains(mentionTag))
+                    return;
+            }
+
+            var agentPrefix = config.AgentId.HasValue ? $"slack-{config.AgentId.Value}" : "slack";
+            var conversationId = isDm
+                ? $"{agentPrefix}-{slackEvent.User}"
+                : $"{agentPrefix}-{slackEvent.Channel}";
 
             var messageText = slackEvent.Text ?? string.Empty;
 
+            // Strip bot mention from message text so it doesn't confuse the LLM
+            if (!isDm && !string.IsNullOrEmpty(botUserId))
+            {
+                messageText = messageText.Replace($"<@{botUserId}>", "").Trim();
+            }
+
+            // Resolve sender name for context
+            string senderName = null;
+            if (!isDm)
+            {
+                try
+                {
+                    // For bot messages, resolve via bot info first (User field may still be set on bot messages)
+                    if (!string.IsNullOrEmpty(slackEvent.BotId))
+                    {
+                        var botInfo = await client.Bots.Info(slackEvent.BotId);
+                        senderName = botInfo?.Name;
+                    }
+
+                    // Fall back to user info if bot info didn't yield a name
+                    if (string.IsNullOrEmpty(senderName) && !string.IsNullOrEmpty(slackEvent.User))
+                    {
+                        var userInfo = await client.Users.Info(slackEvent.User);
+                        // Prefer non-empty values: Name is the Slack handle, most reliable for @mentions
+                        senderName = !string.IsNullOrWhiteSpace(userInfo.Profile?.DisplayName)
+                            ? userInfo.Profile.DisplayName
+                            : !string.IsNullOrWhiteSpace(userInfo.RealName)
+                                ? userInfo.RealName
+                                : userInfo.Name;
+                    }
+                }
+                catch (Exception e)
+                {
+                    await logger(LogLevel.Warning, $"Failed to resolve sender name: {e.Message}");
+                }
+            }
+
             await logger(LogLevel.Info, $"Slack received message in {slackEvent.Channel}: '{messageText}'");
 
-            if (await ProcessSpecialCommands(slackEvent.Channel, conversationId, messageText))
+            if (await ProcessSpecialCommands(replyTo, conversationId, messageText))
                 return;
 
             if (PendingConfirmation is not null &&
@@ -104,7 +166,7 @@ public class SlackService(
                         .First(a => string.Equals(a.Key, lowerMessage, StringComparison.InvariantCultureIgnoreCase))
                         .Value;
                     var confirmationResult = await confirm(PendingConfirmation.Id.ToString(), value);
-                    await SendConfirmationResult(confirmationResult, slackEvent.Channel);
+                    await SendConfirmationResult(confirmationResult, replyTo);
                     PendingConfirmation = null;
                     return;
                 }
@@ -131,10 +193,24 @@ public class SlackService(
                 }
             }
 
+            // In channels, prefix the message with sender info so the LLM knows who to @mention
+            var promptText = messageText;
+            if (!isDm && !string.IsNullOrEmpty(senderName))
+            {
+                if (string.IsNullOrWhiteSpace(messageText))
+                    promptText = $"[You were mentioned by @{senderName} in this channel]";
+                else
+                    promptText = $"[Message from @{senderName}]: {messageText}";
+            }
+            else if (string.IsNullOrWhiteSpace(messageText))
+            {
+                promptText = "[You were mentioned in this channel]";
+            }
+
             var serviceRequest = new
             {
                 SystemPrompt = (string)null,
-                UserPrompt = messageText,
+                UserPrompt = promptText,
                 ConversationId = conversationId,
                 Photo = fileBase64
             };
@@ -152,6 +228,7 @@ public class SlackService(
             catch (Exception e) { await logger(LogLevel.Warning, $"Failed to add thinking reaction: {e.Message}"); }
 
             var tryAgain = false;
+            var hadError = false;
             try
             {
                 using var scope = ServiceResolver.CreateScope();
@@ -163,13 +240,14 @@ public class SlackService(
 
                 if (!string.IsNullOrWhiteSpace(response))
                 {
-                    await SendMessage(response, slackEvent.Channel);
+                    await SendMessage(response, replyTo);
                 }
             }
             catch (Exception e)
             {
-                if (e.Message.ToLower()
-                    .Contains("an assistant message with 'tool_calls' must be followed by tool messages"))
+                var errorLower = e.Message.ToLower();
+                if (errorLower.Contains("an assistant message with 'tool_calls' must be followed by tool messages")
+                    || errorLower.Contains("tool_use") && errorLower.Contains("without") && errorLower.Contains("tool_result"))
                 {
                     var cachedMessages = await MessageCache.GetCachedMessages(conversationId);
                     if (cachedMessages.Any())
@@ -183,9 +261,10 @@ public class SlackService(
                 }
                 else
                 {
+                    hadError = true;
                     await logger(LogLevel.Error, "An error occurred while processing request for Slack message", e);
                     await SendMessage($"An error occurred while processing request. Error: {e.Message}",
-                        slackEvent.Channel);
+                        replyTo);
                 }
             }
 
@@ -202,20 +281,27 @@ public class SlackService(
 
                     if (!string.IsNullOrWhiteSpace(response))
                     {
-                        await SendMessage(response, slackEvent.Channel);
+                        await SendMessage(response, replyTo);
                     }
                 }
                 catch (Exception retryEx)
                 {
+                    hadError = true;
                     await logger(LogLevel.Error, "Retry after cache purge also failed", retryEx);
                     await SendMessage($"An error occurred while processing request. Error: {retryEx.Message}",
-                        slackEvent.Channel);
+                        replyTo);
                 }
             }
 
-            // Remove thinking indicator
+            // Replace thinking indicator — swap to warning on error, otherwise just remove
             try { await client.Reactions.RemoveFromMessage("thinking_face", slackEvent.Channel, slackEvent.Ts); }
             catch { /* best-effort — may already be removed or message deleted */ }
+
+            if (hadError)
+            {
+                try { await client.Reactions.AddToMessage("warning", slackEvent.Channel, slackEvent.Ts); }
+                catch { /* best-effort */ }
+            }
         }
         catch (Exception e)
         {
@@ -289,6 +375,12 @@ public class SlackService(
             };
         }
 
+        // Resolve display names / @mentions to actual Slack IDs
+        channelId = await ResolveTarget(channelId);
+
+        // Resolve @mentions in the message text to Slack <@ID> format
+        messageText = await ResolveMentionsInText(messageText);
+
         try
         {
             var response = await client.Chat.PostMessage(new Message
@@ -323,15 +415,25 @@ public class SlackService(
             return new { Success = false, Error = "No channel ID available for confirmation message" };
         }
 
+        // Resolve channel name to ID if needed (Slack API requires channel IDs like C01ABCDEF23)
+        if (!channelId.StartsWith("C") && !channelId.StartsWith("G") && !channelId.StartsWith("D"))
+        {
+            channelId = await ResolveChannelId(channelId) ?? channelId;
+        }
+
         var confirmationText = BuildConfirmationText(confirmation);
 
-        var buttons = confirmation.Options?.Select(option => (IActionElement)new SlackNet.Blocks.Button
+        var options = confirmation.Options is { Count: > 0 }
+            ? confirmation.Options
+            : new Dictionary<string, bool> { { "Yes", true }, { "No", false } };
+
+        var buttons = options.Select((option, index) => (IActionElement)new SlackNet.Blocks.Button
         {
             Text = new PlainText(option.Key),
-            ActionId = ConfirmationActionId,
+            ActionId = $"{ConfirmationActionId}_{index}",
             Value = option.Key,
             Style = option.Value ? ButtonStyle.Primary : ButtonStyle.Danger
-        }).ToList() ?? [];
+        }).ToList();
 
         try
         {
@@ -368,6 +470,183 @@ public class SlackService(
                 Error = ex.Message
             };
         }
+    }
+
+    /// <summary>
+    /// Finds @mentions in message text (e.g. @username, @First Last) that aren't already
+    /// in Slack format and resolves them to &lt;@USER_ID&gt; format for clickable mentions.
+    /// </summary>
+    private async Task<string> ResolveMentionsInText(string text)
+    {
+        if (string.IsNullOrWhiteSpace(text))
+            return text;
+
+        // Match @word (and optionally a second word for "First Last") not already in <@...>
+        var mentionPattern = new Regex(@"(?<!\<)@([\w.-]+(?:\s[\w.-]+)?)");
+        var matches = mentionPattern.Matches(text);
+        if (matches.Count == 0)
+            return text;
+
+        // Fetch users once for all matches
+        List<SlackNet.User> users;
+        try
+        {
+            var result = await client.Users.List();
+            users = result.Members.Where(u => !u.Deleted).ToList();
+        }
+        catch (Exception ex)
+        {
+            await logger(LogLevel.Warning, $"Failed to fetch users for mention resolution: {ex.Message}");
+            return text;
+        }
+
+        // Fetch channels once for all matches
+        List<SlackNet.Conversation> channels;
+        try
+        {
+            var channelResult = await client.Conversations.List(
+                excludeArchived: true,
+                types: new[] { ConversationType.PublicChannel, ConversationType.PrivateChannel });
+            channels = channelResult.Channels.ToList();
+        }
+        catch (Exception ex)
+        {
+            await logger(LogLevel.Warning, $"Failed to fetch channels for mention resolution: {ex.Message}");
+            channels = new List<SlackNet.Conversation>();
+        }
+
+        // Process longest matches first to avoid partial replacements
+        var orderedMatches = matches.Cast<Match>()
+            .OrderByDescending(m => m.Groups[1].Value.Length)
+            .ToList();
+
+        var resolved = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var match in orderedMatches)
+        {
+            var name = match.Groups[1].Value;
+            if (resolved.Contains(name))
+                continue;
+
+            // Try channel match first (LLMs often use @channel-name instead of #channel-name)
+            var channel = channels.FirstOrDefault(c =>
+                string.Equals(c.Name, name, StringComparison.OrdinalIgnoreCase));
+            if (channel != null)
+            {
+                text = Regex.Replace(text, $@"(?<!\<)@{Regex.Escape(name)}\b", $"<#{channel.Id}|{channel.Name}>");
+                resolved.Add(name);
+                continue;
+            }
+
+            var user = FindUserByName(users, name);
+
+            // If "First Last" didn't match, try just the first word
+            if (user == null && name.Contains(' '))
+            {
+                var firstName = name.Split(' ')[0];
+                if (!resolved.Contains(firstName))
+                {
+                    user = FindUserByName(users, firstName);
+                    if (user != null)
+                        name = firstName; // only replace the first name portion
+                }
+            }
+
+            if (user != null)
+            {
+                text = Regex.Replace(text, $@"(?<!\<)@{Regex.Escape(name)}\b", $"<@{user.Id}>");
+                resolved.Add(name);
+            }
+        }
+
+        return text;
+    }
+
+    private static SlackNet.User FindUserByName(List<SlackNet.User> users, string name)
+    {
+        bool Matches(string field) =>
+            !string.IsNullOrEmpty(field) &&
+            string.Equals(field, name, StringComparison.OrdinalIgnoreCase);
+
+        bool MatchesNoSpaces(string field) =>
+            !string.IsNullOrEmpty(field) &&
+            string.Equals(field.Replace(" ", ""), name, StringComparison.OrdinalIgnoreCase);
+
+        return users.FirstOrDefault(u =>
+            Matches(u.Name) ||
+            Matches(u.Profile?.DisplayName) ||
+            Matches(u.Profile?.RealNameNormalized) ||
+            Matches(u.RealName) ||
+            MatchesNoSpaces(u.Profile?.RealNameNormalized) ||
+            MatchesNoSpaces(u.RealName) ||
+            // First name match as fallback
+            (u.Profile?.RealNameNormalized?.Split(' ').FirstOrDefault() is { } first &&
+             string.Equals(first, name, StringComparison.OrdinalIgnoreCase)));
+    }
+
+    /// <summary>
+    /// Resolves a target that might be a display name (@user, #channel, or plain name)
+    /// to an actual Slack ID. Returns the input unchanged if it's already an ID.
+    /// </summary>
+    private async Task<string> ResolveTarget(string target)
+    {
+        // Already a Slack ID (C=channel, G=group, D=DM, U=user, W=enterprise user)
+        if (target.Length > 1 && "CGDUW".Contains(target[0]) && target.All(c => char.IsLetterOrDigit(c)))
+            return target;
+
+        var name = target.TrimStart('@', '#');
+
+        // Try matching a user by name, display name, or real name
+        try
+        {
+            var users = await client.Users.List();
+            var userMatch = users.Members.FirstOrDefault(u =>
+                !u.IsBot && !u.Deleted &&
+                (string.Equals(u.Name, name, StringComparison.OrdinalIgnoreCase) ||
+                 string.Equals(u.Profile?.DisplayName, name, StringComparison.OrdinalIgnoreCase) ||
+                 string.Equals(u.Profile?.RealNameNormalized, name, StringComparison.OrdinalIgnoreCase) ||
+                 string.Equals(u.RealName, name, StringComparison.OrdinalIgnoreCase)));
+
+            if (userMatch != null)
+            {
+                await logger(LogLevel.Info, $"Resolved Slack target '{target}' to user ID '{userMatch.Id}'");
+                return userMatch.Id;
+            }
+        }
+        catch (Exception ex)
+        {
+            await logger(LogLevel.Warning, $"Failed to search users for '{target}': {ex.Message}");
+        }
+
+        // Try matching a channel by name
+        var channelId = await ResolveChannelId(name);
+        if (channelId != null)
+            return channelId;
+
+        await logger(LogLevel.Warning, $"Could not resolve Slack target '{target}' — passing through as-is");
+        return target;
+    }
+
+    private async Task<string> ResolveChannelId(string channelName)
+    {
+        try
+        {
+            var result = await client.Conversations.List(
+                excludeArchived: true,
+                types: new[] { ConversationType.PublicChannel, ConversationType.PrivateChannel });
+            var match = result.Channels.FirstOrDefault(c =>
+                string.Equals(c.Name, channelName, StringComparison.OrdinalIgnoreCase));
+            if (match != null)
+            {
+                await logger(LogLevel.Info, $"Resolved Slack channel name '{channelName}' to ID '{match.Id}'");
+                return match.Id;
+            }
+            await logger(LogLevel.Warning, $"Could not find Slack channel with name '{channelName}'");
+        }
+        catch (Exception ex)
+        {
+            await logger(LogLevel.Error, $"Failed to resolve Slack channel name '{channelName}': {ex.Message}", ex);
+        }
+        return null;
     }
 
     public async Task<object> UploadFile(string base64Content, string fileName, string mimeType, string channelId)
@@ -481,6 +760,52 @@ public class SlackService(
         }
     }
 
+    public async Task<object> OpenConversation(string userIds)
+    {
+        try
+        {
+            var ids = userIds.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries).ToList();
+            if (ids.Count == 0)
+                return new { Success = false, Error = "At least one user ID is required" };
+
+            var channelId = await client.Conversations.Open(ids);
+            return new
+            {
+                Success = true,
+                ChannelId = channelId,
+            };
+        }
+        catch (Exception ex)
+        {
+            await logger(LogLevel.Error, $"Slack open conversation failed: {ex.Message}", ex);
+            return new { Success = false, Error = ex.Message };
+        }
+    }
+
+    public async Task<object> ListUsers()
+    {
+        try
+        {
+            var result = await client.Users.List();
+            var users = result.Members
+                .Where(u => !u.IsBot && !u.Deleted && u.Id != "USLACKBOT")
+                .Select(u => new
+                {
+                    u.Id,
+                    u.Name,
+                    RealName = u.RealName,
+                    DisplayName = u.Profile?.DisplayName
+                }).ToList();
+
+            return new { Success = true, Users = users };
+        }
+        catch (Exception ex)
+        {
+            await logger(LogLevel.Error, $"Slack list users failed: {ex.Message}", ex);
+            return new { Success = false, Error = ex.Message };
+        }
+    }
+
     public async Task<object> ListChannels()
     {
         try
@@ -512,12 +837,16 @@ public class SlackService(
 
     private async Task<bool> ProcessSpecialCommands(string channelId, string conversationId, string message)
     {
-        if (message.StartsWith('/'))
+        var lower = message.ToLower().Trim();
+
+        // Accept both "!command" and "/command" prefixes (Slack intercepts "/" so "!" is the reliable option)
+        if (lower.StartsWith('!') || lower.StartsWith('/'))
         {
+            var command = lower.TrimStart('!', '/');
             string response = null;
-            switch (message.ToLower())
+            switch (command)
             {
-                case "/reset":
+                case "reset":
                     await MessageCache.ClearMessageCache(conversationId);
                     response = "Message cache reset";
                     break;
@@ -540,7 +869,8 @@ public class SlackService(
         {
             if (success)
             {
-                var result = confirmationResult.GetType().GetProperty("Result")?.GetValue(confirmationResult);
+                var result = confirmationResult.GetType().GetProperty("Result")?.GetValue(confirmationResult)
+                         ?? confirmationResult.GetType().GetProperty("Message")?.GetValue(confirmationResult);
                 var response = "Command successfully run";
                 if (result is not null)
                 {
