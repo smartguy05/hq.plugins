@@ -14,10 +14,10 @@ public class TwilioClient : IDisposable
     private const string VerifyUrl = "https://verify.twilio.com/v2";
     private const string ConversationsUrl = "https://conversations.twilio.com/v1";
 
-    public TwilioClient(string accountSid, string authToken)
+    public TwilioClient(string accountSid, string authToken, HttpMessageHandler handler = null)
     {
         _accountSid = accountSid;
-        _http = new HttpClient();
+        _http = handler != null ? new HttpClient(handler, disposeHandler: false) : new HttpClient();
         var credentials = Convert.ToBase64String(Encoding.ASCII.GetBytes($"{accountSid}:{authToken}"));
         _http.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Basic", credentials);
     }

@@ -16,6 +16,9 @@ public class TwilioCommand : CommandBase<ServiceRequest, ServiceConfig>
     public override string Description => "A plugin for SMS, voice calls, phone lookup, verification, and conversations via Twilio";
     protected override INotificationService NotificationService { get; set; }
 
+    // For unit testing: inject a custom HttpMessageHandler
+    internal HttpMessageHandler HttpHandler { get; set; }
+
     public override List<ToolCall> GetToolDefinitions()
     {
         return this.GetServiceToolCalls();
@@ -28,7 +31,7 @@ public class TwilioCommand : CommandBase<ServiceRequest, ServiceConfig>
 
     private TwilioClient CreateClient(ServiceConfig config)
     {
-        return new TwilioClient(config.AccountSid, config.AuthToken);
+        return new TwilioClient(config.AccountSid, config.AuthToken, HttpHandler);
     }
 
     private string ResolveFrom(ServiceConfig config, ServiceRequest serviceRequest)
@@ -39,6 +42,37 @@ public class TwilioCommand : CommandBase<ServiceRequest, ServiceConfig>
     private static object ToResult(JsonDocument doc)
     {
         return JsonSerializer.Deserialize<object>(doc.RootElement.GetRawText());
+    }
+
+    /// <summary>
+    /// Checks for Twilio error responses. Twilio uses "error_code" for message-level errors
+    /// and "code" for HTTP-level errors (auth failures, invalid requests, etc.).
+    /// </summary>
+    private static bool IsErrorResponse(JsonElement root, out string message)
+    {
+        // Check for message-level errors (error_code is non-null)
+        if (root.TryGetProperty("error_code", out var errCode) && errCode.ValueKind != JsonValueKind.Null)
+        {
+            message = root.TryGetProperty("message", out var msg) ? msg.GetString() : "Unknown error";
+            return true;
+        }
+
+        // Check for HTTP-level errors (have "code" but no "sid")
+        if (root.TryGetProperty("code", out _) && !root.TryGetProperty("sid", out _))
+        {
+            message = root.TryGetProperty("message", out var msg) ? msg.GetString() : "Unknown error";
+            return true;
+        }
+
+        // No sid means something unexpected happened
+        if (!root.TryGetProperty("sid", out _))
+        {
+            message = root.TryGetProperty("message", out var msg) ? msg.GetString() : "Unexpected response from Twilio";
+            return true;
+        }
+
+        message = null;
+        return false;
     }
 
     // ── Messaging ──────────────────────────────────────────────
@@ -52,14 +86,16 @@ public class TwilioCommand : CommandBase<ServiceRequest, ServiceConfig>
         var from = ResolveFrom(config, serviceRequest);
         var doc = await client.SendSms(from, serviceRequest.To, serviceRequest.Body, serviceRequest.MediaUrl);
 
-        if (doc.RootElement.TryGetProperty("error_code", out var err) && err.ValueKind != JsonValueKind.Null)
+        if (IsErrorResponse(doc.RootElement, out var errorMessage))
         {
-            await Log(LogLevel.Warning, $"SMS send failed: {doc.RootElement.GetProperty("message").GetString()}");
-            return new { Success = false, Message = doc.RootElement.GetProperty("message").GetString() };
+            await Log(LogLevel.Warning, $"SMS send failed: {errorMessage}");
+            return new { Success = false, Message = errorMessage };
         }
 
         await Log(LogLevel.Info, $"SMS sent to {serviceRequest.To}");
-        return new { Success = true, MessageSid = doc.RootElement.GetProperty("sid").GetString(), Status = doc.RootElement.GetProperty("status").GetString() };
+        var sid = doc.RootElement.TryGetProperty("sid", out var sidEl) ? sidEl.GetString() : null;
+        var status = doc.RootElement.TryGetProperty("status", out var statusEl) ? statusEl.GetString() : null;
+        return new { Success = true, MessageSid = sid, Status = status };
     }
 
     [Display(Name = "send_whatsapp")]
@@ -71,14 +107,16 @@ public class TwilioCommand : CommandBase<ServiceRequest, ServiceConfig>
         var from = ResolveFrom(config, serviceRequest);
         var doc = await client.SendWhatsApp(from, serviceRequest.To, serviceRequest.Body, serviceRequest.MediaUrl);
 
-        if (doc.RootElement.TryGetProperty("error_code", out var err) && err.ValueKind != JsonValueKind.Null)
+        if (IsErrorResponse(doc.RootElement, out var errorMessage))
         {
-            await Log(LogLevel.Warning, $"WhatsApp send failed: {doc.RootElement.GetProperty("message").GetString()}");
-            return new { Success = false, Message = doc.RootElement.GetProperty("message").GetString() };
+            await Log(LogLevel.Warning, $"WhatsApp send failed: {errorMessage}");
+            return new { Success = false, Message = errorMessage };
         }
 
         await Log(LogLevel.Info, $"WhatsApp message sent to {serviceRequest.To}");
-        return new { Success = true, MessageSid = doc.RootElement.GetProperty("sid").GetString(), Status = doc.RootElement.GetProperty("status").GetString() };
+        var sid = doc.RootElement.TryGetProperty("sid", out var sidEl) ? sidEl.GetString() : null;
+        var status = doc.RootElement.TryGetProperty("status", out var statusEl) ? statusEl.GetString() : null;
+        return new { Success = true, MessageSid = sid, Status = status };
     }
 
     [Display(Name = "get_message")]
@@ -112,14 +150,16 @@ public class TwilioCommand : CommandBase<ServiceRequest, ServiceConfig>
         var from = ResolveFrom(config, serviceRequest);
         var doc = await client.MakeCall(from, serviceRequest.To, serviceRequest.Twiml, serviceRequest.Record);
 
-        if (doc.RootElement.TryGetProperty("error_code", out var err) && err.ValueKind != JsonValueKind.Null)
+        if (IsErrorResponse(doc.RootElement, out var errorMessage))
         {
-            await Log(LogLevel.Warning, $"Call failed: {doc.RootElement.GetProperty("message").GetString()}");
-            return new { Success = false, Message = doc.RootElement.GetProperty("message").GetString() };
+            await Log(LogLevel.Warning, $"Call failed: {errorMessage}");
+            return new { Success = false, Message = errorMessage };
         }
 
         await Log(LogLevel.Info, $"Call initiated to {serviceRequest.To}");
-        return new { Success = true, CallSid = doc.RootElement.GetProperty("sid").GetString(), Status = doc.RootElement.GetProperty("status").GetString() };
+        var sid = doc.RootElement.TryGetProperty("sid", out var sidEl) ? sidEl.GetString() : null;
+        var status = doc.RootElement.TryGetProperty("status", out var statusEl) ? statusEl.GetString() : null;
+        return new { Success = true, CallSid = sid, Status = status };
     }
 
     [Display(Name = "get_call")]
@@ -231,7 +271,14 @@ public class TwilioCommand : CommandBase<ServiceRequest, ServiceConfig>
     {
         using var client = CreateClient(config);
         var doc = await client.CreateConversation(serviceRequest.FriendlyName);
-        var sid = doc.RootElement.GetProperty("sid").GetString();
+
+        if (IsErrorResponse(doc.RootElement, out var errorMessage))
+        {
+            await Log(LogLevel.Warning, $"Create conversation failed: {errorMessage}");
+            return new { Success = false, Message = errorMessage };
+        }
+
+        var sid = doc.RootElement.TryGetProperty("sid", out var sidEl) ? sidEl.GetString() : null;
         await Log(LogLevel.Info, $"Conversation created: {sid}");
         return new { Success = true, ConversationSid = sid, Data = ToResult(doc) };
     }

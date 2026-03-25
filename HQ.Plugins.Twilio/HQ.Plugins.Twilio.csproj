@@ -18,4 +18,8 @@
 	<ItemGroup>
 		<PackageReference Include="HQ.Models" Version="1.4.3" ExcludeAssets="runtime" PrivateAssets="none" />
 	</ItemGroup>
+
+	<ItemGroup>
+		<InternalsVisibleTo Include="HQ.Plugins.Tests" />
+	</ItemGroup>
 </Project>

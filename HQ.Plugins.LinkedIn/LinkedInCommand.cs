@@ -9,7 +9,7 @@ namespace HQ.Plugins.LinkedIn;
 public class LinkedInCommand : CommandBase<ServiceRequest, ServiceConfig>
 {
     public override string Name => "LinkedIn";
-    public override string Description => "LinkedIn profile management, posting, and people/company search via Proxycurl";
+    public override string Description => "LinkedIn messaging, posting, and profile lookup via Relevance AI";
     protected override INotificationService NotificationService { get; set; }
 
     public override List<ToolCall> GetToolDefinitions()
@@ -17,17 +17,19 @@ public class LinkedInCommand : CommandBase<ServiceRequest, ServiceConfig>
         return ServiceExtensions.GetServiceToolCalls<LinkedInService>();
     }
 
-    protected override async Task<object> DoWork(ServiceRequest serviceRequest, ServiceConfig config, IEnumerable<ToolCall> availableToolCalls)
+    protected override async Task<object> DoWork(ServiceRequest serviceRequest, ServiceConfig config,
+        IEnumerable<ToolCall> enumerableToolCalls)
     {
         try
         {
-            var service = new LinkedInService(config, Logger);
+            using var client = new RelevanceAiClient(config.RelevanceAiApiKey, config.RelevanceAiRegion, config.RelevanceAiProjectId);
+            var service = new LinkedInService(client, config);
             return await service.ProcessRequest(serviceRequest, config, NotificationService);
         }
-        catch (Exception e)
+        catch (Exception ex)
         {
-            await Log(LogLevel.Error, $"Error executing action '{serviceRequest.Method}'", e);
-            return new { Success = false, Message = $"Error: {e.Message}" };
+            await Log(LogLevel.Error, $"Error executing action '{serviceRequest.Method}'", ex);
+            return new { Success = false, Message = $"Error: {ex.Message}" };
         }
     }
 }

@@ -12,11 +12,11 @@ namespace HQ.Plugins.HeadlessBrowser;
 
 public class HeadlessBrowserService
 {
-    private readonly BrowserClient _client;
+    private readonly IBrowserClient _client;
     private readonly ServiceConfig _config;
     private readonly LogDelegate _logger;
 
-    public HeadlessBrowserService(BrowserClient client, ServiceConfig config, LogDelegate logger)
+    public HeadlessBrowserService(IBrowserClient client, ServiceConfig config, LogDelegate logger)
     {
         _client = client;
         _config = config;
@@ -35,11 +35,33 @@ public class HeadlessBrowserService
         {
             return await _client.ExecuteAsync(async page =>
             {
-                var response = await page.GotoAsync(request.Url, new PageGotoOptions
+                IResponse response;
+                try
                 {
-                    WaitUntil = WaitUntilState.NetworkIdle,
-                    Timeout = config.DefaultTimeoutMs
-                });
+                    response = await page.GotoAsync(request.Url, new PageGotoOptions
+                    {
+                        WaitUntil = WaitUntilState.DOMContentLoaded,
+                        Timeout = config.DefaultTimeoutMs
+                    });
+
+                    // Best-effort wait for network to settle, but don't fail if it times out
+                    try
+                    {
+                        await page.WaitForLoadStateAsync(LoadState.NetworkIdle,
+                            new PageWaitForLoadStateOptions { Timeout = 10000 });
+                    }
+                    catch (TimeoutException) { }
+                }
+                catch (TimeoutException)
+                {
+                    // Page took too long even for DOMContentLoaded — return what we have
+                    return (object)new
+                    {
+                        Success = false,
+                        Url = request.Url,
+                        Message = $"Navigation timed out after {config.DefaultTimeoutMs}ms. The page may be slow or unresponsive."
+                    };
+                }
 
                 var title = await page.TitleAsync();
                 var url = page.Url;
@@ -69,6 +91,15 @@ public class HeadlessBrowserService
                 Message = "Playwright browsers are not installed. Run 'pwsh bin/Debug/net9.0/Plugins/playwright.ps1 install chromium' to install."
             };
         }
+        catch (PlaywrightException ex)
+        {
+            return new
+            {
+                Success = false,
+                Url = request.Url,
+                Message = $"Navigation failed: {ex.Message}"
+            };
+        }
     }
 
     [Display(Name = BrowserMethods.GetPageContent)]
@@ -76,41 +107,52 @@ public class HeadlessBrowserService
     [Parameters("""{"type":"object","properties":{"selector":{"type":"string","description":"CSS selector for a specific element (optional, defaults to full page)"},"contentType":{"type":"string","description":"'text' (default) or 'html'"},"maxLength":{"type":"integer","description":"Maximum content length to return (default 50000)"}},"required":[]}""")]
     public async Task<object> GetPageContent(ServiceConfig config, ServiceRequest request)
     {
-        return await _client.ExecuteAsync(async page =>
+        try
         {
-            var maxLength = request.MaxLength ?? 50000;
-            var contentType = request.ContentType?.ToLowerInvariant() ?? "text";
-            string content;
-
-            if (!string.IsNullOrWhiteSpace(request.Selector))
+            return await _client.ExecuteAsync(async page =>
             {
-                var element = await page.QuerySelectorAsync(request.Selector);
-                if (element is null)
-                    return (object)new { Success = false, Message = $"Element not found: {request.Selector}" };
+                var maxLength = request.MaxLength ?? 50000;
+                var contentType = request.ContentType?.ToLowerInvariant() ?? "text";
+                string content;
 
-                content = contentType == "html"
-                    ? await element.InnerHTMLAsync()
-                    : await element.InnerTextAsync();
-            }
-            else
+                if (!string.IsNullOrWhiteSpace(request.Selector))
+                {
+                    var element = await page.QuerySelectorAsync(request.Selector);
+                    if (element is null)
+                        return (object)new { Success = false, Message = $"Element not found: {request.Selector}" };
+
+                    content = contentType == "html"
+                        ? await element.InnerHTMLAsync()
+                        : await element.InnerTextAsync();
+                }
+                else
+                {
+                    content = contentType == "html"
+                        ? await page.ContentAsync()
+                        : await page.EvaluateAsync<string>("() => document.body?.innerText || ''");
+                }
+
+                if (content.Length > maxLength)
+                    content = content[..maxLength] + "...(truncated)";
+
+                return (object)new
+                {
+                    Success = true,
+                    Url = page.Url,
+                    ContentType = contentType,
+                    Length = content.Length,
+                    Content = content.Trim()
+                };
+            });
+        }
+        catch (PlaywrightException ex)
+        {
+            return new
             {
-                content = contentType == "html"
-                    ? await page.ContentAsync()
-                    : await page.EvaluateAsync<string>("() => document.body?.innerText || ''");
-            }
-
-            if (content.Length > maxLength)
-                content = content[..maxLength] + "...(truncated)";
-
-            return (object)new
-            {
-                Success = true,
-                Url = page.Url,
-                ContentType = contentType,
-                Length = content.Length,
-                Content = content.Trim()
+                Success = false,
+                Message = $"Failed to get page content: {ex.Message}"
             };
-        });
+        }
     }
 
     [Display(Name = BrowserMethods.GetInteractiveElements)]
@@ -118,6 +160,8 @@ public class HeadlessBrowserService
     [Parameters("""{"type":"object","properties":{"elementType":{"type":"string","description":"Filter by element type: 'links', 'buttons', 'inputs', 'all' (default 'all')"},"selector":{"type":"string","description":"Scope search to elements within this CSS selector"}},"required":[]}""")]
     public async Task<object> GetInteractiveElements(ServiceConfig config, ServiceRequest request)
     {
+        try
+        {
         return await _client.ExecuteAsync(async page =>
         {
             var elementType = request.ElementType?.ToLowerInvariant() ?? "all";
@@ -167,6 +211,15 @@ public class HeadlessBrowserService
                 Elements = elements
             };
         });
+        }
+        catch (PlaywrightException ex)
+        {
+            return new
+            {
+                Success = false,
+                Message = $"Failed to get interactive elements: {ex.Message}"
+            };
+        }
     }
 
     [Display(Name = BrowserMethods.ClickElement)]
@@ -177,19 +230,35 @@ public class HeadlessBrowserService
         if (string.IsNullOrWhiteSpace(request.Selector))
             throw new ArgumentException("Missing required parameter: selector");
 
-        return await _client.ExecuteAsync(async page =>
+        try
         {
-            await page.ClickAsync(request.Selector);
-            await page.WaitForLoadStateAsync(LoadState.NetworkIdle);
-
-            return (object)new
+            return await _client.ExecuteAsync(async page =>
             {
-                Success = true,
-                Url = page.Url,
-                Title = await page.TitleAsync(),
-                Message = $"Clicked element: {request.Selector}"
+                await page.ClickAsync(request.Selector);
+                try
+                {
+                    await page.WaitForLoadStateAsync(LoadState.NetworkIdle,
+                        new PageWaitForLoadStateOptions { Timeout = 10000 });
+                }
+                catch (TimeoutException) { }
+
+                return (object)new
+                {
+                    Success = true,
+                    Url = page.Url,
+                    Title = await page.TitleAsync(),
+                    Message = $"Clicked element: {request.Selector}"
+                };
+            });
+        }
+        catch (PlaywrightException ex)
+        {
+            return new
+            {
+                Success = false,
+                Message = $"Click failed: {ex.Message}"
             };
-        });
+        }
     }
 
     [Display(Name = BrowserMethods.FillField)]
@@ -222,31 +291,47 @@ public class HeadlessBrowserService
         if (string.IsNullOrWhiteSpace(request.Selector))
             throw new ArgumentException("Missing required parameter: selector");
 
-        return await _client.ExecuteAsync(async page =>
+        try
         {
-            var tagName = await page.EvaluateAsync<string>(
-                "(sel) => document.querySelector(sel)?.tagName?.toLowerCase()", request.Selector);
-
-            if (tagName == "form")
+            return await _client.ExecuteAsync(async page =>
             {
-                await page.EvaluateAsync(
-                    "(sel) => document.querySelector(sel).submit()", request.Selector);
-            }
-            else
-            {
-                await page.ClickAsync(request.Selector);
-            }
+                var tagName = await page.EvaluateAsync<string>(
+                    "(sel) => document.querySelector(sel)?.tagName?.toLowerCase()", request.Selector);
 
-            await page.WaitForLoadStateAsync(LoadState.NetworkIdle);
+                if (tagName == "form")
+                {
+                    await page.EvaluateAsync(
+                        "(sel) => document.querySelector(sel).submit()", request.Selector);
+                }
+                else
+                {
+                    await page.ClickAsync(request.Selector);
+                }
 
-            return (object)new
+                try
+                {
+                    await page.WaitForLoadStateAsync(LoadState.NetworkIdle,
+                        new PageWaitForLoadStateOptions { Timeout = 10000 });
+                }
+                catch (TimeoutException) { }
+
+                return (object)new
+                {
+                    Success = true,
+                    Url = page.Url,
+                    Title = await page.TitleAsync(),
+                    Message = $"Form submitted via: {request.Selector}"
+                };
+            });
+        }
+        catch (PlaywrightException ex)
+        {
+            return new
             {
-                Success = true,
-                Url = page.Url,
-                Title = await page.TitleAsync(),
-                Message = $"Form submitted via: {request.Selector}"
+                Success = false,
+                Message = $"Form submission failed: {ex.Message}"
             };
-        });
+        }
     }
 
     [Display(Name = BrowserMethods.TakeScreenshot)]
@@ -305,16 +390,27 @@ public class HeadlessBrowserService
         if (string.IsNullOrWhiteSpace(request.Script))
             throw new ArgumentException("Missing required parameter: script");
 
-        return await _client.ExecuteAsync(async page =>
+        try
         {
-            var result = await page.EvaluateAsync<object>($"() => {{ {request.Script} }}");
-
-            return (object)new
+            return await _client.ExecuteAsync(async page =>
             {
-                Success = true,
-                Result = result
+                var result = await page.EvaluateAsync<object>($"() => {{ {request.Script} }}");
+
+                return (object)new
+                {
+                    Success = true,
+                    Result = result
+                };
+            });
+        }
+        catch (PlaywrightException ex)
+        {
+            return new
+            {
+                Success = false,
+                Message = $"JavaScript execution failed: {ex.Message}"
             };
-        });
+        }
     }
 
     [Display(Name = BrowserMethods.CloseBrowser)]

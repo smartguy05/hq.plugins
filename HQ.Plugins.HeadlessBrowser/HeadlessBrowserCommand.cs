@@ -9,7 +9,7 @@ namespace HQ.Plugins.HeadlessBrowser;
 
 public class HeadlessBrowserCommand : CommandBase<ServiceRequest, ServiceConfig>
 {
-    private static BrowserClient _browserClient;
+    private BrowserClient _browserClient;
 
     public override string Name => "HeadlessBrowser";
     public override string Description => "Headless browser automation for navigating pages, reading content, filling forms, clicking elements, and taking screenshots";

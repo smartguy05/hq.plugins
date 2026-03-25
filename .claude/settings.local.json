@@ -27,7 +27,8 @@
       "WebFetch(domain:nubela.co)",
       "WebFetch(domain:en.blog.mantiks.io)",
       "Bash(dotnet tool:*)",
-      "Bash(npx tsc:*)"
+      "Bash(npx tsc:*)",
+      "Bash(dotnet ef:*)"
     ]
   }
 }

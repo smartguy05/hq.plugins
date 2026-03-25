@@ -2,7 +2,7 @@ using Microsoft.Playwright;
 
 namespace HQ.Plugins.HeadlessBrowser;
 
-public class BrowserClient : IAsyncDisposable
+public class BrowserClient : IBrowserClient
 {
     private readonly SemaphoreSlim _semaphore = new(1, 1);
     private IPlaywright _playwright;

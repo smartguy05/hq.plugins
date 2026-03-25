@@ -8,15 +8,40 @@ public record ServiceConfig : IPluginConfig
     public string Name { get; set; }
     public string Description { get; set; }
 
-    [Tooltip("LinkedIn OAuth access token for posting and profile access")]
-    public string LinkedInAccessToken { get; set; }
+    [Sensitive]
+    [Tooltip("Relevance AI API key (raw key, not Bearer)")]
+    public string RelevanceAiApiKey { get; set; }
 
-    [Tooltip("Your LinkedIn person URN, e.g. urn:li:person:AbCdEf123")]
-    public string LinkedInPersonUrn { get; set; }
+    [Tooltip("Relevance AI region slug (e.g. 'us-east') — used to build the base URL")]
+    public string RelevanceAiRegion { get; set; }
 
-    [Tooltip("Proxycurl API key for LinkedIn data enrichment. Get one at https://nubela.co/proxycurl")]
-    public string ProxycurlApiKey { get; set; }
+    [Tooltip("Relevance AI project identifier")]
+    public string RelevanceAiProjectId { get; set; }
 
-    [Tooltip("Proxycurl API base URL. Override only for testing or proxy setups.")]
-    public string ProxycurlBaseUrl { get; set; } = "https://nubela.co/proxycurl/api";
+    [Tooltip("Relevance AI tool ID for get_all_chats")]
+    public string GetAllChatsToolId { get; set; }
+
+    [Tooltip("Relevance AI tool ID for get_chat_messages")]
+    public string GetChatMessagesToolId { get; set; }
+
+    [Tooltip("Relevance AI tool ID for get_user_profile")]
+    public string GetUserProfileToolId { get; set; }
+
+    [Tooltip("Relevance AI tool ID for create_post")]
+    public string CreatePostToolId { get; set; }
+
+    [Tooltip("Relevance AI tool ID for send_comment")]
+    public string SendCommentToolId { get; set; }
+
+    [Tooltip("Relevance AI tool ID for get_inmail_balance")]
+    public string GetInMailBalanceToolId { get; set; }
+
+    [Tooltip("Relevance AI tool ID for send_invitation")]
+    public string SendInvitationToolId { get; set; }
+
+    [Tooltip("Relevance AI tool ID for send_message")]
+    public string SendMessageToolId { get; set; }
+
+    [Tooltip("Relevance AI tool ID for start_new_chat")]
+    public string StartNewChatToolId { get; set; }
 }

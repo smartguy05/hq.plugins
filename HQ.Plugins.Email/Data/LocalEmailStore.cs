@@ -151,7 +151,8 @@ public class LocalEmailStore : IDisposable
     }
 
     public async Task<List<LocalEmail>> SearchAsync(string accountName = null, string folder = null,
-        string subject = null, string sender = null, string bodyText = null, int maxResults = 50)
+        string subject = null, string sender = null, string bodyText = null, string searchText = null,
+        int maxResults = 50)
     {
         var conn = GetConnection();
         using var cmd = conn.CreateCommand();
@@ -181,6 +182,11 @@ public class LocalEmailStore : IDisposable
         {
             clauses.Add("body_text LIKE @body");
             cmd.Parameters.AddWithValue("@body", $"%{bodyText}%");
+        }
+        if (!string.IsNullOrWhiteSpace(searchText))
+        {
+            clauses.Add("(subject LIKE @st OR from_address LIKE @st OR from_name LIKE @st OR body_text LIKE @st)");
+            cmd.Parameters.AddWithValue("@st", $"%{searchText}%");
         }
 
         var where = clauses.Count > 0 ? "WHERE " + string.Join(" AND ", clauses) : "";

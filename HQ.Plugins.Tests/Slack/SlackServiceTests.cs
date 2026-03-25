@@ -66,7 +66,7 @@ public class SlackServiceTests
         var service = new SlackService(_mockApiClient.Object, _logger, _config, _mockNotificationService.Object,
             (id, val) => ValueTask.FromResult<object>(null));
 
-        await service.Connect(mockSocketClient.Object);
+        await Assert.ThrowsAsync<SlackException>(() => service.Connect(mockSocketClient.Object));
 
         Assert.Equal(1, callCount);
         Assert.Contains(_logEntries, e => e.Level == LogLevel.Error && e.Message.Contains("not_authed"));
@@ -85,7 +85,7 @@ public class SlackServiceTests
         var service = new SlackService(_mockApiClient.Object, _logger, _config, _mockNotificationService.Object,
             (id, val) => ValueTask.FromResult<object>(null));
 
-        await service.Connect(mockSocketClient.Object);
+        await Assert.ThrowsAsync<SlackException>(() => service.Connect(mockSocketClient.Object));
 
         Assert.Equal(1, callCount);
         Assert.Contains(_logEntries, e => e.Level == LogLevel.Error && e.Message.Contains("invalid_auth"));
@@ -103,7 +103,7 @@ public class SlackServiceTests
         var service = new SlackService(_mockApiClient.Object, _logger, _config, _mockNotificationService.Object,
             (id, val) => ValueTask.FromResult<object>(null));
 
-        await service.Connect(mockSocketClient.Object);
+        await Assert.ThrowsAsync<SlackException>(() => service.Connect(mockSocketClient.Object));
 
         Assert.Equal(1, callCount);
     }
@@ -120,7 +120,7 @@ public class SlackServiceTests
         var service = new SlackService(_mockApiClient.Object, _logger, _config, _mockNotificationService.Object,
             (id, val) => ValueTask.FromResult<object>(null));
 
-        await service.Connect(mockSocketClient.Object);
+        await Assert.ThrowsAsync<Exception>(() => service.Connect(mockSocketClient.Object));
 
         // Should retry a limited number of times, not forever
         Assert.True(callCount <= 5, $"Expected at most 5 attempts but got {callCount}");

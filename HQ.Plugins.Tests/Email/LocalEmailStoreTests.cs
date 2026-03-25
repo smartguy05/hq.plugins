@@ -277,6 +277,103 @@ public class LocalEmailStoreTests : IDisposable
         Assert.Null(result);
     }
 
+    [Fact]
+    public async Task Search_BySearchText_MatchesSender()
+    {
+        var email = CreateTestEmail(uid: 1, messageId: "m1@t.com");
+        email.FromAddress = "anthony@apetalo.us";
+        email.FromName = "Anthony";
+        email.Subject = "Weekly Report";
+        email.BodyText = "Here is the weekly report.";
+        await _store.UpsertEmailAsync(email);
+
+        var results = await _store.SearchAsync(searchText: "Anthony");
+        Assert.Single(results);
+        Assert.Equal("anthony@apetalo.us", results[0].FromAddress);
+    }
+
+    [Fact]
+    public async Task Search_BySearchText_MatchesSubject()
+    {
+        var email = CreateTestEmail(uid: 1, messageId: "m1@t.com");
+        email.Subject = "Anthony's Report";
+        email.FromAddress = "other@test.com";
+        email.BodyText = "Nothing relevant here.";
+        await _store.UpsertEmailAsync(email);
+
+        var results = await _store.SearchAsync(searchText: "Anthony");
+        Assert.Single(results);
+    }
+
+    [Fact]
+    public async Task Search_BySearchText_MatchesBody()
+    {
+        var email = CreateTestEmail(uid: 1, messageId: "m1@t.com");
+        email.Subject = "Weekly Report";
+        email.FromAddress = "other@test.com";
+        email.BodyText = "Message from Anthony about the project.";
+        await _store.UpsertEmailAsync(email);
+
+        var results = await _store.SearchAsync(searchText: "Anthony");
+        Assert.Single(results);
+    }
+
+    [Fact]
+    public async Task Search_BySearchText_UsesOrLogic()
+    {
+        // Email where "Anthony" only appears in the sender
+        var e1 = CreateTestEmail(uid: 1, messageId: "m1@t.com");
+        e1.FromAddress = "anthony@apetalo.us";
+        e1.Subject = "Hello";
+        e1.BodyText = "No match here.";
+        await _store.UpsertEmailAsync(e1);
+
+        // Email where "Anthony" only appears in the subject
+        var e2 = CreateTestEmail(uid: 2, messageId: "m2@t.com");
+        e2.FromAddress = "other@test.com";
+        e2.Subject = "Meeting with Anthony";
+        e2.BodyText = "No match here either.";
+        await _store.UpsertEmailAsync(e2);
+
+        // Email where "Anthony" only appears in the body
+        var e3 = CreateTestEmail(uid: 3, messageId: "m3@t.com");
+        e3.FromAddress = "other@test.com";
+        e3.Subject = "Unrelated Subject";
+        e3.BodyText = "Anthony mentioned this in the meeting.";
+        await _store.UpsertEmailAsync(e3);
+
+        // Email with no match at all
+        var e4 = CreateTestEmail(uid: 4, messageId: "m4@t.com");
+        e4.FromAddress = "nobody@test.com";
+        e4.Subject = "Something Else";
+        e4.BodyText = "Completely unrelated.";
+        await _store.UpsertEmailAsync(e4);
+
+        var results = await _store.SearchAsync(searchText: "Anthony");
+        Assert.Equal(3, results.Count);
+    }
+
+    [Fact]
+    public async Task Search_BySearchText_CombinesWithSpecificFilters()
+    {
+        // Email from Anthony in INBOX
+        var e1 = CreateTestEmail(uid: 1, messageId: "m1@t.com");
+        e1.FromAddress = "anthony@apetalo.us";
+        e1.Folder = "INBOX";
+        await _store.UpsertEmailAsync(e1);
+
+        // Email from Anthony in Sent
+        var e2 = CreateTestEmail(uid: 2, messageId: "m2@t.com");
+        e2.FromAddress = "anthony@apetalo.us";
+        e2.Folder = "Sent";
+        await _store.UpsertEmailAsync(e2);
+
+        // searchText + folder filter should AND together
+        var results = await _store.SearchAsync(searchText: "anthony", folder: "INBOX");
+        Assert.Single(results);
+        Assert.Equal("INBOX", results[0].Folder);
+    }
+
     public void Dispose()
     {
         _store.Dispose();

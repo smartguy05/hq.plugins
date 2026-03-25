@@ -39,6 +39,16 @@ public class EmailService
 
     #region Private Helpers
 
+    private static string TryGetJsonProperty(JsonElement element, params string[] propertyNames)
+    {
+        foreach (var name in propertyNames)
+        {
+            if (element.TryGetProperty(name, out var prop) && prop.ValueKind == JsonValueKind.String)
+                return prop.GetString();
+        }
+        return null;
+    }
+
     private static EmailParameters GetMailAccount(ServiceRequest request, ServiceConfig config)
     {
         var mailAccount = config.EmailAccounts.FirstOrDefault(f =>
@@ -330,50 +340,50 @@ public class EmailService
     }
 
     [Display(Name = "get_email_summary")]
-    [Description("Use this tool to get a list of emails using the supplied criteria. Reads from local store first, falls back to IMAP.")]
+    [Description("List emails matching filter criteria via IMAP. To find emails from a specific person, use the 'sender' parameter with their email address or name. To find emails about a topic, use 'subject'. All filters are AND-ed together. For full-text search including body content, use search_emails_local instead.")]
     [Parameters("""
                 {
                   "type": "object",
                   "properties": {
                     "account": {
                       "type": "string",
-                      "description": "The email account you want to access. This is optional, if not supplied the default account will be used."
+                      "description": "The email account to access. Optional — uses the default account if not specified."
                     },
                     "searchSubject": {
                       "type": "string",
-                      "description": "The subject of the email to search for. This is optional."
+                      "description": "Client-side partial match on subject line (case-insensitive). Applied after IMAP results are fetched. Use 'subject' for server-side IMAP filtering instead when possible."
                     },
                     "messageId": {
                       "type": "string",
-                      "description": "The message Id of the email to retrieve"
+                      "description": "The exact Message-Id header to retrieve a specific email."
                     },
                     "unreadOnly": {
                       "type": "boolean",
-                      "description": "If true will only return unread emails. Default false."
+                      "description": "If true, only return unread/unseen emails. Default false."
                     },
                     "sender": {
                       "type": "string",
-                      "description": "The email address of the person that sent the email you are looking for."
+                      "description": "Filter by sender (From field). Use this to find emails FROM a specific person — pass their email address or name, e.g. 'john@example.com' or 'John'. This is the correct parameter for person-based searches."
                     },
                     "subject": {
                       "type": "string",
-                      "description": "The subject of the email you are looking for."
+                      "description": "IMAP server-side subject search (partial match). Use this to find emails about a specific topic."
                     },
                     "to": {
                       "type": "string",
-                      "description": "The To address of the email you are looking for."
+                      "description": "Filter by To address. Use this to find emails sent TO a specific person."
                     },
                     "emailsSentAfter": {
                       "type": "string",
-                      "description": "A Datetime parameter for the start date of emails to search for. This will return emails recieved after this datetime."
+                      "description": "ISO datetime string. Only return emails received after this date, e.g. '2025-01-15'."
                     },
                     "emailsSentBefore": {
                       "type": "string",
-                      "description": "A Datetime parameter for the end date of emails to search for. This will return emails recieved before this datetime."
+                      "description": "ISO datetime string. Only return emails received before this date, e.g. '2025-02-01'."
                     },
                     "maxReturnedEmails": {
                       "type": "number",
-                      "description": "The maximum number of emails to return at a time when searching for emails. The default is 10."
+                      "description": "Maximum number of emails to return. Default 10."
                     }
                   },
                   "required": []
@@ -540,7 +550,7 @@ public class EmailService
     #region New Tools - Search & Sync
 
     [Display(Name = "search_emails")]
-    [Description("Search emails using natural language semantic search. Requires ChromaDB to be configured. Returns emails ranked by relevance to your query.")]
+    [Description("Semantic search across emails using natural language (powered by ChromaDB vector search). Best for vague or conceptual queries like 'emails about the project deadline'. For exact matches by sender, subject, or keyword, use search_emails_local or get_email_summary instead.")]
     [Parameters("""
                 {
                   "type": "object",
@@ -589,7 +599,7 @@ public class EmailService
     }
 
     [Display(Name = "search_emails_local")]
-    [Description("Search emails by keyword in subject, sender, or body text using the local email database.")]
+    [Description("Search the local email database by keyword. Use the 'sender' parameter to find emails from a specific person or address (e.g. sender: 'john@example.com' or sender: 'John'). Use 'subject' for subject-line searches. Use 'searchText' only for broad body-text searches. Multiple parameters are AND-ed together.")]
     [Parameters("""
                 {
                   "type": "object",
@@ -600,23 +610,23 @@ public class EmailService
                     },
                     "searchText": {
                       "type": "string",
-                      "description": "Text to search for in email subject, sender, and body"
+                      "description": "General search text — matches across subject, sender (address and name), and body using OR logic. Use this for broad searches like a person's name or a keyword. Can be combined with other filters (folder, sender, subject) which are AND-ed."
                     },
                     "folder": {
                       "type": "string",
-                      "description": "Limit search to a specific folder. Optional."
+                      "description": "Limit search to a specific folder (e.g. 'INBOX', 'Sent'). Optional."
                     },
                     "sender": {
                       "type": "string",
-                      "description": "Filter by sender name or address. Optional."
+                      "description": "Filter by sender email address or display name (partial match). Use this to find emails FROM a specific person, e.g. 'anthony@apetalo.us' or 'Anthony'. This is the correct parameter for person-based searches."
                     },
                     "subject": {
                       "type": "string",
-                      "description": "Filter by subject text. Optional."
+                      "description": "Filter by subject line text (partial match). Overrides searchText for subject matching when both are provided."
                     },
                     "maxResults": {
                       "type": "number",
-                      "description": "Maximum number of results. Default 20."
+                      "description": "Maximum number of results to return. Default 20."
                     }
                   },
                   "required": []
@@ -635,9 +645,9 @@ public class EmailService
         var results = await _store.SearchAsync(
             accountName: account?.Name,
             folder: request.Folder,
-            subject: request.Subject ?? request.SearchText,
+            subject: request.Subject,
             sender: request.Sender,
-            bodyText: request.SearchText,
+            searchText: request.SearchText,
             maxResults: maxResults);
 
         var summaries = results.Select(e => new
@@ -1216,7 +1226,13 @@ public class EmailService
                     },
                     "attachment": {
                       "type": "object",
-                      "description": "The attachment to add to the draft email"
+                      "description": "The attachment to add to the draft email",
+                      "properties": {
+                        "fileName": { "type": "string", "description": "The name of the file (e.g. report.pdf)" },
+                        "contentType": { "type": "string", "description": "MIME type (e.g. application/pdf, text/plain). Defaults to application/octet-stream if not provided." },
+                        "data": { "type": "string", "description": "Base64-encoded file content" }
+                      },
+                      "required": ["fileName", "data"]
                     }
                   },
                   "required": ["messageId"]
@@ -1245,9 +1261,19 @@ public class EmailService
                 return new { Success = false, Message = "Attachment data is required" };
 
             var attachmentData = JsonSerializer.Deserialize<JsonElement>(attachmentJson);
-            var fileName = attachmentData.GetProperty("fileName").GetString();
-            var contentType = attachmentData.GetProperty("contentType").GetString();
-            var data = Convert.FromBase64String(attachmentData.GetProperty("data").GetString());
+
+            // Support both camelCase and lowercase property names from LLM
+            string fileName = TryGetJsonProperty(attachmentData, "fileName", "filename", "name");
+            string contentType = TryGetJsonProperty(attachmentData, "contentType", "contenttype", "mimeType", "mime_type")
+                                 ?? "application/octet-stream";
+            string base64Content = TryGetJsonProperty(attachmentData, "data", "content", "base64");
+
+            if (string.IsNullOrWhiteSpace(fileName))
+                return new { Success = false, Message = "Attachment fileName is required" };
+            if (string.IsNullOrWhiteSpace(base64Content))
+                return new { Success = false, Message = "Attachment data (base64) is required" };
+
+            var data = Convert.FromBase64String(base64Content);
 
             var builder = new BodyBuilder();
 

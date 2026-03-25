@@ -28,7 +28,10 @@ public class EmailVectorService : IDisposable
         if (string.IsNullOrWhiteSpace(config.OpenAiApiKey))
             throw new ArgumentException("OpenAiApiKey is required for vector search.");
 
-        _chromaConfigOptions = new ChromaConfigurationOptions(uri: config.ChromaUrl);
+        var chromaUri = config.ChromaUrl.TrimEnd('/');
+        if (!chromaUri.Contains("/api/"))
+            chromaUri += "/api/v1/";
+        _chromaConfigOptions = new ChromaConfigurationOptions(uri: chromaUri);
         _httpClient = httpClient ?? new HttpClient();
         _chromaClient = new ChromaClient(_chromaConfigOptions, _httpClient);
 
@@ -188,11 +191,22 @@ public class EmailVectorService : IDisposable
         {
             collection = await _chromaClient.GetCollection(_collectionName);
         }
-        catch
+        catch (Exception ex)
         {
-            collection = await _chromaClient.GetOrCreateCollection(
-                _collectionName,
-                new Dictionary<string, object> { ["description"] = "Email vector index" });
+            await _logger(LogLevel.Debug, $"Collection '{_collectionName}' not found ({ex.GetType().Name}), creating...");
+            try
+            {
+                collection = await _chromaClient.GetOrCreateCollection(
+                    _collectionName,
+                    new Dictionary<string, object> { ["description"] = "Email vector index" });
+            }
+            catch (Exception createEx)
+            {
+                await _logger(LogLevel.Error,
+                    $"Failed to create ChromaDB collection '{_collectionName}': {createEx.Message}. " +
+                    "Ensure ChromaDB is running and accessible.");
+                throw;
+            }
         }
         return new ChromaCollectionClient(collection, _chromaConfigOptions, _httpClient);
     }
