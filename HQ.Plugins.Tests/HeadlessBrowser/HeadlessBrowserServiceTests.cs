@@ -99,7 +99,8 @@ public class HeadlessBrowserServiceTests
     {
         var request = new ServiceRequest { Selector = "#myform" };
 
-        _mockClient.Setup(c => c.ExecuteAsync(It.IsAny<Func<IPage, Task<object>>>()))
+        // SubmitForm now returns ValueTuple via WithDiffIfEnabled
+        _mockClient.Setup(c => c.ExecuteAsync(It.IsAny<Func<IPage, Task<(bool, string, string, string)>>>()))
             .ThrowsAsync(new PlaywrightException("Element is not a form"));
 
         var result = await _service.SubmitForm(_config, request);

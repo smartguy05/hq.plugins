@@ -6,6 +6,7 @@ using HQ.Models.Enums;
 using HQ.Models.Helpers;
 using HQ.Models.Interfaces;
 using HQ.Plugins.HeadlessBrowser.Models;
+using HQ.Plugins.HeadlessBrowser.Pipeline;
 using Microsoft.Playwright;
 
 namespace HQ.Plugins.HeadlessBrowser;
@@ -66,12 +67,36 @@ public class HeadlessBrowserService
                 var title = await page.TitleAsync();
                 var url = page.Url;
 
-                var textContent = await page.EvaluateAsync<string>(
-                    "() => document.body?.innerText || ''");
+                string summary;
+                string format = "text";
 
-                var summary = textContent.Length > 2000
-                    ? textContent[..2000] + "..."
-                    : textContent;
+                if (config.PreferAriaSnapshot)
+                {
+                    var yaml = await AriaSnapshotExtractor.ExtractAsync(page, config.DefaultTimeoutMs);
+                    if (AriaSnapshotExtractor.IsUsable(yaml))
+                    {
+                        // Build ref-annotated snapshot
+                        var snapshot = RefAssigner.Assign(yaml, url);
+                        summary = AriaSnapshotExtractor.Truncate(snapshot.AnnotatedYaml, Math.Min(config.MaxSnapshotLines, 200));
+                        format = "aria";
+                    }
+                    else
+                    {
+                        var textContent = await page.EvaluateAsync<string>(
+                            "() => document.body?.innerText || ''");
+                        summary = textContent.Length > 2000
+                            ? textContent[..2000] + "..."
+                            : textContent;
+                    }
+                }
+                else
+                {
+                    var textContent = await page.EvaluateAsync<string>(
+                        "() => document.body?.innerText || ''");
+                    summary = textContent.Length > 2000
+                        ? textContent[..2000] + "..."
+                        : textContent;
+                }
 
                 return (object)new
                 {
@@ -79,7 +104,8 @@ public class HeadlessBrowserService
                     Title = title,
                     Url = url,
                     StatusCode = response?.Status,
-                    ContentSummary = summary.Trim()
+                    ContentSummary = summary.Trim(),
+                    Format = format
                 };
             });
         }
@@ -103,16 +129,103 @@ public class HeadlessBrowserService
     }
 
     [Display(Name = BrowserMethods.GetPageContent)]
-    [Description("Get the text or HTML content of the current page or a specific element. Defaults to text content, set contentType to 'html' for raw HTML.")]
-    [Parameters("""{"type":"object","properties":{"selector":{"type":"string","description":"CSS selector for a specific element (optional, defaults to full page)"},"contentType":{"type":"string","description":"'text' (default) or 'html'"},"maxLength":{"type":"integer","description":"Maximum content length to return (default 50000)"}},"required":[]}""")]
+    [Description("Get page content in aria (default, compact accessibility tree), compressed (clean DOM with noise removal), text, or html format. The 'aria' format uses ~80% fewer tokens.")]
+    [Parameters("""{"type":"object","properties":{"selector":{"type":"string","description":"CSS selector for a specific element (optional)"},"format":{"type":"string","description":"'aria' (default), 'compressed' (clean DOM), 'text', or 'html'"},"taskHint":{"type":"string","description":"Filter hint: 'form_fill', 'navigation', 'data_extraction', 'search', or 'general' (default)"},"maxLength":{"type":"integer","description":"Maximum content length (default 50000 for text/html, 300 lines for aria)"}},"required":[]}""")]
     public async Task<object> GetPageContent(ServiceConfig config, ServiceRequest request)
     {
         try
         {
             return await _client.ExecuteAsync(async page =>
             {
+                var format = request.Format?.ToLowerInvariant()
+                             ?? request.ContentType?.ToLowerInvariant()
+                             ?? (config.PreferAriaSnapshot ? "aria" : "text");
+
+                if (format == "aria")
+                {
+                    string yaml;
+                    if (!string.IsNullOrWhiteSpace(request.Selector))
+                    {
+                        try
+                        {
+                            yaml = await page.Locator(request.Selector).AriaSnapshotAsync(
+                                new LocatorAriaSnapshotOptions { Timeout = config.DefaultTimeoutMs });
+                        }
+                        catch (PlaywrightException)
+                        {
+                            return (object)new { Success = false, Message = $"Element not found: {request.Selector}" };
+                        }
+                    }
+                    else
+                    {
+                        yaml = await AriaSnapshotExtractor.ExtractAsync(page, config.DefaultTimeoutMs);
+                    }
+
+                    if (!AriaSnapshotExtractor.IsUsable(yaml))
+                    {
+                        // Fall back to text
+                        var fallbackText = await page.EvaluateAsync<string>("() => document.body?.innerText || ''");
+                        var maxLen = request.MaxLength ?? 50000;
+                        if (fallbackText.Length > maxLen)
+                            fallbackText = fallbackText[..maxLen] + "...(truncated)";
+
+                        return (object)new
+                        {
+                            Success = true,
+                            Url = page.Url,
+                            Format = "text",
+                            FallbackReason = "AriaSnapshot too sparse for this page",
+                            Length = fallbackText.Length,
+                            Content = fallbackText.Trim()
+                        };
+                    }
+
+                    // Apply task-scoped filter before ref assignment
+                    if (!string.IsNullOrWhiteSpace(request.TaskHint))
+                        yaml = TaskFilter.Filter(yaml, request.TaskHint);
+
+                    var maxLines = request.MaxLength ?? config.MaxSnapshotLines;
+                    var snapshot = RefAssigner.Assign(yaml, page.Url);
+                    var truncated = AriaSnapshotExtractor.Truncate(snapshot.AnnotatedYaml, maxLines);
+
+                    return (object)new
+                    {
+                        Success = true,
+                        Url = page.Url,
+                        Format = "aria",
+                        Lines = truncated.Split('\n').Length,
+                        Content = truncated
+                    };
+                }
+
+                if (format == "compressed")
+                {
+                    var domTree = await DomExtractor.ExtractAsync(page, config.TextTruncationLimit);
+                    if (domTree == null)
+                        return (object)new { Success = false, Message = "Failed to extract DOM" };
+
+                    domTree = DomCompressor.Compress(domTree);
+                    if (config.EnableListFolding)
+                        domTree = ListFolder.Fold(domTree, config.SimHashSimilarityThreshold);
+
+                    var compressed = DomCompressor.Serialize(domTree);
+                    var compMaxLength = request.MaxLength ?? 50000;
+                    if (compressed.Length > compMaxLength)
+                        compressed = compressed[..compMaxLength] + "\n...(truncated)";
+
+                    return (object)new
+                    {
+                        Success = true,
+                        Url = page.Url,
+                        Format = "compressed",
+                        Length = compressed.Length,
+                        Content = compressed
+                    };
+                }
+
+                // Existing text/html paths
                 var maxLength = request.MaxLength ?? 50000;
-                var contentType = request.ContentType?.ToLowerInvariant() ?? "text";
+                var contentType = format;
                 string content;
 
                 if (!string.IsNullOrWhiteSpace(request.Selector))
@@ -139,7 +252,7 @@ public class HeadlessBrowserService
                 {
                     Success = true,
                     Url = page.Url,
-                    ContentType = contentType,
+                    Format = contentType,
                     Length = content.Length,
                     Content = content.Trim()
                 };
@@ -156,61 +269,63 @@ public class HeadlessBrowserService
     }
 
     [Display(Name = BrowserMethods.GetInteractiveElements)]
-    [Description("List interactive elements (links, buttons, inputs, selects, textareas) on the current page with their CSS selectors. Useful for discovering what actions are available.")]
-    [Parameters("""{"type":"object","properties":{"elementType":{"type":"string","description":"Filter by element type: 'links', 'buttons', 'inputs', 'all' (default 'all')"},"selector":{"type":"string","description":"Scope search to elements within this CSS selector"}},"required":[]}""")]
+    [Description("List interactive elements (links, buttons, inputs) on the current page. Returns role and name from the accessibility tree. Use format 'legacy' for CSS selectors instead.")]
+    [Parameters("""{"type":"object","properties":{"elementType":{"type":"string","description":"Filter: 'links', 'buttons', 'inputs', 'all' (default 'all')"},"selector":{"type":"string","description":"Scope search within this CSS selector"},"format":{"type":"string","description":"'aria' (default, from accessibility tree) or 'legacy' (CSS selectors via DOM walk)"}},"required":[]}""")]
     public async Task<object> GetInteractiveElements(ServiceConfig config, ServiceRequest request)
     {
         try
         {
-        return await _client.ExecuteAsync(async page =>
-        {
-            var elementType = request.ElementType?.ToLowerInvariant() ?? "all";
-            var scope = string.IsNullOrWhiteSpace(request.Selector) ? "document" : $"document.querySelector('{request.Selector.Replace("'", "\\'")}')";
-
-            var js = $$"""
-                (scopeSelector) => {
-                    const scope = scopeSelector === 'document' ? document : document.querySelector(scopeSelector);
-                    if (!scope) return { error: 'Scope element not found' };
-                    const results = [];
-                    const types = '{{elementType}}';
-
-                    function getSelector(el) {
-                        if (el.id) return '#' + el.id;
-                        if (el.name) return el.tagName.toLowerCase() + '[name="' + el.name + '"]';
-                        const classes = Array.from(el.classList).slice(0, 2).join('.');
-                        if (classes) return el.tagName.toLowerCase() + '.' + classes;
-                        return el.tagName.toLowerCase();
-                    }
-
-                    if (types === 'all' || types === 'links') {
-                        scope.querySelectorAll('a[href]').forEach((el, i) => {
-                            if (i < 50) results.push({ type: 'link', selector: getSelector(el), text: (el.innerText || '').slice(0, 100), href: el.href });
-                        });
-                    }
-                    if (types === 'all' || types === 'buttons') {
-                        scope.querySelectorAll('button, input[type="button"], input[type="submit"], [role="button"]').forEach((el, i) => {
-                            if (i < 50) results.push({ type: 'button', selector: getSelector(el), text: (el.innerText || el.value || '').slice(0, 100) });
-                        });
-                    }
-                    if (types === 'all' || types === 'inputs') {
-                        scope.querySelectorAll('input:not([type="button"]):not([type="submit"]):not([type="hidden"]), textarea, select').forEach((el, i) => {
-                            if (i < 50) results.push({ type: el.tagName.toLowerCase(), selector: getSelector(el), name: el.name, inputType: el.type, placeholder: el.placeholder, value: (el.value || '').slice(0, 50) });
-                        });
-                    }
-                    return results;
-                }
-                """;
-
-            var elements = await page.EvaluateAsync<object>(js,
-                string.IsNullOrWhiteSpace(request.Selector) ? "document" : request.Selector);
-
-            return (object)new
+            return await _client.ExecuteAsync(async page =>
             {
-                Success = true,
-                Url = page.Url,
-                Elements = elements
-            };
-        });
+                var format = request.Format?.ToLowerInvariant() ?? (config.PreferAriaSnapshot ? "aria" : "legacy");
+
+                if (format == "aria")
+                {
+                    string yaml;
+                    if (!string.IsNullOrWhiteSpace(request.Selector))
+                    {
+                        try
+                        {
+                            yaml = await page.Locator(request.Selector).AriaSnapshotAsync(
+                                new LocatorAriaSnapshotOptions { Timeout = config.DefaultTimeoutMs });
+                        }
+                        catch (PlaywrightException)
+                        {
+                            return (object)new { Success = false, Message = $"Scope element not found: {request.Selector}" };
+                        }
+                    }
+                    else
+                    {
+                        yaml = await AriaSnapshotExtractor.ExtractAsync(page, config.DefaultTimeoutMs);
+                    }
+
+                    if (!AriaSnapshotExtractor.IsUsable(yaml))
+                        return await GetInteractiveElementsLegacy(page, request);
+
+                    var allElements = AriaSnapshotExtractor.ParseInteractiveElements(yaml);
+                    var elementType = request.ElementType?.ToLowerInvariant() ?? "all";
+
+                    var filtered = elementType switch
+                    {
+                        "links" => allElements.Where(e => e.Role == "link").ToList(),
+                        "buttons" => allElements.Where(e => e.Role is "button" or "menuitem").ToList(),
+                        "inputs" => allElements.Where(e => e.Role is "textbox" or "combobox" or "checkbox"
+                            or "radio" or "slider" or "spinbutton" or "searchbox" or "switch").ToList(),
+                        _ => allElements
+                    };
+
+                    return (object)new
+                    {
+                        Success = true,
+                        Url = page.Url,
+                        Format = "aria",
+                        Count = filtered.Count,
+                        Elements = filtered.Select(e => new { e.Role, e.Name }).ToArray()
+                    };
+                }
+
+                return await GetInteractiveElementsLegacy(page, request);
+            });
         }
         catch (PlaywrightException ex)
         {
@@ -222,33 +337,287 @@ public class HeadlessBrowserService
         }
     }
 
-    [Display(Name = BrowserMethods.ClickElement)]
-    [Description("Click an element on the page by CSS selector. Waits for the element to be visible and clickable.")]
-    [Parameters("""{"type":"object","properties":{"selector":{"type":"string","description":"CSS selector of the element to click"}},"required":["selector"]}""")]
-    public async Task<object> ClickElement(ServiceConfig config, ServiceRequest request)
+    private async Task<object> GetInteractiveElementsLegacy(IPage page, ServiceRequest request)
     {
-        if (string.IsNullOrWhiteSpace(request.Selector))
-            throw new ArgumentException("Missing required parameter: selector");
+        var elementType = request.ElementType?.ToLowerInvariant() ?? "all";
+        var scope = string.IsNullOrWhiteSpace(request.Selector) ? "document" : $"document.querySelector('{request.Selector.Replace("'", "\\'")}')";
 
+        var js = $$"""
+            (scopeSelector) => {
+                const scope = scopeSelector === 'document' ? document : document.querySelector(scopeSelector);
+                if (!scope) return { error: 'Scope element not found' };
+                const results = [];
+                const types = '{{elementType}}';
+
+                function getSelector(el) {
+                    if (el.id) return '#' + el.id;
+                    if (el.name) return el.tagName.toLowerCase() + '[name="' + el.name + '"]';
+                    const classes = Array.from(el.classList).slice(0, 2).join('.');
+                    if (classes) return el.tagName.toLowerCase() + '.' + classes;
+                    return el.tagName.toLowerCase();
+                }
+
+                if (types === 'all' || types === 'links') {
+                    scope.querySelectorAll('a[href]').forEach((el, i) => {
+                        if (i < 50) results.push({ type: 'link', selector: getSelector(el), text: (el.innerText || '').slice(0, 100), href: el.href });
+                    });
+                }
+                if (types === 'all' || types === 'buttons') {
+                    scope.querySelectorAll('button, input[type="button"], input[type="submit"], [role="button"]').forEach((el, i) => {
+                        if (i < 50) results.push({ type: 'button', selector: getSelector(el), text: (el.innerText || el.value || '').slice(0, 100) });
+                    });
+                }
+                if (types === 'all' || types === 'inputs') {
+                    scope.querySelectorAll('input:not([type="button"]):not([type="submit"]):not([type="hidden"]), textarea, select').forEach((el, i) => {
+                        if (i < 50) results.push({ type: el.tagName.toLowerCase(), selector: getSelector(el), name: el.name, inputType: el.type, placeholder: el.placeholder, value: (el.value || '').slice(0, 50) });
+                    });
+                }
+                return results;
+            }
+            """;
+
+        var elements = await page.EvaluateAsync<object>(js,
+            string.IsNullOrWhiteSpace(request.Selector) ? "document" : request.Selector);
+
+        return (object)new
+        {
+            Success = true,
+            Url = page.Url,
+            Format = "legacy",
+            Elements = elements
+        };
+    }
+
+    [Display(Name = BrowserMethods.GetOutline)]
+    [Description("Get a compact structural outline of the current page: headings, navigation, forms, and key interactive elements with ref IDs. Much smaller than full content.")]
+    [Parameters("""{"type":"object","properties":{},"required":[]}""")]
+    public async Task<object> GetOutline(ServiceConfig config, ServiceRequest request)
+    {
         try
         {
             return await _client.ExecuteAsync(async page =>
             {
-                await page.ClickAsync(request.Selector);
-                try
+                var yaml = await AriaSnapshotExtractor.ExtractAsync(page, config.DefaultTimeoutMs);
+                if (!AriaSnapshotExtractor.IsUsable(yaml))
                 {
-                    await page.WaitForLoadStateAsync(LoadState.NetworkIdle,
-                        new PageWaitForLoadStateOptions { Timeout = 10000 });
+                    return (object)new
+                    {
+                        Success = true,
+                        Url = page.Url,
+                        Title = await page.TitleAsync(),
+                        Outline = "Page has minimal accessibility structure. Use get_page_content with format 'text' instead."
+                    };
                 }
-                catch (TimeoutException) { }
+
+                var snapshot = RefAssigner.Assign(yaml, page.Url);
+                var outline = OutlineBuilder.Build(snapshot.AnnotatedYaml);
 
                 return (object)new
                 {
                     Success = true,
                     Url = page.Url,
                     Title = await page.TitleAsync(),
-                    Message = $"Clicked element: {request.Selector}"
+                    Lines = outline.Split('\n').Length,
+                    Outline = outline
                 };
+            });
+        }
+        catch (PlaywrightException ex)
+        {
+            return new { Success = false, Message = $"Failed to get outline: {ex.Message}" };
+        }
+    }
+
+    [Display(Name = BrowserMethods.SearchPage)]
+    [Description("Search the current page for text. Returns matching lines with surrounding context and nearby ref IDs. Does not re-fetch the page.")]
+    [Parameters("""{"type":"object","properties":{"query":{"type":"string","description":"Text to search for (case-insensitive)"}},"required":["query"]}""")]
+    public async Task<object> SearchPage(ServiceConfig config, ServiceRequest request)
+    {
+        if (string.IsNullOrWhiteSpace(request.Query))
+            throw new ArgumentException("Missing required parameter: query");
+
+        try
+        {
+            return await _client.ExecuteAsync(async page =>
+            {
+                var yaml = await AriaSnapshotExtractor.ExtractAsync(page, config.DefaultTimeoutMs);
+                if (!AriaSnapshotExtractor.IsUsable(yaml))
+                {
+                    // Fall back to text search
+                    var text = await page.EvaluateAsync<string>("() => document.body?.innerText || ''");
+                    var hasMatch = text.Contains(request.Query, StringComparison.OrdinalIgnoreCase);
+                    return (object)new
+                    {
+                        Success = true,
+                        Url = page.Url,
+                        Format = "text",
+                        Found = hasMatch,
+                        Message = hasMatch
+                            ? $"Text found on page (use get_page_content for full context)"
+                            : $"No matches found for: {request.Query}"
+                    };
+                }
+
+                var snapshot = RefAssigner.Assign(yaml, page.Url);
+                var result = PageSearcher.Search(snapshot.AnnotatedYaml, request.Query);
+
+                return (object)new
+                {
+                    Success = true,
+                    Url = page.Url,
+                    Format = "aria",
+                    Results = result
+                };
+            });
+        }
+        catch (PlaywrightException ex)
+        {
+            return new { Success = false, Message = $"Search failed: {ex.Message}" };
+        }
+    }
+
+    [Display(Name = BrowserMethods.GetElement)]
+    [Description("Get the full subtree of a specific element by ref ID. Use after get_outline to drill into a section.")]
+    [Parameters("""{"type":"object","properties":{"ref":{"type":"string","description":"Ref ID to expand (e.g. 'e5')"}},"required":["ref"]}""")]
+    public async Task<object> GetElement(ServiceConfig config, ServiceRequest request)
+    {
+        if (string.IsNullOrWhiteSpace(request.Ref))
+            throw new ArgumentException("Missing required parameter: ref");
+
+        try
+        {
+            return await _client.ExecuteAsync(async page =>
+            {
+                var yaml = await AriaSnapshotExtractor.ExtractAsync(page, config.DefaultTimeoutMs);
+                if (!AriaSnapshotExtractor.IsUsable(yaml))
+                    return (object)new { Success = false, Message = "AriaSnapshot not available. Use get_page_content instead." };
+
+                var snapshot = RefAssigner.Assign(yaml, page.Url);
+                if (!snapshot.RefMap.TryGetValue(request.Ref, out var elementRef))
+                    return (object)new { Success = false, StaleRef = true, Message = $"Ref '{request.Ref}' not found. Call get_outline to refresh." };
+
+                // Extract the subtree: from the ref's line to the next line at same or lesser indent
+                var lines = snapshot.AnnotatedYaml.Split('\n');
+                var startLine = elementRef.LineIndex;
+                var startIndent = elementRef.IndentLevel;
+                var endLine = startLine + 1;
+
+                while (endLine < lines.Length)
+                {
+                    var trimmed = lines[endLine].TrimStart();
+                    if (trimmed.StartsWith("- "))
+                    {
+                        var indent = (lines[endLine].Length - trimmed.Length) / 2;
+                        if (indent <= startIndent)
+                            break;
+                    }
+                    endLine++;
+                }
+
+                var subtree = string.Join('\n', lines[startLine..endLine]);
+
+                return (object)new
+                {
+                    Success = true,
+                    Url = page.Url,
+                    Ref = request.Ref,
+                    Role = elementRef.Role,
+                    Name = elementRef.Name,
+                    Lines = endLine - startLine,
+                    Content = subtree
+                };
+            });
+        }
+        catch (PlaywrightException ex)
+        {
+            return new { Success = false, Message = $"Failed to get element: {ex.Message}" };
+        }
+    }
+
+    [Display(Name = BrowserMethods.GetVisibleText)]
+    [Description("Get the main readable text content (like reader view). Strips navigation, sidebars, footers, and ads. Good for content-heavy pages.")]
+    [Parameters("""{"type":"object","properties":{"maxLength":{"type":"integer","description":"Maximum text length (default 10000)"}},"required":[]}""")]
+    public async Task<object> GetVisibleText(ServiceConfig config, ServiceRequest request)
+    {
+        try
+        {
+            return await _client.ExecuteAsync(async page =>
+            {
+                var maxLength = request.MaxLength ?? 10000;
+                string text;
+
+                // Try main content selectors first
+                var mainLocator = page.Locator("main, article, [role='main']").First;
+                try
+                {
+                    text = await mainLocator.InnerTextAsync(new LocatorInnerTextOptions { Timeout = 3000 });
+                }
+                catch
+                {
+                    // Fallback to body text
+                    text = await page.EvaluateAsync<string>("() => document.body?.innerText || ''");
+                }
+
+                if (string.IsNullOrWhiteSpace(text))
+                    text = await page.EvaluateAsync<string>("() => document.body?.innerText || ''");
+
+                if (text.Length > maxLength)
+                    text = text[..maxLength] + "...(truncated)";
+
+                return (object)new
+                {
+                    Success = true,
+                    Url = page.Url,
+                    Length = text.Length,
+                    Content = text.Trim()
+                };
+            });
+        }
+        catch (PlaywrightException ex)
+        {
+            return new { Success = false, Message = $"Failed to get visible text: {ex.Message}" };
+        }
+    }
+
+    [Display(Name = BrowserMethods.ClickElement)]
+    [Description("Click an element by ref ID (e.g. 'e5') or CSS selector. Set diffMode to true to get a delta of what changed.")]
+    [Parameters("""{"type":"object","properties":{"ref":{"type":"string","description":"Ref ID from page snapshot (e.g. 'e5'). Preferred over selector."},"selector":{"type":"string","description":"CSS selector (fallback if ref not available)"},"diffMode":{"type":"boolean","description":"Return only what changed after the click (default false)"}},"required":[]}""")]
+    public async Task<object> ClickElement(ServiceConfig config, ServiceRequest request)
+    {
+        if (string.IsNullOrWhiteSpace(request.Ref) && string.IsNullOrWhiteSpace(request.Selector))
+            throw new ArgumentException("Provide either 'ref' or 'selector'");
+
+        try
+        {
+            if (!string.IsNullOrWhiteSpace(request.Ref))
+            {
+                var locator = _client.ResolveRef(request.Ref);
+                if (locator is null)
+                    return new { Success = false, StaleRef = true, Message = $"Ref '{request.Ref}' not found. Call get_page_content or navigate_to_url to refresh." };
+
+                return await WithDiffIfEnabled(request, async () =>
+                {
+                    return await _client.ExecuteAsync(async page =>
+                    {
+                        await locator.ClickAsync();
+                        try { await page.WaitForLoadStateAsync(LoadState.NetworkIdle, new PageWaitForLoadStateOptions { Timeout = 10000 }); }
+                        catch (TimeoutException) { }
+
+                        return (true, page.Url, await page.TitleAsync(), $"Clicked element: {request.Ref}");
+                    });
+                });
+            }
+
+            return await WithDiffIfEnabled(request, async () =>
+            {
+                return await _client.ExecuteAsync(async page =>
+                {
+                    await page.ClickAsync(request.Selector);
+                    try { await page.WaitForLoadStateAsync(LoadState.NetworkIdle, new PageWaitForLoadStateOptions { Timeout = 10000 }); }
+                    catch (TimeoutException) { }
+
+                    return (true, page.Url, await page.TitleAsync(), $"Clicked element: {request.Selector}");
+                });
             });
         }
         catch (PlaywrightException ex)
@@ -262,66 +631,81 @@ public class HeadlessBrowserService
     }
 
     [Display(Name = BrowserMethods.FillField)]
-    [Description("Fill a form field with a value by CSS selector. Clears the field first, then types the value.")]
-    [Parameters("""{"type":"object","properties":{"selector":{"type":"string","description":"CSS selector of the input/textarea to fill"},"value":{"type":"string","description":"The value to type into the field"}},"required":["selector","value"]}""")]
+    [Description("Fill a form field by ref ID (e.g. 'e3') or CSS selector. Clears the field first.")]
+    [Parameters("""{"type":"object","properties":{"ref":{"type":"string","description":"Ref ID from page snapshot (e.g. 'e3'). Preferred over selector."},"selector":{"type":"string","description":"CSS selector (fallback if ref not available)"},"value":{"type":"string","description":"The value to type into the field"}},"required":["value"]}""")]
     public async Task<object> FillField(ServiceConfig config, ServiceRequest request)
     {
-        if (string.IsNullOrWhiteSpace(request.Selector))
-            throw new ArgumentException("Missing required parameter: selector");
+        if (string.IsNullOrWhiteSpace(request.Ref) && string.IsNullOrWhiteSpace(request.Selector))
+            throw new ArgumentException("Provide either 'ref' or 'selector'");
         if (request.Value is null)
             throw new ArgumentException("Missing required parameter: value");
+
+        if (!string.IsNullOrWhiteSpace(request.Ref))
+        {
+            var locator = _client.ResolveRef(request.Ref);
+            if (locator is null)
+                return new { Success = false, StaleRef = true, Message = $"Ref '{request.Ref}' not found. Call get_page_content or navigate_to_url to refresh." };
+
+            return await _client.ExecuteAsync(async page =>
+            {
+                await locator.FillAsync(request.Value);
+                return (object)new { Success = true, Message = $"Filled '{request.Ref}' with value" };
+            });
+        }
 
         return await _client.ExecuteAsync(async page =>
         {
             await page.FillAsync(request.Selector, request.Value);
-
-            return (object)new
-            {
-                Success = true,
-                Message = $"Filled '{request.Selector}' with value"
-            };
+            return (object)new { Success = true, Message = $"Filled '{request.Selector}' with value" };
         });
     }
 
     [Display(Name = BrowserMethods.SubmitForm)]
-    [Description("Submit a form by clicking a submit button or pressing Enter on a form element. Provide the selector of the submit button or the form itself.")]
-    [Parameters("""{"type":"object","properties":{"selector":{"type":"string","description":"CSS selector of the submit button or form element"}},"required":["selector"]}""")]
+    [Description("Submit a form by clicking a submit button (by ref or selector). Set diffMode to true to get a delta of what changed.")]
+    [Parameters("""{"type":"object","properties":{"ref":{"type":"string","description":"Ref ID of the submit button (e.g. 'e7'). Preferred over selector."},"selector":{"type":"string","description":"CSS selector of the submit button or form element"},"diffMode":{"type":"boolean","description":"Return only what changed after submit (default false)"}},"required":[]}""")]
     public async Task<object> SubmitForm(ServiceConfig config, ServiceRequest request)
     {
-        if (string.IsNullOrWhiteSpace(request.Selector))
-            throw new ArgumentException("Missing required parameter: selector");
+        if (string.IsNullOrWhiteSpace(request.Ref) && string.IsNullOrWhiteSpace(request.Selector))
+            throw new ArgumentException("Provide either 'ref' or 'selector'");
 
         try
         {
-            return await _client.ExecuteAsync(async page =>
+            if (!string.IsNullOrWhiteSpace(request.Ref))
             {
-                var tagName = await page.EvaluateAsync<string>(
-                    "(sel) => document.querySelector(sel)?.tagName?.toLowerCase()", request.Selector);
+                var locator = _client.ResolveRef(request.Ref);
+                if (locator is null)
+                    return new { Success = false, StaleRef = true, Message = $"Ref '{request.Ref}' not found. Call get_page_content or navigate_to_url to refresh." };
 
-                if (tagName == "form")
+                return await WithDiffIfEnabled(request, async () =>
                 {
-                    await page.EvaluateAsync(
-                        "(sel) => document.querySelector(sel).submit()", request.Selector);
-                }
-                else
-                {
-                    await page.ClickAsync(request.Selector);
-                }
+                    return await _client.ExecuteAsync(async page =>
+                    {
+                        await locator.ClickAsync();
+                        try { await page.WaitForLoadStateAsync(LoadState.NetworkIdle, new PageWaitForLoadStateOptions { Timeout = 10000 }); }
+                        catch (TimeoutException) { }
 
-                try
-                {
-                    await page.WaitForLoadStateAsync(LoadState.NetworkIdle,
-                        new PageWaitForLoadStateOptions { Timeout = 10000 });
-                }
-                catch (TimeoutException) { }
+                        return (true, page.Url, await page.TitleAsync(), $"Form submitted via: {request.Ref}");
+                    });
+                });
+            }
 
-                return (object)new
+            return await WithDiffIfEnabled(request, async () =>
+            {
+                return await _client.ExecuteAsync(async page =>
                 {
-                    Success = true,
-                    Url = page.Url,
-                    Title = await page.TitleAsync(),
-                    Message = $"Form submitted via: {request.Selector}"
-                };
+                    var tagName = await page.EvaluateAsync<string>(
+                        "(sel) => document.querySelector(sel)?.tagName?.toLowerCase()", request.Selector);
+
+                    if (tagName == "form")
+                        await page.EvaluateAsync("(sel) => document.querySelector(sel).submit()", request.Selector);
+                    else
+                        await page.ClickAsync(request.Selector);
+
+                    try { await page.WaitForLoadStateAsync(LoadState.NetworkIdle, new PageWaitForLoadStateOptions { Timeout = 10000 }); }
+                    catch (TimeoutException) { }
+
+                    return (true, page.Url, await page.TitleAsync(), $"Form submitted via: {request.Selector}");
+                });
             });
         }
         catch (PlaywrightException ex)
@@ -425,5 +809,47 @@ public class HeadlessBrowserService
             Success = true,
             Message = "Browser session closed"
         };
+    }
+
+    private async Task<object> WithDiffIfEnabled(ServiceRequest request, Func<Task<(bool success, string url, string title, string message)>> action)
+    {
+        // Take a pre-action snapshot if diff mode is requested
+        PageSnapshot priorSnapshot = null;
+        if (request.DiffMode == true && _config.PreferAriaSnapshot)
+            priorSnapshot = await _client.TakeSnapshotAsync(_config.DefaultTimeoutMs);
+
+        var (success, url, title, message) = await action();
+
+        if (!success)
+            return new { Success = false, Message = message };
+
+        // Compute diff if we have a prior snapshot
+        if (priorSnapshot != null)
+        {
+            var postSnapshot = await _client.TakeSnapshotAsync(_config.DefaultTimeoutMs);
+            if (postSnapshot != null)
+            {
+                var delta = DiffEngine.ComputeDiff(priorSnapshot, postSnapshot);
+                if (delta != null && DiffEngine.IsSignificant(delta))
+                {
+                    return new
+                    {
+                        Success = true,
+                        Url = url,
+                        Title = title,
+                        Message = message,
+                        Delta = new
+                        {
+                            delta.Added,
+                            delta.Removed,
+                            Changed = delta.Changed.Select(c => new { c.Ref, c.Was, c.Now }),
+                            delta.UnchangedCount
+                        }
+                    };
+                }
+            }
+        }
+
+        return new { Success = true, Url = url, Title = title, Message = message };
     }
 }

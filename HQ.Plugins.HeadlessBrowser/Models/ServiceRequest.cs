@@ -18,4 +18,19 @@ public record ServiceRequest : IPluginServiceRequest
     public string FileName { get; set; }
     public bool? FullPage { get; set; }
     public string ElementType { get; set; }
+
+    // Phase 1: AriaSnapshot
+    public string Format { get; set; }
+
+    // Phase 2: Ref-based targeting
+    public string Ref { get; set; }
+
+    // Phase 3: Two-tier retrieval
+    public string Query { get; set; }
+
+    // Phase 5: Task-scoped filtering
+    public string TaskHint { get; set; }
+
+    // Phase 6: Diff mode
+    public bool? DiffMode { get; set; }
 }

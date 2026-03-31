@@ -28,7 +28,8 @@
       "WebFetch(domain:en.blog.mantiks.io)",
       "Bash(dotnet tool:*)",
       "Bash(npx tsc:*)",
-      "Bash(dotnet ef:*)"
+      "Bash(dotnet ef:*)",
+      "Bash(find /home/anthony/Code/hq.plugins -path */Microsoft.Playwright* -name *.xml)"
     ]
   }
 }

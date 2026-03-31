@@ -25,4 +25,19 @@ public record ServiceConfig : IPluginConfig
 
     [Tooltip("Directory to save screenshots. Defaults to temp directory.")]
     public string ScreenshotDirectory { get; set; }
+
+    [Tooltip("Maximum lines to return from AriaSnapshot (default 300). Reduces token usage on large pages.")]
+    public int MaxSnapshotLines { get; set; } = 300;
+
+    [Tooltip("Use Playwright AriaSnapshot for page content (default true). Falls back to innerText if snapshot is too sparse.")]
+    public bool PreferAriaSnapshot { get; set; } = true;
+
+    [Tooltip("Maximum characters per text node in DOM compression (default 100).")]
+    public int TextTruncationLimit { get; set; } = 100;
+
+    [Tooltip("SimHash similarity threshold percentage for list folding (default 60).")]
+    public int SimHashSimilarityThreshold { get; set; } = 60;
+
+    [Tooltip("Collapse repeating sibling structures into a single example (default true).")]
+    public bool EnableListFolding { get; set; } = true;
 }
