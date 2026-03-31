@@ -42,7 +42,7 @@ public record ServiceConfig: IPluginConfig
     [Tooltip("How often to sync email from the server, in minutes")]
     public int SyncIntervalMinutes { get; set; } = 15;
 
-    [Tooltip("IMAP folders to sync, e.g. INBOX, Sent")]
+    [Tooltip("IMAP folders to sync. Default: all standard folders (Inbox, Sent, Drafts, Trash, Junk, Archive). Use '*' to sync all folders.")]
     public IEnumerable<string> SyncFolders { get; set; }
 
     [Tooltip("Maximum number of characters to index per email body. Longer emails are truncated.")]

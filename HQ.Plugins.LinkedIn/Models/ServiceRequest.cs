@@ -9,28 +9,30 @@ public record ServiceRequest : IPluginServiceRequest
     public string RequestingService { get; set; }
     public string ConfirmationId { get; set; }
 
-    // Post/share
-    public string Content { get; set; }
-    public string MediaUrl { get; set; }
-    public string Visibility { get; set; }
+    // Chat parameters
+    public string ChatId { get; set; }
+    public string Before { get; set; }
+    public string After { get; set; }
+    public string Cursor { get; set; }
+    public int? Limit { get; set; }
 
-    // Profile lookup
-    public string LinkedInProfileUrl { get; set; }
-    public string CompanyLinkedInUrl { get; set; }
+    // Profile parameters
+    public string Username { get; set; }
+    public bool? NotifyProfile { get; set; }
 
-    // People search (Proxycurl)
-    public string Keyword { get; set; }
-    public string CurrentCompany { get; set; }
-    public string CurrentRole { get; set; }
-    public string Location { get; set; }
-    public string Industry { get; set; }
-    public int? MaxResults { get; set; } = 10;
+    // Post parameters
+    public string Caption { get; set; }
+    public string Attachments { get; set; }
 
-    // Post reference
-    public string PostUrn { get; set; }
+    // Comment parameters
+    public string PostId { get; set; }
+    public string Text { get; set; }
 
-    // Engagement
-    public string ReactionType { get; set; }
-    public string CommentText { get; set; }
-    public string OriginalPostUrn { get; set; }
+    // Invitation parameters
+    public string InvitationMessage { get; set; }
+    public string ConversationId { get; set; }
+
+    // New chat parameters
+    public string AccountType { get; set; }
+    public string Title { get; set; }
 }

@@ -11,4 +11,10 @@ public static class BrowserMethods
     public const string TakeScreenshot = "take_screenshot";
     public const string ExecuteJavascript = "execute_javascript";
     public const string CloseBrowser = "close_browser";
+
+    // Phase 3: Two-tier retrieval
+    public const string GetOutline = "get_outline";
+    public const string SearchPage = "search_page";
+    public const string GetElement = "get_element";
+    public const string GetVisibleText = "get_visible_text";
 }

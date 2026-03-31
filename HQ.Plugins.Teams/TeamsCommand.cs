@@ -19,12 +19,12 @@ public class TeamsCommand : CommandBase<ServiceRequest, ServiceConfig>, INotific
     public override string Name => "Teams";
     public override string Description => "A plugin to send and receive Microsoft Teams messages";
     protected override INotificationService NotificationService { get; set; }
-    private static TeamsService _service;
-    private static TeamsGraphClient _graphClient;
-    private static TeamsBot _bot;
-    private static ServiceConfig _config;
-    private static INotificationService _staticConfirmationService;
-    private static HttpListener _httpListener;
+    private TeamsService _service;
+    private TeamsGraphClient _graphClient;
+    private TeamsBot _bot;
+    private ServiceConfig _config;
+    private INotificationService _staticConfirmationService;
+    private HttpListener _httpListener;
 
     public override List<ToolCall> GetToolDefinitions()
     {
@@ -114,9 +114,9 @@ public class TeamsCommand : CommandBase<ServiceRequest, ServiceConfig>, INotific
         try
         {
             var config = configString.ReadPluginConfig<ServiceConfig>();
-            _config ??= config;
+            _config = config;
 
-            _graphClient ??= new TeamsGraphClient(config, log);
+            _graphClient = new TeamsGraphClient(config, log);
             _service = new TeamsService(_graphClient, log, config);
             _bot = new TeamsBot(log, config, notificationService, Confirm, _graphClient);
 
@@ -229,7 +229,7 @@ public class TeamsCommand : CommandBase<ServiceRequest, ServiceConfig>, INotific
     {
         if (_service != null) return _service;
 
-        _config ??= config;
+        _config = config ?? _config;
         _graphClient ??= new TeamsGraphClient(config, Log);
         _service = new TeamsService(_graphClient, Log, config);
         return _service;

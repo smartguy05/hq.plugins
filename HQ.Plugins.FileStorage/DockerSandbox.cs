@@ -40,6 +40,18 @@ internal class DockerSandbox
     {
         var containerName = ContainerName(workspaceId);
 
+        // Verify the Docker image exists before attempting container creation
+        try
+        {
+            await _client.Images.InspectImageAsync(_config.DefaultImage);
+        }
+        catch (DockerImageNotFoundException)
+        {
+            throw new InvalidOperationException(
+                $"Docker image '{_config.DefaultImage}' not found. " +
+                "Build it with: docker build -t hq-workspace:latest -f HQ.Plugins.FileStorage/Dockerfile HQ.Plugins.FileStorage/");
+        }
+
         // Check if container already exists
         var existing = await FindContainerAsync(workspaceId);
         if (existing != null)
@@ -249,6 +261,22 @@ internal class DockerSandbox
         {
             Path = dir
         }, tar);
+    }
+
+    /// <summary>
+    /// Write file content via exec + base64, bypassing the Docker archive API.
+    /// Use this for tmpfs paths where ExtractArchiveToContainerAsync may fail
+    /// on read-only rootfs containers despite the target being a writable mount.
+    /// Base64 output contains only [A-Za-z0-9+/=\n] — no shell metacharacters.
+    /// </summary>
+    public async Task WriteFileViaExecAsync(string workspaceId, string containerPath, byte[] content)
+    {
+        var b64 = Convert.ToBase64String(content);
+        var (_, stderr, exitCode) = await ExecAsync(
+            workspaceId, $"printf '%s' '{b64}' | base64 -d > {containerPath}", "/", 10);
+
+        if (exitCode != 0)
+            throw new InvalidOperationException($"Failed to write file via exec (exit {exitCode}): {stderr}");
     }
 
     public async Task<(string FileName, byte[] Content)> ReadFileAsync(string workspaceId, string containerPath)

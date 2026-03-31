@@ -4,66 +4,76 @@ namespace HQ.Plugins.Tests.LinkedIn;
 
 public class LinkedInCommandTests
 {
-    [Fact]
-    public void GetToolDefinitions_ReturnsExpectedToolCount()
+    private readonly LinkedInCommand _command;
+
+    public LinkedInCommandTests()
     {
-        var command = new LinkedInCommand();
-        var tools = command.GetToolDefinitions();
-        Assert.Equal(12, tools.Count);
+        _command = new LinkedInCommand();
+    }
+
+    [Fact]
+    public void Name_ReturnsLinkedIn()
+    {
+        Assert.Equal("LinkedIn", _command.Name);
+    }
+
+    [Fact]
+    public void Description_IsNotEmpty()
+    {
+        Assert.False(string.IsNullOrWhiteSpace(_command.Description));
+    }
+
+    [Fact]
+    public void GetToolDefinitions_ReturnsExactly9Tools()
+    {
+        var tools = _command.GetToolDefinitions();
+        Assert.Equal(9, tools.Count);
+    }
+
+    [Fact]
+    public void GetToolDefinitions_AllToolsHaveNames()
+    {
+        var tools = _command.GetToolDefinitions();
+        Assert.All(tools, tool =>
+        {
+            Assert.NotNull(tool.Function);
+            Assert.False(string.IsNullOrWhiteSpace(tool.Function.Name));
+        });
     }
 
     [Fact]
     public void GetToolDefinitions_AllToolsHaveDescriptions()
     {
-        var command = new LinkedInCommand();
-        var tools = command.GetToolDefinitions();
-        Assert.All(tools, t =>
+        var tools = _command.GetToolDefinitions();
+        Assert.All(tools, tool =>
         {
-            Assert.NotNull(t.Function);
-            Assert.False(string.IsNullOrWhiteSpace(t.Function.Name));
-            Assert.False(string.IsNullOrWhiteSpace(t.Function.Description));
+            Assert.False(string.IsNullOrWhiteSpace(tool.Function.Description));
         });
     }
 
     [Fact]
     public void GetToolDefinitions_AllToolsHaveParameters()
     {
-        var command = new LinkedInCommand();
-        var tools = command.GetToolDefinitions();
-        Assert.All(tools, t =>
+        var tools = _command.GetToolDefinitions();
+        Assert.All(tools, tool =>
         {
-            Assert.NotNull(t.Function.Parameters);
+            Assert.NotNull(tool.Function.Parameters);
         });
     }
 
     [Theory]
+    [InlineData("get_all_chats")]
+    [InlineData("get_chat_messages")]
+    [InlineData("get_user_profile")]
     [InlineData("create_post")]
-    [InlineData("get_profile")]
-    [InlineData("lookup_person")]
-    [InlineData("search_people")]
-    [InlineData("lookup_company")]
-    [InlineData("search_companies")]
-    [InlineData("get_posts")]
-    [InlineData("delete_post")]
+    [InlineData("send_comment")]
+    [InlineData("get_inmail_balance")]
+    [InlineData("send_invitation")]
+    [InlineData("send_message")]
+    [InlineData("start_new_chat")]
     public void GetToolDefinitions_ContainsExpectedTool(string toolName)
     {
-        var command = new LinkedInCommand();
-        var tools = command.GetToolDefinitions();
-        var toolNames = tools.Select(t => t.Function.Name).ToList();
-        Assert.Contains(toolName, toolNames);
-    }
-
-    [Fact]
-    public void Name_ReturnsLinkedIn()
-    {
-        var command = new LinkedInCommand();
-        Assert.Equal("LinkedIn", command.Name);
-    }
-
-    [Fact]
-    public void Description_IsNotEmpty()
-    {
-        var command = new LinkedInCommand();
-        Assert.False(string.IsNullOrWhiteSpace(command.Description));
+        var tools = _command.GetToolDefinitions();
+        Assert.Contains(tools, t => t.Function.Name == toolName);
     }
 }

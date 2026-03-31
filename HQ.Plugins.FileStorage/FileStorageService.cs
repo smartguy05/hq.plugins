@@ -240,9 +240,10 @@ public partial class FileStorageService
 
         await _logger(LogLevel.Info, $"[FileAccess] workspace={request.WorkspaceId} action=exec_script type={scriptType}");
 
-        // Write script to /tmp via tar (since /tmp is tmpfs and writable)
+        // Write script to /tmp via exec+base64 — the Docker archive API can reject
+        // writes on read-only rootfs containers even when the target is a writable tmpfs.
         var scriptBytes = Encoding.UTF8.GetBytes(request.ScriptContent);
-        await _sandbox.WriteFileAsync(request.WorkspaceId, scriptPath, scriptBytes);
+        await _sandbox.WriteFileViaExecAsync(request.WorkspaceId, scriptPath, scriptBytes);
 
         try
         {

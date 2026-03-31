@@ -125,6 +125,16 @@ public class EmailSyncEngine : IDisposable
         return new { Account = account.Name, NewEmails = totalNew, DeletedEmails = totalDeleted, Folders = syncedFolders };
     }
 
+    private static readonly FolderAttributes[] SpecialUseFolders =
+    [
+        FolderAttributes.Inbox,
+        FolderAttributes.Sent,
+        FolderAttributes.Drafts,
+        FolderAttributes.Trash,
+        FolderAttributes.Junk,
+        FolderAttributes.Archive
+    ];
+
     private async Task<List<IMailFolder>> DiscoverFoldersAsync(ImapClient client, string accountName, CancellationToken ct)
     {
         var syncFolders = _config.SyncFolders?.ToList();
@@ -133,8 +143,17 @@ public class EmailSyncEngine : IDisposable
 
         if (syncFolders == null || syncFolders.Count == 0)
         {
-            // Default: INBOX only
-            return [client.Inbox];
+            // Default: all standard mailbox folders (Inbox, Sent, Drafts, Trash, Junk, Archive)
+            var result = new List<IMailFolder>();
+            foreach (var folder in allFolders)
+            {
+                if (folder.Exists && SpecialUseFolders.Any(attr => folder.Attributes.HasFlag(attr)))
+                    result.Add(folder);
+            }
+            // Always include INBOX even if server doesn't set the Inbox attribute
+            if (result.All(f => !f.Attributes.HasFlag(FolderAttributes.Inbox)) && client.Inbox != null)
+                result.Insert(0, client.Inbox);
+            return result;
         }
 
         if (syncFolders.Contains("*"))
@@ -144,15 +163,15 @@ public class EmailSyncEngine : IDisposable
         }
 
         // Explicit folder list
-        var result = new List<IMailFolder>();
+        var explicitResult = new List<IMailFolder>();
         foreach (var name in syncFolders)
         {
             var folder = allFolders.FirstOrDefault(f =>
                 string.Equals(f.FullName, name, StringComparison.OrdinalIgnoreCase) ||
                 string.Equals(f.Name, name, StringComparison.OrdinalIgnoreCase));
-            if (folder != null) result.Add(folder);
+            if (folder != null) explicitResult.Add(folder);
         }
-        return result;
+        return explicitResult;
     }
 
     private async Task<(int added, int deleted)> SyncFolderAsync(string accountName, IMailFolder folder, CancellationToken ct)
@@ -177,6 +196,7 @@ public class EmailSyncEngine : IDisposable
         }
 
         var lastSyncedUid = syncState?.lastSyncedUid ?? 0;
+        var effectiveLastUid = lastSyncedUid;
 
         // Incremental sync: fetch new messages
         int added = 0;
@@ -199,10 +219,7 @@ public class EmailSyncEngine : IDisposable
                 added += await ProcessBatchAsync(accountName, folder, batch, ct);
 
             if (newUids.Count > 0)
-            {
-                var maxUid = newUids.Max(u => u.Id);
-                await _store.UpsertSyncStateAsync(accountName, folderName, serverUidValidity, maxUid);
-            }
+                effectiveLastUid = newUids.Max(u => u.Id);
         }
 
         // Deletion detection
@@ -225,9 +242,9 @@ public class EmailSyncEngine : IDisposable
             }
         }
 
-        // Update sync state even if no new messages
-        if (lastSyncedUid > 0 || added > 0)
-            await _store.UpsertSyncStateAsync(accountName, folderName, serverUidValidity, lastSyncedUid);
+        // Persist sync checkpoint
+        if (effectiveLastUid > 0)
+            await _store.UpsertSyncStateAsync(accountName, folderName, serverUidValidity, effectiveLastUid);
 
         return (added, deleted);
     }

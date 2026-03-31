@@ -1,0 +1,158 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>LinkedIn OAuth Helper</title>
+    <style>
+        body { font-family: system-ui, sans-serif; max-width: 600px; margin: 40px auto; padding: 0 20px; background: #f5f5f5; }
+        h1 { font-size: 1.4em; }
+        .step { background: white; border-radius: 8px; padding: 20px; margin-bottom: 16px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); }
+        .step h2 { font-size: 1em; margin-top: 0; color: #333; }
+        label { display: block; font-size: 0.85em; margin-bottom: 4px; color: #555; }
+        input, textarea { width: 100%; padding: 8px; margin-bottom: 12px; border: 1px solid #ccc; border-radius: 4px; box-sizing: border-box; font-family: monospace; }
+        button { background: #0a66c2; color: white; border: none; padding: 10px 20px; border-radius: 4px; cursor: pointer; font-size: 0.95em; }
+        button:hover { background: #004182; }
+        .result { background: #f0f7f0; border: 1px solid #b5d8b5; border-radius: 4px; padding: 12px; margin-top: 12px; word-break: break-all; font-family: monospace; font-size: 0.85em; white-space: pre-wrap; display: none; }
+        .error { background: #fff0f0; border-color: #d8b5b5; }
+        .hidden { display: none; }
+    </style>
+</head>
+<body>
+    <h1>LinkedIn OAuth Helper</h1>
+
+    <div class="step">
+        <h2>Step 1: Enter your app credentials</h2>
+        <label>Client ID</label>
+        <input type="text" id="clientId" placeholder="e.g. 86abc1234defgh">
+        <label>Client Secret</label>
+        <input type="text" id="clientSecret" placeholder="e.g. WPLm8g...">
+        <label>Redirect URI</label>
+        <input type="text" id="redirectUri" value="https://localhost:8080/callback">
+        <button onclick="authorize()">Authorize with LinkedIn</button>
+    </div>
+
+    <div class="step">
+        <h2>Step 2: Paste the code from the redirect URL</h2>
+        <label>Paste the full redirect URL or just the code parameter</label>
+        <input type="text" id="authCode" placeholder="Paste URL or code here">
+        <button onclick="exchangeToken()">Exchange for Token</button>
+        <div class="result" id="tokenResult"></div>
+    </div>
+
+    <div class="step">
+        <h2>Step 3: Get your Person URN</h2>
+        <button onclick="getUserInfo()">Fetch User Info</button>
+        <div class="result" id="userResult"></div>
+    </div>
+
+    <div class="step hidden" id="summarySection">
+        <h2>Plugin Config Values</h2>
+        <label>LinkedInAccessToken</label>
+        <input type="text" id="finalToken" readonly>
+        <label>LinkedInPersonUrn</label>
+        <input type="text" id="finalUrn" readonly>
+    </div>
+
+    <script>
+        let accessToken = '';
+
+        function authorize() {
+            const clientId = document.getElementById('clientId').value.trim();
+            const redirectUri = document.getElementById('redirectUri').value.trim();
+            if (!clientId) return alert('Enter your Client ID');
+            const scopes = 'openid profile w_member_social';
+            const url = `https://www.linkedin.com/oauth/v2/authorization?response_type=code&client_id=${encodeURIComponent(clientId)}&redirect_uri=${encodeURIComponent(redirectUri)}&scope=${encodeURIComponent(scopes)}`;
+            window.open(url, '_blank');
+        }
+
+        async function exchangeToken() {
+            const resultEl = document.getElementById('tokenResult');
+            resultEl.style.display = 'block';
+            resultEl.className = 'result';
+
+            const clientId = document.getElementById('clientId').value.trim();
+            const clientSecret = document.getElementById('clientSecret').value.trim();
+            const redirectUri = document.getElementById('redirectUri').value.trim();
+            let code = document.getElementById('authCode').value.trim();
+
+            if (!clientId || !clientSecret || !code) {
+                resultEl.textContent = 'Fill in Client ID, Client Secret, and the auth code.';
+                resultEl.className = 'result error';
+                return;
+            }
+
+            // Extract code from URL if full URL was pasted
+            try {
+                const url = new URL(code);
+                const codeParam = url.searchParams.get('code');
+                if (codeParam) code = codeParam;
+            } catch {}
+
+            resultEl.textContent = 'Exchanging code for token...';
+
+            try {
+                const resp = await fetch('https://www.linkedin.com/oauth/v2/accessToken', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+                    body: new URLSearchParams({
+                        grant_type: 'authorization_code',
+                        code: code,
+                        redirect_uri: redirectUri,
+                        client_id: clientId,
+                        client_secret: clientSecret
+                    })
+                });
+                const data = await resp.json();
+                if (data.access_token) {
+                    accessToken = data.access_token;
+                    resultEl.textContent = `Token received! Expires in ${Math.round(data.expires_in / 86400)} days.\n\n${accessToken}`;
+                    document.getElementById('finalToken').value = accessToken;
+                } else {
+                    resultEl.textContent = JSON.stringify(data, null, 2);
+                    resultEl.className = 'result error';
+                }
+            } catch (e) {
+                resultEl.textContent = `Request failed: ${e.message}\n\nThis is likely a CORS issue. Use this curl command instead:\n\ncurl -X POST https://www.linkedin.com/oauth/v2/accessToken \\\n  -d "grant_type=authorization_code" \\\n  -d "code=${code}" \\\n  -d "redirect_uri=${encodeURIComponent(redirectUri)}" \\\n  -d "client_id=${clientId}" \\\n  -d "client_secret=${clientSecret}"`;
+                resultEl.className = 'result error';
+            }
+        }
+
+        async function getUserInfo() {
+            const resultEl = document.getElementById('userResult');
+            resultEl.style.display = 'block';
+            resultEl.className = 'result';
+
+            if (!accessToken) {
+                // Check if manually filled
+                accessToken = document.getElementById('finalToken').value.trim();
+            }
+            if (!accessToken) {
+                resultEl.textContent = 'Get an access token first (Step 2).';
+                resultEl.className = 'result error';
+                return;
+            }
+
+            resultEl.textContent = 'Fetching user info...';
+
+            try {
+                const resp = await fetch('https://api.linkedin.com/v2/userinfo', {
+                    headers: { 'Authorization': `Bearer ${accessToken}` }
+                });
+                const data = await resp.json();
+                if (data.sub) {
+                    const urn = `urn:li:person:${data.sub}`;
+                    resultEl.textContent = `Name: ${data.name}\nURN: ${urn}`;
+                    document.getElementById('finalUrn').value = urn;
+                    document.getElementById('summarySection').classList.remove('hidden');
+                } else {
+                    resultEl.textContent = JSON.stringify(data, null, 2);
+                    resultEl.className = 'result error';
+                }
+            } catch (e) {
+                resultEl.textContent = `Request failed: ${e.message}\n\nUse this curl command instead:\n\ncurl -H "Authorization: Bearer ${accessToken}" https://api.linkedin.com/v2/userinfo`;
+                resultEl.className = 'result error';
+            }
+        }
+    </script>
+</body>
+</html>

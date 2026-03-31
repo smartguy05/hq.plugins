@@ -17,10 +17,10 @@ public class TelegramCommand: CommandBase<ServiceRequest, ServiceConfig>, INotif
     public override string Name => "Telegram";
     public override string Description => "A plugin to send and receive telegram messages";
     protected override INotificationService NotificationService { get; set; }
-    private static TelegramService _service;
-    private static TelegramBotClient _botClient;
-    private static ServiceConfig _config;
-    private static INotificationService _staticConfirmationService;
+    private TelegramService _service;
+    private TelegramBotClient _botClient;
+    private ServiceConfig _config;
+    private INotificationService _staticConfirmationService;
 
     public override List<ToolCall> GetToolDefinitions()
     {
@@ -58,8 +58,8 @@ public class TelegramCommand: CommandBase<ServiceRequest, ServiceConfig>, INotif
         try
         {
             var config = configString.ReadPluginConfig<ServiceConfig>();
-            _config ??= config;
-            _botClient ??= new TelegramBotClient(config.BotToken);
+            _config = config;
+            _botClient = new TelegramBotClient(config.BotToken);
             var clientUpdates = await _botClient.GetUpdates();
 
             _service = GetTelegramService(config, notificationService, log);
@@ -76,7 +76,7 @@ public class TelegramCommand: CommandBase<ServiceRequest, ServiceConfig>, INotif
 
     private TelegramService GetTelegramService(ServiceConfig config, INotificationService notificationService, LogDelegate log)
     {
-        _config ??= config;
+        _config = config ?? _config;
         _botClient ??= new TelegramBotClient(config.BotToken);
         log ??= Log;
         NotificationService ??= notificationService;

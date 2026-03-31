@@ -292,7 +292,7 @@ public class SlackCommand : CommandBase<ServiceRequest, ServiceConfig>, INotific
     {
         // Find connection via AgentId from the orchestrator request
         SlackConnectionState conn = null;
-        if (request.AgentId.HasValue &&
+        if (request != null && request.AgentId.HasValue &&
             AgentToBotUserMap.TryGetValue(request.AgentId.Value, out var botUserId))
         {
             ConnectionsByBotUser.TryGetValue(botUserId, out conn);
@@ -304,7 +304,7 @@ public class SlackCommand : CommandBase<ServiceRequest, ServiceConfig>, INotific
         if (conn?.ApiClient == null || conn.Config == null || conn.ConfirmationService == null)
         {
             throw new InvalidOperationException(
-                $"SlackCommand is not fully initialized for agent {request.AgentId}. " +
+                $"SlackCommand is not fully initialized for agent {request?.AgentId}. " +
                 "Ensure Initialize() has been called for this agent."
             );
         }

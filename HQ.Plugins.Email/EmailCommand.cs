@@ -13,9 +13,9 @@ public class EmailCommand: CommandBase<ServiceRequest,ServiceConfig>
     public override string Description => "Manage, search, send, delete email for the specified email accounts.";
     protected override INotificationService NotificationService { get; set; }
 
-    private static LocalEmailStore _store;
-    private static EmailVectorService _vectorService;
-    private static EmailSyncEngine _syncEngine;
+    private LocalEmailStore _store;
+    private EmailVectorService _vectorService;
+    private EmailSyncEngine _syncEngine;
 
     public override List<ToolCall> GetToolDefinitions()
     {
@@ -60,21 +60,21 @@ public class EmailCommand: CommandBase<ServiceRequest,ServiceConfig>
 
             // Initialize SQLite store
             {
-                _store ??= new LocalEmailStore(connString);
+                _store = new LocalEmailStore(connString);
                 await logFunction(LogLevel.Info, $"Email local store initialized: {connString}");
             }
 
             // Initialize ChromaDB vector service if configured
             if (!string.IsNullOrWhiteSpace(config.ChromaUrl) && !string.IsNullOrWhiteSpace(config.OpenAiApiKey))
             {
-                _vectorService ??= new EmailVectorService(config, logFunction);
+                _vectorService = new EmailVectorService(config, logFunction);
                 await logFunction(LogLevel.Info, "Email vector search initialized");
             }
 
             // Initialize and start sync engine if store is available
             if (_store != null)
             {
-                _syncEngine ??= new EmailSyncEngine(_store, _vectorService, config, logFunction);
+                _syncEngine = new EmailSyncEngine(_store, _vectorService, config, logFunction);
                 _syncEngine.StartBackground();
                 await logFunction(LogLevel.Info, $"Email background sync started (interval: {config.SyncIntervalMinutes}m)");
             }
