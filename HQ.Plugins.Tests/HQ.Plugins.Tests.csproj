@@ -36,6 +36,7 @@
         <ProjectReference Include="..\HQ.Plugins.Telegram\HQ.Plugins.Telegram.csproj" />
         <ProjectReference Include="..\HQ.Plugins.Twilio\HQ.Plugins.Twilio.csproj" />
         <ProjectReference Include="..\HQ.Plugins.UseMemos\HQ.Plugins.UseMemos.csproj" />
+        <ProjectReference Include="..\HQ.Plugins.Asana\HQ.Plugins.Asana.csproj" />
         <ProjectReference Include="..\HQ.Plugins.WebSearch\HQ.Plugins.WebSearch.csproj" />
         <ProjectReference Include="..\Test_Plugin\Test_Plugin.csproj" />
     </ItemGroup>
