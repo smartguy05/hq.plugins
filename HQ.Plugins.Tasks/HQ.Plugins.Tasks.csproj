@@ -1,0 +1,42 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+    <PropertyGroup>
+        <TargetFramework>net9.0</TargetFramework>
+        <ImplicitUsings>enable</ImplicitUsings>
+        <EnableDynamicLoading>true</EnableDynamicLoading>
+    </PropertyGroup>
+
+    <PropertyGroup>
+        <AppendTargetFrameworkToOutputPath>false</AppendTargetFrameworkToOutputPath>
+        <AppendRuntimeIdentifierToOutputPath>false</AppendRuntimeIdentifierToOutputPath>
+    </PropertyGroup>
+
+    <PropertyGroup Condition=" '$(Configuration)' == 'Debug' ">
+      <OutputPath>..\..\hq\HQ\bin\Debug\net9.0\Plugins\HQ.Plugins.Tasks\</OutputPath>
+    </PropertyGroup>
+
+    <ItemGroup>
+        <PackageReference Include="HQ.Models" Version="2.4.1" ExcludeAssets="runtime" PrivateAssets="none" />
+    </ItemGroup>
+
+    <ItemGroup>
+      <!-- Compile against EF Core + Npgsql, but don't ship them with the plugin.
+           The HQ host already has these loaded; plugin types must share that
+           assembly identity so MakeGenericType(DbContextOptionsBuilder<_>) works
+           across the plugin's isolated AssemblyLoadContext. -->
+      <PackageReference Include="Microsoft.EntityFrameworkCore" Version="9.0.3" ExcludeAssets="runtime" />
+      <PackageReference Include="Microsoft.EntityFrameworkCore.Relational" Version="9.0.3" ExcludeAssets="runtime" />
+      <PackageReference Include="Npgsql.EntityFrameworkCore.PostgreSQL" Version="9.0.3" ExcludeAssets="runtime" />
+      <PackageReference Include="Microsoft.EntityFrameworkCore.Design" Version="9.0.3">
+        <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+        <PrivateAssets>all</PrivateAssets>
+      </PackageReference>
+    </ItemGroup>
+
+    <ItemGroup>
+      <None Include="ui\dist\**\*" Condition="Exists('ui\dist')">
+        <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+        <TargetPath>ui\%(RecursiveDir)%(Filename)%(Extension)</TargetPath>
+      </None>
+    </ItemGroup>
+</Project>

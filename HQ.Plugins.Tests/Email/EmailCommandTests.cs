@@ -20,10 +20,10 @@ public class EmailCommandTests : IDisposable
     [Fact]
     public void GetToolDefinitions_ReturnsExpectedToolCount()
     {
-        // EmailService has 17 annotated tool methods
+        // EmailService has 20 annotated tool methods (17 email tools + 3 trusted-sender tools)
         var command = new EmailCommand();
         var tools = command.GetToolDefinitions();
-        Assert.Equal(17, tools.Count);
+        Assert.Equal(20, tools.Count);
     }
 
     [Fact]

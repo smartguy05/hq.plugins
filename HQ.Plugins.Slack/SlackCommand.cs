@@ -1,6 +1,9 @@
 using System.Collections.Concurrent;
 using System.ComponentModel;
 using System.ComponentModel.DataAnnotations;
+using System.Net.Http.Headers;
+using System.Net.Http.Json;
+using System.Text.Json;
 using HQ.Models;
 using HQ.Models.Enums;
 using HQ.Models.Extensions;
@@ -183,35 +186,69 @@ public class SlackCommand : CommandBase<ServiceRequest, ServiceConfig>, INotific
                 return null;
             }
 
-            var builder = new SlackNet.SlackServiceBuilder()
-                .UseApiToken(config.BotToken)
-                .UseAppLevelToken(config.AppLevelToken);
+            // Get botUserId via direct HTTP call — avoids forcing the builder's internal
+            // Lazy<ISlackServiceProvider> before event handlers are registered.
+            // When GetApiClient() is called first, it builds the provider eagerly;
+            // subsequent handler registrations may not be picked up by the socket mode
+            // client's event dispatcher, causing only the first agent to receive events.
+            string botUserId;
+            using (var http = new HttpClient())
+            {
+                http.DefaultRequestHeaders.Authorization =
+                    new AuthenticationHeaderValue("Bearer", config.BotToken);
+                var authJson = await http.GetFromJsonAsync<JsonElement>("https://slack.com/api/auth.test");
+                if (!authJson.GetProperty("ok").GetBoolean())
+                {
+                    var error = authJson.TryGetProperty("error", out var errProp) ? errProp.GetString() : "unknown";
+                    throw new Exception($"Slack auth.test failed: {error}");
+                }
+                botUserId = authJson.GetProperty("user_id").GetString();
+            }
 
-            var apiClient = builder.GetApiClient();
-
-            var authResponse = await apiClient.Auth.Test();
-            var botUserId = authResponse.UserId;
             _myBotUserId = botUserId;
-            await log(LogLevel.Info, $"Slack bot user ID: {botUserId} (agent: {config.AgentId})");
-
-            // Store connection state keyed by the bot user ID — the stable connection identity
-            var conn = ConnectionsByBotUser.GetOrAdd(botUserId, _ => new SlackConnectionState());
-            conn.ApiClient = apiClient;
-            conn.Config = config;
-            conn.ConfirmationService = notificationService;
-            conn.BotUserId = botUserId;
-            conn.AgentId = config.AgentId;
+            await log(LogLevel.Info, $"Slack bot user ID: {botUserId} (agent: {config.AgentName ?? config.AgentId?.ToString()})");
 
             // Reverse map so outgoing paths can find the connection by AgentId
             if (config.AgentId.HasValue)
                 AgentToBotUserMap[config.AgentId.Value] = botUserId;
 
-            conn.Service = new SlackService(apiClient, log, config, notificationService,
-                (confirmationId, value) => ConfirmForBotUser(confirmationId, value, botUserId), botUserId);
+            // If a Socket Mode client is already connected for this bot, reuse it.
+            // Creating a second connection with the same app-level token causes Slack to
+            // invalidate the first WebSocket, leading to a reconnection loop where neither works.
+            if (ConnectionsByBotUser.TryGetValue(botUserId, out var existing) &&
+                (existing.SocketModeClient?.Connected ?? false))
+            {
+                await log(LogLevel.Info,
+                    $"Slack bot {botUserId} already connected (agent: {existing.Config?.AgentName ?? existing.AgentId?.ToString()}). " +
+                    $"Reusing existing Socket Mode connection for agent {config.AgentName ?? config.AgentId?.ToString()}. " +
+                    "Incoming messages will be handled by the first agent's listener.");
+                return new { Success = true, Message = "Slack initialized (reusing existing connection)" };
+            }
 
-            builder.RegisterEventHandler<SlackNet.Events.MessageEvent>(conn.Service);
-            builder.RegisterBlockActionHandler<SlackNet.Blocks.ButtonAction>($"{SlackService.ConfirmationActionId}_0", conn.Service);
-            builder.RegisterBlockActionHandler<SlackNet.Blocks.ButtonAction>($"{SlackService.ConfirmationActionId}_1", conn.Service);
+            var builder = new SlackNet.SlackServiceBuilder()
+                .UseApiToken(config.BotToken)
+                .UseAppLevelToken(config.AppLevelToken);
+
+            // Register event handler factories BEFORE any builder.Get*() calls.
+            // The builder's internal Lazy<ISlackServiceProvider> is forced on the first
+            // Get*() call; registering handlers first ensures they're included when the
+            // provider and its event dispatcher are built.
+            SlackService service = null;
+            builder.RegisterEventHandler<SlackNet.Events.MessageEvent>(ctx => service);
+            builder.RegisterBlockActionHandler<SlackNet.Blocks.ButtonAction>(
+                $"{SlackService.ConfirmationActionId}_0", ctx => service);
+            builder.RegisterBlockActionHandler<SlackNet.Blocks.ButtonAction>(
+                $"{SlackService.ConfirmationActionId}_1", ctx => service);
+
+            // Store connection state keyed by the bot user ID — the stable connection identity
+            var conn = ConnectionsByBotUser.GetOrAdd(botUserId, _ => new SlackConnectionState());
+            conn.Config = config;
+            conn.ConfirmationService = notificationService;
+            conn.BotUserId = botUserId;
+            conn.AgentId = config.AgentId;
+
+            // Now safe to force the builder's lazy — handlers are already registered
+            conn.ApiClient = builder.GetApiClient();
 
             try
             {
@@ -223,6 +260,12 @@ public class SlackCommand : CommandBase<ServiceRequest, ServiceConfig>, INotific
                 await log(LogLevel.Error, $"Failed to create Socket Mode client: {ex.Message}", ex);
                 throw;
             }
+
+            // Create the service instance — the factory closures above capture 'service'
+            // by reference, so they'll return this instance when the first event arrives.
+            service = new SlackService(conn.ApiClient, log, config, notificationService,
+                (confirmationId, value) => ConfirmForBotUser(confirmationId, value, botUserId), botUserId);
+            conn.Service = service;
 
             try
             {

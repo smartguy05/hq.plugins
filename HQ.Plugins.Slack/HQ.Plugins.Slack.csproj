@@ -16,12 +16,13 @@
 	</PropertyGroup>
 
 	<ItemGroup>
+		<PackageReference Include="NetReflector" Version="*" />
 		<Reference Include="HQ.Services">
 			<HintPath>..\..\hq\HQ\bin\Debug\net9.0\HQ.Services.dll</HintPath>
 			<Private>false</Private>
 			<ExcludeAssets>runtime</ExcludeAssets>
 		</Reference>
-		<PackageReference Include="HQ.Models" Version="1.4.3" ExcludeAssets="runtime" PrivateAssets="none" />
+		<PackageReference Include="HQ.Models" Version="2.3.0" ExcludeAssets="runtime" PrivateAssets="none" />
 	</ItemGroup>
 
 	<ItemGroup>

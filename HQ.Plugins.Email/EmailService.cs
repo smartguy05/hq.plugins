@@ -7,6 +7,7 @@ using HQ.Models;
 using HQ.Models.Enums;
 using HQ.Models.Helpers;
 using HQ.Models.Interfaces;
+using HQ.Models.Safety;
 using HQ.Plugins.Email.Data;
 using HQ.Plugins.Email.Models;
 using MailKit;
@@ -127,6 +128,27 @@ public class EmailService
     {
         if (string.IsNullOrWhiteSpace(body)) return string.Empty;
         return body.Length <= maxLength ? body : body[..maxLength] + "...";
+    }
+
+    private async Task<object> MarkProvenanceAsync(
+        string content, string senderAddress, ServiceConfig config, string provenance)
+    {
+        if (string.IsNullOrEmpty(content)) return content ?? string.Empty;
+        var normalized = senderAddress?.Trim().ToLowerInvariant();
+        if (IsInSeed(normalized, config)) return content;
+        if (_store != null && await _store.IsTrustedSenderAsync(normalized)) return content;
+        return new Untrusted<string>(content, provenance, normalized ?? "unknown");
+    }
+
+    private static bool IsInSeed(string normalized, ServiceConfig config)
+    {
+        if (string.IsNullOrEmpty(normalized) || config.TrustedSenderSeed == null) return false;
+        var domain = normalized.Contains('@') ? "@" + normalized.Split('@')[1] : null;
+        return config.TrustedSenderSeed.Any(s =>
+        {
+            var t = s?.Trim().ToLowerInvariant();
+            return t == normalized || (domain != null && t == domain);
+        });
     }
 
     private static SearchQuery BuildSearchQuery(ServiceRequest request)
@@ -258,6 +280,7 @@ public class EmailService
             var local = await _store.GetByMessageIdAsync(request.MessageId, account.Name);
             if (local != null)
             {
+                var body = await MarkProvenanceAsync(local.BodyText, local.FromAddress, config, "email-body");
                 return new
                 {
                     Success = true,
@@ -269,7 +292,7 @@ public class EmailService
                         From = local.FromName ?? local.FromAddress,
                         local.ToAddress,
                         local.DateSent,
-                        Body = local.BodyText,
+                        Body = body,
                         local.HasAttachments,
                         local.AttachmentNames,
                         local.IsRead,
@@ -291,7 +314,29 @@ public class EmailService
                 return new { Success = false, Message = "Email not found" };
 
             var message = await found.Value.folder.GetMessageAsync(found.Value.uid);
-            return new { Success = true, Source = "imap", Result = MapToMailMessage(message) };
+            var mapped = MapToMailMessage(message);
+            var senderAddr = message.From?.Mailboxes.FirstOrDefault()?.Address ?? message.Sender?.Address;
+            var wrappedBody = await MarkProvenanceAsync(mapped.Body, senderAddr, config, "email-body");
+            return new
+            {
+                Success = true,
+                Source = "imap",
+                Result = new
+                {
+                    mapped.MessageId,
+                    mapped.Subject,
+                    mapped.From,
+                    mapped.To,
+                    mapped.Sender,
+                    mapped.ReplyTo,
+                    mapped.Bcc,
+                    mapped.Date,
+                    mapped.Priority,
+                    Body = wrappedBody,
+                    mapped.HasAttachments,
+                    mapped.Attachments
+                }
+            };
         }
         finally
         {
@@ -404,17 +449,22 @@ public class EmailService
                     sender: request.Sender,
                     maxResults: request.MaxReturnedEmails);
 
-                var summaries = localResults.Select(e => new
+                var summaries = new List<object>();
+                foreach (var e in localResults)
                 {
-                    e.MessageId,
-                    e.Subject,
-                    From = e.FromName ?? e.FromAddress,
-                    Date = e.DateSent,
-                    Preview = GetPreview(e.BodyText),
-                    e.IsRead,
-                    e.IsFlagged,
-                    e.Folder
-                }).ToList();
+                    var preview = await MarkProvenanceAsync(GetPreview(e.BodyText), e.FromAddress, config, "email-body");
+                    summaries.Add(new
+                    {
+                        e.MessageId,
+                        e.Subject,
+                        From = e.FromName ?? e.FromAddress,
+                        Date = e.DateSent,
+                        Preview = preview,
+                        e.IsRead,
+                        e.IsFlagged,
+                        e.Folder
+                    });
+                }
 
                 return new { Success = true, Source = "local", Total = totalCount, Result = summaries };
             }
@@ -444,7 +494,7 @@ public class EmailService
                         !message.Subject?.Contains(request.SearchSubject, StringComparison.InvariantCultureIgnoreCase) == true)
                         continue;
 
-                    summaries.Add(BuildSummary(message));
+                    summaries.Add(await BuildSummaryAsync(message, config));
                     if (summaries.Count >= request.MaxReturnedEmails) break;
                 }
             }
@@ -458,7 +508,7 @@ public class EmailService
                         !message.Subject?.Contains(request.SearchSubject, StringComparison.InvariantCultureIgnoreCase) == true)
                         continue;
 
-                    summaries.Add(BuildSummary(message));
+                    summaries.Add(await BuildSummaryAsync(message, config));
                 }
             }
 
@@ -468,20 +518,22 @@ public class EmailService
         {
             await client.DisconnectAsync(true);
         }
+    }
 
-        static object BuildSummary(MimeMessage msg)
+    private async Task<object> BuildSummaryAsync(MimeMessage msg, ServiceConfig config)
+    {
+        var body = GetEmailBody(msg);
+        var senderAddr = msg.From?.Mailboxes.FirstOrDefault()?.Address ?? msg.Sender?.Address;
+        var preview = await MarkProvenanceAsync(GetPreview(body), senderAddr, config, "email-body");
+        return new
         {
-            var body = GetEmailBody(msg);
-            return new
-            {
-                MessageId = msg.MessageId,
-                Subject = msg.Subject,
-                From = string.Join(", ", msg.From?.Select(s => s.Name) ?? new List<string>()),
-                Date = msg.Date,
-                Preview = GetPreview(body),
-                Attachments = msg.Attachments?.Select(a => a is MimePart mp ? mp.FileName : a.ContentType?.Name).Where(n => n != null).ToList()
-            };
-        }
+            MessageId = msg.MessageId,
+            Subject = msg.Subject,
+            From = string.Join(", ", msg.From?.Select(s => s.Name) ?? new List<string>()),
+            Date = msg.Date,
+            Preview = preview,
+            Attachments = msg.Attachments?.Select(a => a is MimePart mp ? mp.FileName : a.ContentType?.Name).Where(n => n != null).ToList()
+        };
     }
 
     [Display(Name = "get_attachments")]
@@ -583,13 +635,16 @@ public class EmailService
         foreach (var (messageId, subject, snippet, distance) in results)
         {
             var email = _store != null ? await _store.GetByMessageIdAsync(messageId) : null;
+            var rawPreview = email != null ? GetPreview(email.BodyText, 200) : snippet;
+            var previewSender = email?.FromAddress;
+            var preview = await MarkProvenanceAsync(rawPreview, previewSender, config, "email-body");
             enriched.Add(new
             {
                 MessageId = messageId,
                 Subject = email?.Subject ?? subject,
                 From = email != null ? (email.FromName ?? email.FromAddress) : null,
                 Date = email?.DateSent,
-                Preview = email != null ? GetPreview(email.BodyText, 200) : snippet,
+                Preview = preview,
                 Similarity = 1.0f - distance,
                 Folder = email?.Folder
             });
@@ -650,19 +705,132 @@ public class EmailService
             searchText: request.SearchText,
             maxResults: maxResults);
 
-        var summaries = results.Select(e => new
+        var summaries = new List<object>();
+        foreach (var e in results)
         {
-            e.MessageId,
-            e.Subject,
-            From = e.FromName ?? e.FromAddress,
-            Date = e.DateSent,
-            Preview = GetPreview(e.BodyText, 200),
-            e.IsRead,
-            e.IsFlagged,
-            e.Folder
-        }).ToList();
+            var preview = await MarkProvenanceAsync(GetPreview(e.BodyText, 200), e.FromAddress, config, "email-body");
+            summaries.Add(new
+            {
+                e.MessageId,
+                e.Subject,
+                From = e.FromName ?? e.FromAddress,
+                Date = e.DateSent,
+                Preview = preview,
+                e.IsRead,
+                e.IsFlagged,
+                e.Folder
+            });
+        }
 
         return new { Success = true, Total = summaries.Count, Result = summaries };
+    }
+
+    [Display(Name = "add_trusted_sender")]
+    [Description("Add an email address or domain wildcard to the trusted-sender whitelist. " +
+                 "Accepts 'alice@example.com' or '@example.com' (trusts all senders from that domain). " +
+                 "Use this only after you have verified the sender is legitimate. Senders on the " +
+                 "whitelist have their email content passed to you without the untrusted-content wrapper.")]
+    [Parameters("""
+                {
+                  "type": "object",
+                  "properties": {
+                    "sender": {
+                      "type": "string",
+                      "description": "Email address or '@domain' wildcard to trust. Case-insensitive. Exact match for addresses; any sender from the domain for wildcards."
+                    },
+                    "reason": {
+                      "type": "string",
+                      "description": "Short explanation of why this sender is being trusted. Stored for audit."
+                    }
+                  },
+                  "required": ["sender", "reason"]
+                }
+                """)]
+    public async Task<object> AddTrustedSender(ServiceConfig config, ServiceRequest request)
+    {
+        if (_store == null)
+            return new { Success = false, Message = "Local email store is not configured. Set SqliteConnectionString in the plugin config." };
+        if (string.IsNullOrWhiteSpace(request.Sender))
+            return new { Success = false, Message = "Sender is required." };
+        if (string.IsNullOrWhiteSpace(request.Reason))
+            return new { Success = false, Message = "Reason is required." };
+
+        var raw = request.Sender.Trim();
+        string normalized;
+        if (raw.StartsWith("@"))
+        {
+            if (!raw.Contains('.') || raw.Any(char.IsWhiteSpace))
+                return new { Success = false, Message = "Domain wildcard must look like '@example.com'." };
+            normalized = raw.ToLowerInvariant();
+        }
+        else
+        {
+            if (!MimeKit.MailboxAddress.TryParse(raw, out var mbox))
+                return new { Success = false, Message = $"Could not parse '{raw}' as an email address." };
+            normalized = mbox.Address.Trim().ToLowerInvariant();
+        }
+
+        await _store.AddTrustedSenderAsync(normalized, request.Reason);
+        return new { Success = true, Sender = normalized, Reason = request.Reason };
+    }
+
+    [Display(Name = "remove_trusted_sender")]
+    [Description("Remove an entry from the agent-managed trusted-sender whitelist. " +
+                 "Operator-seeded entries (from the plugin configuration) cannot be removed.")]
+    [Parameters("""
+                {
+                  "type": "object",
+                  "properties": {
+                    "sender": {
+                      "type": "string",
+                      "description": "Email address or '@domain' wildcard to remove from the whitelist."
+                    }
+                  },
+                  "required": ["sender"]
+                }
+                """)]
+    public async Task<object> RemoveTrustedSender(ServiceConfig config, ServiceRequest request)
+    {
+        if (_store == null)
+            return new { Success = false, Message = "Local email store is not configured. Set SqliteConnectionString in the plugin config." };
+        if (string.IsNullOrWhiteSpace(request.Sender))
+            return new { Success = false, Message = "Sender is required." };
+
+        var normalized = request.Sender.Trim().ToLowerInvariant();
+
+        if (IsInSeed(normalized, config))
+            return new { Success = false, Message = "Operator-seeded trusted senders cannot be removed. Remove the entry from ServiceConfig.TrustedSenderSeed instead." };
+
+        var removed = await _store.RemoveTrustedSenderAsync(normalized);
+        return new { Success = removed, Sender = normalized, Removed = removed };
+    }
+
+    [Display(Name = "list_trusted_senders")]
+    [Description("List all trusted email senders. Operator-seeded entries (immutable) are separated from agent-added entries (mutable).")]
+    [Parameters("""
+                {
+                  "type": "object",
+                  "properties": {},
+                  "required": []
+                }
+                """)]
+    public async Task<object> ListTrustedSenders(ServiceConfig config, ServiceRequest request)
+    {
+        var seed = (config.TrustedSenderSeed ?? Array.Empty<string>())
+            .Select(s => s?.Trim().ToLowerInvariant())
+            .Where(s => !string.IsNullOrEmpty(s))
+            .ToList();
+
+        var agentAdded = _store != null
+            ? await _store.ListTrustedSendersAsync()
+            : new List<TrustedSenderRow>();
+
+        return new
+        {
+            Success = true,
+            Seed = seed,
+            AgentAdded = agentAdded.Select(r => new { r.Email, r.Reason, r.AddedAt }).ToList()
+        };
     }
 
     [Display(Name = "sync_emails")]
@@ -925,6 +1093,7 @@ public class EmailService
                   "required": []
                 }
                 """)]
+    [SupportsConfirmation]
     public async Task<object> SendEmail(ServiceConfig config, ServiceRequest request)
     {
         if (string.IsNullOrWhiteSpace(request.MessageId) && string.IsNullOrWhiteSpace(request.To))
@@ -1027,6 +1196,7 @@ public class EmailService
                   "required": ["messageId"]
                 }
                 """)]
+    [SupportsConfirmation]
     public async Task<object> DeleteEmail(ServiceConfig config, ServiceRequest request)
     {
         if (string.IsNullOrWhiteSpace(request.MessageId))

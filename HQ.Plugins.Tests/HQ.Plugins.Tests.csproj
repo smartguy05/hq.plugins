@@ -30,15 +30,21 @@
         <ProjectReference Include="..\HQ.Plugins.ReportGenerator\HQ.Plugins.ReportGenerator.csproj" />
         <ProjectReference Include="..\HQ.Plugins.FileStorage\HQ.Plugins.FileStorage.csproj" />
         <ProjectReference Include="..\HQ.Plugins.Slack\HQ.Plugins.Slack.csproj" />
-        <PackageReference Include="HQ.Models" Version="2.1.0" />
+        <PackageReference Include="HQ.Models" Version="2.4.1" />
         <ProjectReference Include="..\HQ.Plugins.SupportChannelKb\HQ.Plugins.SupportChannelKb.csproj" />
         <ProjectReference Include="..\HQ.Plugins.Teams\HQ.Plugins.Teams.csproj" />
         <ProjectReference Include="..\HQ.Plugins.Telegram\HQ.Plugins.Telegram.csproj" />
         <ProjectReference Include="..\HQ.Plugins.Twilio\HQ.Plugins.Twilio.csproj" />
         <ProjectReference Include="..\HQ.Plugins.UseMemos\HQ.Plugins.UseMemos.csproj" />
         <ProjectReference Include="..\HQ.Plugins.Asana\HQ.Plugins.Asana.csproj" />
+        <ProjectReference Include="..\HQ.Plugins.Tasks\HQ.Plugins.Tasks.csproj" />
         <ProjectReference Include="..\HQ.Plugins.WebSearch\HQ.Plugins.WebSearch.csproj" />
         <ProjectReference Include="..\Test_Plugin\Test_Plugin.csproj" />
+    </ItemGroup>
+
+    <ItemGroup>
+        <PackageReference Include="Microsoft.EntityFrameworkCore.InMemory" Version="9.0.3" />
+        <PackageReference Include="Microsoft.EntityFrameworkCore.Relational" Version="9.0.3" />
     </ItemGroup>
 
     <ItemGroup>

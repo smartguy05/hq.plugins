@@ -78,6 +78,12 @@ public class LocalEmailStore : IDisposable
                 last_updated TEXT,
                 UNIQUE(account_name, folder_name)
             );
+
+            CREATE TABLE IF NOT EXISTS trusted_senders (
+                email    TEXT PRIMARY KEY COLLATE NOCASE,
+                reason   TEXT,
+                added_at TEXT NOT NULL
+            );
             """;
         cmd.ExecuteNonQuery();
     }
@@ -522,9 +528,93 @@ public class LocalEmailStore : IDisposable
         };
     }
 
+    public async Task AddTrustedSenderAsync(string entry, string reason)
+    {
+        if (string.IsNullOrWhiteSpace(entry))
+            throw new ArgumentException("Trusted sender entry cannot be empty", nameof(entry));
+
+        var normalized = entry.Trim().ToLowerInvariant();
+        await _writeLock.WaitAsync();
+        try
+        {
+            using var cmd = _connection.CreateCommand();
+            cmd.CommandText = """
+                INSERT INTO trusted_senders (email, reason, added_at)
+                VALUES (@email, @reason, @addedAt)
+                ON CONFLICT(email) DO UPDATE SET reason = @reason, added_at = @addedAt;
+                """;
+            cmd.Parameters.AddWithValue("@email", normalized);
+            cmd.Parameters.AddWithValue("@reason", (object)reason ?? DBNull.Value);
+            cmd.Parameters.AddWithValue("@addedAt", DateTime.UtcNow.ToString("O"));
+            await cmd.ExecuteNonQueryAsync();
+        }
+        finally
+        {
+            _writeLock.Release();
+        }
+    }
+
+    public async Task<bool> RemoveTrustedSenderAsync(string entry)
+    {
+        if (string.IsNullOrWhiteSpace(entry)) return false;
+        var normalized = entry.Trim().ToLowerInvariant();
+        await _writeLock.WaitAsync();
+        try
+        {
+            using var cmd = _connection.CreateCommand();
+            cmd.CommandText = "DELETE FROM trusted_senders WHERE email = @email;";
+            cmd.Parameters.AddWithValue("@email", normalized);
+            return await cmd.ExecuteNonQueryAsync() > 0;
+        }
+        finally
+        {
+            _writeLock.Release();
+        }
+    }
+
+    public async Task<bool> IsTrustedSenderAsync(string senderAddress)
+    {
+        if (string.IsNullOrWhiteSpace(senderAddress)) return false;
+        var normalized = senderAddress.Trim().ToLowerInvariant();
+        if (!normalized.Contains('@')) return false;
+        var domain = "@" + normalized.Split('@')[1];
+
+        using var cmd = _connection.CreateCommand();
+        cmd.CommandText = "SELECT 1 FROM trusted_senders WHERE email = @addr OR email = @domain LIMIT 1;";
+        cmd.Parameters.AddWithValue("@addr", normalized);
+        cmd.Parameters.AddWithValue("@domain", domain);
+        var result = await cmd.ExecuteScalarAsync();
+        return result != null;
+    }
+
+    public async Task<List<TrustedSenderRow>> ListTrustedSendersAsync()
+    {
+        var list = new List<TrustedSenderRow>();
+        using var cmd = _connection.CreateCommand();
+        cmd.CommandText = "SELECT email, reason, added_at FROM trusted_senders ORDER BY added_at DESC;";
+        using var reader = await cmd.ExecuteReaderAsync();
+        while (await reader.ReadAsync())
+        {
+            list.Add(new TrustedSenderRow
+            {
+                Email = reader.GetString(0),
+                Reason = reader.IsDBNull(1) ? null : reader.GetString(1),
+                AddedAt = DateTime.Parse(reader.GetString(2))
+            });
+        }
+        return list;
+    }
+
     public void Dispose()
     {
         _connection.Dispose();
         _writeLock.Dispose();
     }
+}
+
+public class TrustedSenderRow
+{
+    public string Email { get; set; }
+    public string Reason { get; set; }
+    public DateTime AddedAt { get; set; }
 }

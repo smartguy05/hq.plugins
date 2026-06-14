@@ -20,7 +20,7 @@ public class AsanaServiceAnnotationTests
     public void AsanaService_HasExpectedToolMethodCount()
     {
         var methods = GetToolMethods();
-        Assert.Equal(16, methods.Count());
+        Assert.Equal(17, methods.Count());
     }
 
     [Fact]

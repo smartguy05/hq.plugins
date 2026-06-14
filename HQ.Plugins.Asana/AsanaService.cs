@@ -289,9 +289,20 @@ public class AsanaService
     public async Task<object> GetTasks(ServiceConfig config, ServiceRequest request)
     {
         var defaultFields = "name,completed,assignee,assignee.name,due_on,projects,projects.name";
+
+        // Asana API requires exactly ONE of: project, section, tag, user_task_list, or assignee+workspace.
+        // Prefer section (most specific), then project, then assignee+workspace.
+        string projectFilter = null;
+        string sectionFilter = null;
+
+        if (!string.IsNullOrWhiteSpace(request.SectionId))
+            sectionFilter = request.SectionId;
+        else if (!string.IsNullOrWhiteSpace(request.ProjectId))
+            projectFilter = request.ProjectId;
+
         var query = BuildQuery(
-            ("project", request.ProjectId),
-            ("section", request.SectionId),
+            ("project", projectFilter),
+            ("section", sectionFilter),
             ("assignee", request.Assignee),
             ("workspace", request.Workspace),
             ("completed_since", request.Completed == false ? "now" : null),

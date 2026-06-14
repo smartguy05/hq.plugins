@@ -1,0 +1,41 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Tasks</title>
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body class="theme-light">
+    <div id="app">
+      <aside class="sidebar">
+        <div class="sidebar-header">
+          <h1>Projects</h1>
+          <button id="new-project" class="btn-primary">+ New</button>
+        </div>
+        <ul id="project-list" class="project-list"></ul>
+      </aside>
+      <main class="main">
+        <header class="main-header">
+          <h2 id="current-project-name">Select a project</h2>
+          <div class="status-filters">
+            <button data-status="" class="status-btn active">All</button>
+            <button data-status="todo" class="status-btn">Todo</button>
+            <button data-status="doing" class="status-btn">Doing</button>
+            <button data-status="done" class="status-btn">Done</button>
+            <button data-status="blocked" class="status-btn">Blocked</button>
+          </div>
+        </header>
+        <form id="new-task-form" class="task-form" hidden>
+          <input id="new-task-title" placeholder="Add a task…" autocomplete="off" />
+          <button class="btn-primary" type="submit">Add</button>
+        </form>
+        <ul id="task-list" class="task-list"></ul>
+        <div id="empty-state" class="empty-state">
+          Create a project to start tracking tasks.
+        </div>
+      </main>
+    </div>
+    <script src="./app.js"></script>
+  </body>
+</html>

@@ -9,7 +9,7 @@ public class AsanaCommandTests
     {
         var command = new AsanaCommand();
         var tools = command.GetToolDefinitions();
-        Assert.Equal(16, tools.Count);
+        Assert.Equal(17, tools.Count);
     }
 
     [Fact]

@@ -50,4 +50,9 @@ public record ServiceConfig: IPluginConfig
 
     [Tooltip("Whether to extract and index text from email attachments (PDF, DOCX, TXT)")]
     public bool IndexTextAttachments { get; set; }
+
+    [Tooltip("Email addresses or domain wildcards (@example.com) always treated as trusted — " +
+             "their content is not wrapped for prompt-injection scanning. The agent cannot remove " +
+             "these. Compared case-insensitively.")]
+    public IEnumerable<string> TrustedSenderSeed { get; set; } = Array.Empty<string>();
 }

@@ -29,7 +29,11 @@
       "Bash(dotnet tool:*)",
       "Bash(npx tsc:*)",
       "Bash(dotnet ef:*)",
-      "Bash(find /home/anthony/Code/hq.plugins -path */Microsoft.Playwright* -name *.xml)"
+      "Bash(find /home/anthony/Code/hq.plugins -path */Microsoft.Playwright* -name *.xml)",
+      "Bash(find /home/anthony/Code/hq.plugins/HQ.Plugins.* -maxdepth 1 -type d)",
+      "Bash(find /home/anthony/Code/hq.plugins -type d -name *Google* -o -type d -name *Telegram* -o -type d -name *Notification*)",
+      "WebFetch(domain:api.github.com)",
+      "Bash(xargs cat *)"
     ]
   }
 }
