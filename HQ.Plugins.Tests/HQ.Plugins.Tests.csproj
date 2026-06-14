@@ -27,6 +27,7 @@
         <ProjectReference Include="..\HQ.Plugins.HeadlessBrowser\HQ.Plugins.HeadlessBrowser.csproj" />
         <ProjectReference Include="..\HQ.Plugins.HubSpot\HQ.Plugins.HubSpot.csproj" />
         <ProjectReference Include="..\HQ.Plugins.LinkedIn\HQ.Plugins.LinkedIn.csproj" />
+        <ProjectReference Include="..\HQ.Plugins.Perplexity\HQ.Plugins.Perplexity.csproj" />
         <ProjectReference Include="..\HQ.Plugins.ReportGenerator\HQ.Plugins.ReportGenerator.csproj" />
         <ProjectReference Include="..\HQ.Plugins.FileStorage\HQ.Plugins.FileStorage.csproj" />
         <ProjectReference Include="..\HQ.Plugins.Slack\HQ.Plugins.Slack.csproj" />
