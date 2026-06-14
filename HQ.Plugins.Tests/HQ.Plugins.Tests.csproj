@@ -22,6 +22,8 @@
         <ProjectReference Include="..\HQ.Logging.FileLogger\HQ.Logging.FileLogger.csproj" />
         <ProjectReference Include="..\HQ.Plugins.Email\HQ.Plugins.Email.csproj" />
         <ProjectReference Include="..\HQ.Plugins.GoogleCalendar\HQ.Plugins.GoogleCalendar.csproj" />
+        <ProjectReference Include="..\HQ.Plugins.GoogleWorkspace\HQ.Plugins.GoogleWorkspace.csproj" />
+        <ProjectReference Include="..\HQ.Plugins.Microsoft365\HQ.Plugins.Microsoft365.csproj" />
         <ProjectReference Include="..\HQ.Plugins.HomeAssistantAssist\HQ.Plugins.HomeAssistantAssist.csproj" />
         <ProjectReference Include="..\HQ.Plugins.Jira\HQ.Plugins.Jira.csproj" />
         <ProjectReference Include="..\HQ.Plugins.HeadlessBrowser\HQ.Plugins.HeadlessBrowser.csproj" />
