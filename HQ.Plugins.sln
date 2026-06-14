@@ -46,6 +46,8 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "HQ.Plugins.Asana", "HQ.Plug
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "HQ.Plugins.Perplexity", "HQ.Plugins.Perplexity\HQ.Plugins.Perplexity.csproj", "{CDB42B0E-8D18-4C7A-952E-52034FA78BAD}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "HQ.Plugins.WebReader", "HQ.Plugins.WebReader\HQ.Plugins.WebReader.csproj", "{C25CCBF6-497A-4B10-8D7D-2A63F5FAD903}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -330,6 +332,18 @@ Global
 		{CDB42B0E-8D18-4C7A-952E-52034FA78BAD}.Release|x64.Build.0 = Release|Any CPU
 		{CDB42B0E-8D18-4C7A-952E-52034FA78BAD}.Release|x86.ActiveCfg = Release|Any CPU
 		{CDB42B0E-8D18-4C7A-952E-52034FA78BAD}.Release|x86.Build.0 = Release|Any CPU
+		{C25CCBF6-497A-4B10-8D7D-2A63F5FAD903}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{C25CCBF6-497A-4B10-8D7D-2A63F5FAD903}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{C25CCBF6-497A-4B10-8D7D-2A63F5FAD903}.Debug|x64.ActiveCfg = Debug|Any CPU
+		{C25CCBF6-497A-4B10-8D7D-2A63F5FAD903}.Debug|x64.Build.0 = Debug|Any CPU
+		{C25CCBF6-497A-4B10-8D7D-2A63F5FAD903}.Debug|x86.ActiveCfg = Debug|Any CPU
+		{C25CCBF6-497A-4B10-8D7D-2A63F5FAD903}.Debug|x86.Build.0 = Debug|Any CPU
+		{C25CCBF6-497A-4B10-8D7D-2A63F5FAD903}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{C25CCBF6-497A-4B10-8D7D-2A63F5FAD903}.Release|Any CPU.Build.0 = Release|Any CPU
+		{C25CCBF6-497A-4B10-8D7D-2A63F5FAD903}.Release|x64.ActiveCfg = Release|Any CPU
+		{C25CCBF6-497A-4B10-8D7D-2A63F5FAD903}.Release|x64.Build.0 = Release|Any CPU
+		{C25CCBF6-497A-4B10-8D7D-2A63F5FAD903}.Release|x86.ActiveCfg = Release|Any CPU
+		{C25CCBF6-497A-4B10-8D7D-2A63F5FAD903}.Release|x86.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE

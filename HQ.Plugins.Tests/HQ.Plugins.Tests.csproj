@@ -40,6 +40,7 @@
         <ProjectReference Include="..\HQ.Plugins.Asana\HQ.Plugins.Asana.csproj" />
         <ProjectReference Include="..\HQ.Plugins.Tasks\HQ.Plugins.Tasks.csproj" />
         <ProjectReference Include="..\HQ.Plugins.WebSearch\HQ.Plugins.WebSearch.csproj" />
+        <ProjectReference Include="..\HQ.Plugins.WebReader\HQ.Plugins.WebReader.csproj" />
         <ProjectReference Include="..\Test_Plugin\Test_Plugin.csproj" />
     </ItemGroup>
 
