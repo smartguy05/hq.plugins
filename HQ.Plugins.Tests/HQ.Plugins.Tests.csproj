@@ -55,6 +55,13 @@
         <ProjectReference Include="..\HQ.Plugins.Tasks\HQ.Plugins.Tasks.csproj" />
         <ProjectReference Include="..\HQ.Plugins.WebSearch\HQ.Plugins.WebSearch.csproj" />
         <ProjectReference Include="..\HQ.Plugins.WebReader\HQ.Plugins.WebReader.csproj" />
+        <ProjectReference Include="..\HQ.Plugins.Weather\HQ.Plugins.Weather.csproj" />
+        <ProjectReference Include="..\HQ.Plugins.Maps\HQ.Plugins.Maps.csproj" />
+        <ProjectReference Include="..\HQ.Plugins.Notion\HQ.Plugins.Notion.csproj" />
+        <ProjectReference Include="..\HQ.Plugins.GoogleContacts\HQ.Plugins.GoogleContacts.csproj" />
+        <ProjectReference Include="..\HQ.Plugins.Plaid\HQ.Plugins.Plaid.csproj" />
+        <ProjectReference Include="..\HQ.Plugins.Health\HQ.Plugins.Health.csproj" />
+        <ProjectReference Include="..\HQ.Plugins.DocumentAI\HQ.Plugins.DocumentAI.csproj" />
         <ProjectReference Include="..\Test_Plugin\Test_Plugin.csproj" />
     </ItemGroup>
 

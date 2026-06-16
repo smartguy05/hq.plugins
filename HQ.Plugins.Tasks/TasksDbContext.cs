@@ -25,6 +25,10 @@ public class TasksDbContext : DbContext
         modelBuilder.Entity<TaskItem>()
             .HasIndex(t => new { t.OrganizationId, t.ProjectId, t.Status });
 
+        // Agent-scoped (project-less) task lookups.
+        modelBuilder.Entity<TaskItem>()
+            .HasIndex(t => new { t.OrganizationId, t.AgentId, t.Status });
+
         modelBuilder.Entity<Comment>()
             .HasIndex(c => c.TaskId);
     }

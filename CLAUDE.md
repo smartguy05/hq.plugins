@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## What This Is
 
-A sibling repository to the main `hq` orchestrator. Contains command plugins and 1 logging plugin, compiled as dynamically-loaded .NET assemblies that HQ discovers at runtime via `AssemblyLoadContext`.
+A sibling repository to the main `hq` orchestrator. Contains 43 command plugins and 1 logging plugin (`HQ.Logging.FileLogger`), compiled as dynamically-loaded .NET assemblies that HQ discovers at runtime via `AssemblyLoadContext`.
 
 ## Build Commands
 
@@ -58,8 +58,8 @@ public async Task<object> MethodName(ServiceConfig config, ServiceRequest servic
 ```
 
 Two variants exist:
-- **Self-annotating** — annotations on the Command class itself, `GetToolDefinitions()` returns `this.GetServiceToolCalls()`. Used by: HomeAssistantAssist, PythonRunner, Telegram, UseMemos, WebSearch, ReportGenerator.
-- **Service-class annotating** — annotations on a separate `*Service` class, `GetToolDefinitions()` returns `ServiceExtensions.GetServiceToolCalls<TService>()`. Used by: GoogleCalendar (`CalService`), SupportChannelKb (`SupportChannelKbService`), HubSpot (`HubSpotService`), LinkedIn (`LinkedInService`), JobBoard (`JobBoardService`).
+- **Self-annotating** — annotations on the Command class itself, `GetToolDefinitions()` returns `this.GetServiceToolCalls()`. Used by: HomeAssistantAssist, Telegram, UseMemos, WebSearch, ReportGenerator, WebReader.
+- **Service-class annotating** — annotations on a separate `*Service` class, `GetToolDefinitions()` returns `ServiceExtensions.GetServiceToolCalls<TService>()`. Used by most integrations: GoogleCalendar (`CalService`), SupportChannelKb, HubSpot, LinkedIn, Asana, Jira, and all the finance/office/e-commerce plugins below.
 
 ### Model Pattern
 
@@ -92,7 +92,8 @@ Debug output targets the host's Plugins directory:
 - **`IPluginConfig`** — `Name`, `Description`
 - **`IPluginServiceRequest`** — `Method`, `ToolCallId`, `RequestingService`, `ConfirmationId`
 - **`INotificationService`** — confirmation flows (`RequestConfirmation`, `DoesConfirmationExist`, `Confirm`)
-- **`INotificationPlugin`** — only Telegram implements this (receives confirmation notifications)
+- **`INotificationPlugin`** — implemented by Telegram and Slack (receive confirmation notifications; Slack via Socket Mode)
+- **`IHasFrontend`** / **`IDatabasePlugin`** / **`IHasHttpRoutes`** — implemented by self-hosted, stateful plugins (e.g. `Tasks`): a plugin can ship its own UI, own EF Core schema/migrations, and HTTP routes
 - **`OrchestratorRequest`** — message between plugins and orchestrator: `{Service, ServiceRequest, ToolCallId}`
 
 ## Notable Plugin Details
@@ -101,11 +102,9 @@ Debug output targets the host's Plugins directory:
 - **Telegram**: most complex plugin. References `HQ.Services` directly, uses `ServiceResolver.GetOrchestrator()` and `MessageCache` for routing inbound messages back through HQ. Implements `INotificationPlugin`. Overrides `Initialize()` to start a long-poll loop.
 - **GoogleCalendar**: OAuth tokens cached in `GoogleCalendar/` subdirectory next to the DLL via `FileDataStore`. Has a `CalendarMethods` constants class for tool name strings.
 - **UseMemos**: `add_memo` uses a confirmation flow (two-call pattern: first returns a `ConfirmationId`, second validates and executes).
-- **PythonRunner**: writes script to temp file, runs `python` via `Process.Start`, assumes `python` is on PATH.
 - **HubSpot**: CRM integration (10 tools). Uses HubSpot CRM API v3 with Private App token auth. Manages contacts, deals, companies, and notes. Has `HubSpotClient` HTTP wrapper.
 - **LinkedIn**: LinkedIn profile management and Proxycurl enrichment (8 tools). Two API sources: LinkedIn Community Management API (OAuth) for posting, Proxycurl for people/company search. Proxycurl calls cost ~$0.01 each.
-- **ReportGenerator**: Self-annotating (3 tools). Generates reports from Markdown content using Markdig. Outputs HTML or Markdown files. Persists a report index JSON for retrieval.
-- **JobBoard**: Multi-source job aggregator (6 tools). Clients for Indeed (RapidAPI), Upwork (RSS), LinkedIn Jobs (Proxycurl), Toptal (scraping). Includes application tracking persisted to local JSON.
+- **ReportGenerator**: Self-annotating (3 tools). Generates reports from Markdown content using Markdig. Outputs PDF, HTML, or Markdown files. Persists a report index JSON for retrieval.
 - **WebReader**: Self-annotating (3 tools: `read_page`, `extract_links`, `search_page`). Token-efficient page reading — renders with Playwright/Chromium (shared lazily-launched browser, fresh context per request via `PlaywrightRenderer`), then runs the Jina/Firecrawl-style pipeline: SmartReader (Mozilla Readability port) extracts main content, ReverseMarkdown converts it to markdown. Pure conversion logic lives in `ReaderPipeline` (browser-free, unit-tested). Complements `HeadlessBrowser` (interaction/testing) — this one is read-only. Installs Chromium on `Initialize()` like HeadlessBrowser. Typical output is ~10x smaller than raw HTML.
 - **GoogleWorkspace**: Service-class annotating (`GoogleWorkspaceService`, 20 tools) covering Drive (`drive_*`: list/search/get/download/upload/create_folder/move/copy/delete/share), Docs (`docs_create`/`docs_get_text`/`docs_append_text`/`docs_replace_text`), and Sheets (`sheets_create`/`sheets_get_values`/`sheets_update_values`/`sheets_append_row`/`sheets_clear_values`/`sheets_list_sheets`). Reuses the GoogleCalendar OAuth pattern: a copied `GoogleApiCredentials` record with `[OAuthProvider]` scopes widened to drive+documents+spreadsheets, refresh-token `UserCredential` built per request via `GoogleClientFactory`. Per-surface logic in `Clients/{Drive,Docs,Sheets}Client.cs`; pure helpers `DriveClient.DefaultExportMime`, `SheetsClient.NormalizeValues`, `DocsClient.ExtractText` are unit-tested. `FileId` doubles as Drive fileId / Docs documentId / Sheets spreadsheetId.
 - **Microsoft365**: Service-class annotating (`Microsoft365Service`, 17 tools) covering OneDrive/SharePoint files (`files_*`), Excel (`excel_*`), and Word (`word_create`/`word_read`). Reuses the Teams Graph pattern: app-only `ClientSecretCredential` + `GraphServiceClient` via `GraphClientFactory` (config needs `TenantId`/`ClientId`/`ClientSecret`/`DefaultDriveId`; Azure app needs `Files.ReadWrite.All` + `Sites.ReadWrite.All`). Files/Word use the typed Graph SDK (`Graph/FilesClient.cs`, `Graph/WordClient.cs`); Excel uses raw Graph REST (`Graph/ExcelClient.cs`) because cell-value payloads map to JSON better than the SDK's `UntypedNode`. Word create/read goes through OpenXML (`DocxHelper`) since Graph has no live Word-edit API. Pure helpers `A1Helper` and `DocxHelper` are unit-tested.
@@ -122,6 +121,34 @@ Debug output targets the host's Plugins directory:
 - **Ramp**: Service-class annotating (`RampService`, 8 read-only tools: transactions/cards/reimbursements/users/departments/limits). `RampClient` mints a token via the OAuth **client-credentials** grant (Basic `clientId:clientSecret`) on first use, like QuickBooksClient; `UseSandbox` toggles `demo-api.ramp.com`. List responses unwrap the `data` array.
 - **Gusto**: Service-class annotating (`GustoService`, 8 **read-only** tools: company/employees/payrolls/time-off/locations/pay-schedules). `GustoClient` refresh-token fetch (QuickBooksClient style); `UseDemo` toggles `api.gusto-demo.com`. Company id resolves from `/v1/me` (`roles.payroll_admin.companies[0].uuid`) when omitted. v1 is read-only — Gusto's write surface (time-off) runs through embedded flows, deferred.
 - **Square**: Service-class annotating (`SquareService`, 12 tools) spanning locations, catalog/inventory, customers, payments/orders, and bookings/appointments — one plugin for the local/physical/service SMB segment. `SquareClient` (AsanaClient template, Bearer + `Square-Version` header), **raw REST not the SDK** (the SDK churns across major versions); `UseSandbox` toggles `connect.squareupsandbox.com`. Most calls are location-scoped (`DefaultLocationId` fallback). `create_booking`/`cancel_booking` notify customers → `[SupportsConfirmation]`. v1 defers catalog/payment writes (overlaps Stripe/QuickBooks).
+
+#### Communications
+- **Slack**: Send/receive Slack messages (6 tools: `send_slack_message`/`upload_slack_file`/`download_slack_file`/`open_slack_dm`/`list_slack_users`/`list_slack_channels`). Implements `INotificationPlugin` and receives confirmation notifications via **Socket Mode** (like Telegram).
+- **Teams**: Send/receive Microsoft Teams messages (5 tools: `send_teams_message`/`list_teams`/`list_teams_channels`/`send_teams_file`/`download_teams_file`). Uses the Microsoft Graph app-only auth pattern (shared with Microsoft365).
+- **Twilio**: SMS/WhatsApp/voice/verification/conversations (15 tools: `send_sms`/`send_whatsapp`/`make_call`/`list_recordings`/`lookup_phone_number`/`send_verification`/`check_verification`/`create_conversation`/… ). Pairs with the planned Voice (TTS/STT) plugin for phone-based interaction.
+- **Perplexity**: Web research via Perplexity Sonar models, returning cited answers (2 tools: `perplexity_search`, `perplexity_deep_research`). Complements `WebSearch` (link results) and `WebReader` (page content).
+
+#### Project management
+- **Asana**: Task/project management (16 tools: `create_task`/`update_task`/`get_tasks`/`search_tasks`/`move_task_to_section`/`set_parent_for_task`/… ). `AsanaClient` (Bearer) is the **template most later REST clients are copied from** (Zendesk, Calendly, Mailchimp, Shopify, Square, …).
+- **Jira**: Jira Cloud project management (21 tools, all `jira_*`: create/update/transition/assign issues, comments, worklogs, sprints, boards, issue links, user/issue search).
+- **Tasks**: Self-hosted task manager — projects/tasks/comments (11 tools). EF Core-backed; implements `IHasFrontend`, `IDatabasePlugin`, `IHasHttpRoutes` (ships its own UI, schema, and routes). A local replacement for Asana when no external CRM is wanted.
+
+#### Development & infrastructure
+- **ClaudeCode**: Software-engineering agent powered by Claude Code running in Docker containers (7 tools: `claude_code_task`/`claude_code_continue`/`claude_code_review`/`claude_code_status`/`claude_code_get_diff`/`claude_code_create_pr`/`claude_code_destroy_session`).
+- **HeadlessBrowser**: Playwright/Chromium browser automation for navigation, content extraction, form-filling, clicking, and screenshots (13 tools). Lazy-launched shared browser, fresh context per request; installs Chromium on `Initialize()`. The interaction/testing counterpart to read-only `WebReader`.
+- **FileStorage**: Docker-based sandboxed file workspaces with Python and Node.js (11 tools, all `workspace_*`: create/destroy/list, read/write/delete files, `exec`/`exec_script`, copy-between). Sandboxed execution for agent-generated code/files.
+
+#### Media
+- **ImageGeneration**: Image generation/editing/description via Google Gemini image models (3 tools: `generate_image`, `describe_image`, `edit_image`).
+
+#### Personal assistant (daily-life layer)
+- **Weather**: Service-class annotating (`WeatherService`, 3 read-only tools: `get_current_weather`/`get_forecast`/`get_weather_alerts`). OpenWeatherMap One Call 3.0 + Geocoding; `WeatherClient` (API-key query param, CalendlyClient template). Locations accept a place name (geocoded) or explicit lat/lon. Pure helper `WeatherService.NormalizeUnits` (metric/imperial/standard) is unit-tested.
+- **Maps**: Service-class annotating (`MapsService`, 5 read-only tools: `get_directions`/`get_travel_time`/`search_places`/`get_place_details`/`geocode_address`). Google Maps Platform JSON web-services (Directions, Distance Matrix, Places Text Search, Place Details, Geocoding); `MapsClient` appends the API key per call. Maps returns HTTP 200 with a logical `status`, so `MapsService.Result` surfaces non-OK statuses as failures. Pure helper `NormalizeMode` is unit-tested.
+- **Notion**: Service-class annotating (`NotionService`, 6 tools: `notion_search`/`notion_get_page`/`notion_create_page`/`notion_append_block`/`notion_query_database`/`notion_update_page`). `NotionClient` (Bearer + `Notion-Version` header, AsanaClient template). Simple cases use title/text; advanced callers pass raw Notion JSON (`propertiesJson`/`childrenJson`/`filterJson`/`sortsJson`) since property schemas vary per database. Pure helpers `RichText` + `ParagraphBlocks` (text→blocks) are unit-tested.
+- **GoogleContacts**: Service-class annotating (`GoogleContactsService`, 5 tools: `list_contacts`/`search_contacts`/`get_contact`/`create_contact`/`update_contact`). Google People API typed SDK (`Google.Apis.PeopleService.v1`) + the GoogleForms refresh-token `UserCredential` pattern (its own `contacts` scope). `update_contact` fetches the etag first and only sends touched fields. Pure helper `BuildPerson` is unit-tested.
+- **Plaid**: Service-class annotating (`PlaidService`, 3 read-only tools: `list_accounts`/`get_balances`/`list_transactions`). `PlaidClient` injects `client_id`/`secret` into every JSON body (Plaid's auth model); `Environment` toggles sandbox/production. The per-item `access_token` comes from the Plaid Link setup flow (host-side) and is **long-lived — no refresh**. Pure helpers `BaseUrlFor` + `Date` are unit-tested.
+- **Health**: Service-class annotating (`HealthService`, 5 read-only tools: `list_health_users`/`get_sleep`/`get_activity`/`get_daily`/`get_body`). Terra wearables aggregator (one integration, many devices); `TerraClient` uses `dev-id` + `x-api-key` headers. Data tools default to the last 7 days. Pure helpers `DataPath` + `Date` are unit-tested.
+- **DocumentAI**: Service-class annotating (`DocumentAiService`, 3 tools: `extract_text`/`extract_receipt`/`extract_document_fields`). Plain OCR uses Cloud Vision (`images:annotate`, DOCUMENT_TEXT_DETECTION); receipts/forms use Document AI processors (config carries `ProjectId`/`Location`/`ReceiptProcessorId`/`DocumentProcessorId`). Auth reuses the Google refresh-token credential (cloud-platform scope) via `Google.Apis.Auth`, fetching a bearer token per request with `GetAccessTokenForRequestAsync`; raw REST through `DocumentAiClient`. Pure helper `ProcessorUrl` is unit-tested.
 
 ### Confirmation flow (service-class plugins)
 Stripe/QuickBooks/DocuSign/Mailchimp/Shopify/Square follow the `EmailService` confirmation pattern: the `*Service` takes `INotificationService` in its constructor (passed from the `*Command`), a `bool RequiresConfirmation` lives on `ServiceConfig`, and guarded methods are marked `[SupportsConfirmation]`. A private `Confirm(...)` helper returns `RequestConfirmation(...)` on the first call (no `ConfirmationId`) and checks `DoesConfirmationExist(...)` on the second before executing.

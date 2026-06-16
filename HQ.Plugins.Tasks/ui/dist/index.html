@@ -9,15 +9,23 @@
   <body class="theme-light">
     <div id="app">
       <aside class="sidebar">
-        <div class="sidebar-header">
-          <h1>Projects</h1>
-          <button id="new-project" class="btn-primary">+ New</button>
+        <div class="sidebar-section">
+          <div class="sidebar-header">
+            <h1>Agents</h1>
+          </div>
+          <ul id="agent-list" class="nav-list"></ul>
         </div>
-        <ul id="project-list" class="project-list"></ul>
+        <div class="sidebar-section">
+          <div class="sidebar-header">
+            <h1>Projects</h1>
+            <button id="new-project" class="btn-primary">+ New</button>
+          </div>
+          <ul id="project-list" class="nav-list"></ul>
+        </div>
       </aside>
       <main class="main">
         <header class="main-header">
-          <h2 id="current-project-name">Select a project</h2>
+          <h2 id="current-scope-name">Select an agent or project</h2>
           <div class="status-filters">
             <button data-status="" class="status-btn active">All</button>
             <button data-status="todo" class="status-btn">Todo</button>
@@ -32,7 +40,7 @@
         </form>
         <ul id="task-list" class="task-list"></ul>
         <div id="empty-state" class="empty-state">
-          Create a project to start tracking tasks.
+          Select an agent or project to view its tasks.
         </div>
       </main>
     </div>

@@ -1,4 +1,10 @@
+using System.ComponentModel.DataAnnotations;
+using System.Linq;
+using System.Reflection;
+using System.Text.Json;
+using HQ.Models.Helpers;
 using HQ.Plugins.Tasks;
+using HQ.Plugins.Tasks.Tools;
 
 namespace HQ.Plugins.Tests.Tasks;
 
@@ -46,5 +52,21 @@ public class TasksAnnotationTests
         var tools = new TasksCommand().GetToolDefinitions();
         var names = tools.Select(t => t.Function?.Name).ToList();
         Assert.Contains(toolName, names);
+    }
+
+    [Fact]
+    public void CreateTask_DoesNotRequireProjectId()
+    {
+        // A project-less task is private to the calling agent, so projectId must be optional.
+        var method = typeof(TasksToolImpl).GetMethods()
+            .Single(m => m.GetCustomAttribute<DisplayAttribute>()?.Name == "create_task");
+        var json = method.GetCustomAttribute<ParametersAttribute>()!.FunctionParameters;
+
+        using var doc = JsonDocument.Parse(json);
+        var required = doc.RootElement.GetProperty("required")
+            .EnumerateArray().Select(e => e.GetString()).ToList();
+
+        Assert.DoesNotContain("projectId", required);
+        Assert.Contains("title", required);
     }
 }

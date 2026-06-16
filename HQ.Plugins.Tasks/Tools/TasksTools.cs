@@ -58,50 +58,52 @@ public class TasksToolImpl
         => WithService(svc => svc.DeleteProjectAsync(RequireOrg(request), request.ProjectId ?? Guid.Empty));
 
     [Display(Name = "list_tasks")]
-    [Description("List tasks, optionally filtered by project, status, or assignee.")]
+    [Description("List tasks. With a projectId, returns that project's tasks. Without one, returns the calling agent's own (project-less) tasks. Optionally filter by status or assignee.")]
     [Parameters("""{"type":"object","properties":{"organizationId":{"type":"string"},"projectId":{"type":"string"},"status":{"type":"string","enum":["todo","doing","done","blocked"]},"assignee":{"type":"string"}},"required":["organizationId"]}""")]
     public Task<object> ListTasks(ServiceConfig config, ServiceRequest request)
-        => WithService(svc => svc.ListTasksAsync(RequireOrg(request), request.ProjectId, request.Status, request.Assignee));
+        => WithService(svc => svc.ListTasksAsync(RequireOrg(request), request.ProjectId,
+            request.ProjectId.HasValue ? null : RequireAgent(config), request.Status, request.Assignee));
 
     [Display(Name = "create_task")]
-    [Description("Create a new task inside a project.")]
-    [Parameters("""{"type":"object","properties":{"organizationId":{"type":"string"},"projectId":{"type":"string"},"title":{"type":"string"},"description":{"type":"string"},"assignee":{"type":"string"},"due":{"type":"string","format":"date-time"}},"required":["organizationId","projectId","title"]}""")]
+    [Description("Create a task. Supply a projectId to file it under a (shared) project; omit it and the task is private to the calling agent.")]
+    [Parameters("""{"type":"object","properties":{"organizationId":{"type":"string"},"projectId":{"type":"string"},"title":{"type":"string"},"description":{"type":"string"},"assignee":{"type":"string"},"due":{"type":"string","format":"date-time"}},"required":["organizationId","title"]}""")]
     public Task<object> CreateTask(ServiceConfig config, ServiceRequest request)
-        => WithService(svc => svc.CreateTaskAsync(RequireOrg(request), request.ProjectId ?? Guid.Empty, request.Title,
-            request.Description, request.Assignee, request.Due));
+        => WithService(svc => svc.CreateTaskAsync(RequireOrg(request), request.ProjectId,
+            request.ProjectId.HasValue ? null : RequireAgent(config), config.AgentName,
+            request.Title, request.Description, request.Assignee, request.Due));
 
     [Display(Name = "update_task")]
     [Description("Update a task's title, description, status, assignee, or due date.")]
     [Parameters("""{"type":"object","properties":{"organizationId":{"type":"string"},"taskId":{"type":"string"},"title":{"type":"string"},"description":{"type":"string"},"status":{"type":"string","enum":["todo","doing","done","blocked"]},"assignee":{"type":"string"},"due":{"type":"string","format":"date-time"}},"required":["organizationId","taskId"]}""")]
     public Task<object> UpdateTask(ServiceConfig config, ServiceRequest request)
         => WithService(svc => svc.UpdateTaskAsync(RequireOrg(request), request.TaskId ?? Guid.Empty, request.Title,
-            request.Description, request.Status, request.Assignee, request.Due, request.SortOrder));
+            request.Description, request.Status, request.Assignee, request.Due, request.SortOrder, config.AgentId));
 
     [Display(Name = "complete_task")]
     [Description("Mark a task as done (shorthand for update_task with status='done').")]
     [Parameters("""{"type":"object","properties":{"organizationId":{"type":"string"},"taskId":{"type":"string"}},"required":["organizationId","taskId"]}""")]
     public Task<object> CompleteTask(ServiceConfig config, ServiceRequest request)
         => WithService(svc => svc.UpdateTaskAsync(RequireOrg(request), request.TaskId ?? Guid.Empty,
-            null, null, "done", null, null, null));
+            null, null, "done", null, null, null, config.AgentId));
 
     [Display(Name = "delete_task")]
     [Description("Delete a task and its comments.")]
     [Parameters("""{"type":"object","properties":{"organizationId":{"type":"string"},"taskId":{"type":"string"}},"required":["organizationId","taskId"]}""")]
     public Task<object> DeleteTask(ServiceConfig config, ServiceRequest request)
-        => WithService(svc => svc.DeleteTaskAsync(RequireOrg(request), request.TaskId ?? Guid.Empty));
+        => WithService(svc => svc.DeleteTaskAsync(RequireOrg(request), request.TaskId ?? Guid.Empty, config.AgentId));
 
     [Display(Name = "add_comment")]
     [Description("Add a comment to a task.")]
     [Parameters("""{"type":"object","properties":{"organizationId":{"type":"string"},"taskId":{"type":"string"},"text":{"type":"string"},"author":{"type":"string"}},"required":["organizationId","taskId","text"]}""")]
     public Task<object> AddComment(ServiceConfig config, ServiceRequest request)
         => WithService(svc => svc.AddCommentAsync(RequireOrg(request), request.TaskId ?? Guid.Empty,
-            request.Author ?? "agent", request.Text));
+            request.Author ?? "agent", request.Text, config.AgentId));
 
     [Display(Name = "list_comments")]
     [Description("List comments on a task.")]
     [Parameters("""{"type":"object","properties":{"organizationId":{"type":"string"},"taskId":{"type":"string"}},"required":["organizationId","taskId"]}""")]
     public Task<object> ListComments(ServiceConfig config, ServiceRequest request)
-        => WithService(svc => svc.ListCommentsAsync(RequireOrg(request), request.TaskId ?? Guid.Empty));
+        => WithService(svc => svc.ListCommentsAsync(RequireOrg(request), request.TaskId ?? Guid.Empty, config.AgentId));
 
     // Dispatcher used by TasksCommand.DoWork — matches ServiceRequest.Method
     // (snake_case tool name) to the corresponding method above.
@@ -129,6 +131,14 @@ public class TasksToolImpl
         if (!request.OrganizationId.HasValue || request.OrganizationId.Value == Guid.Empty)
             throw new InvalidOperationException("organizationId is required.");
         return request.OrganizationId.Value;
+    }
+
+    // The agent owning this plugin config — used to scope project-less tasks. Populated by the host.
+    private static Guid RequireAgent(ServiceConfig config)
+    {
+        if (!config.AgentId.HasValue || config.AgentId.Value == Guid.Empty)
+            throw new InvalidOperationException("No agent context available; supply a projectId for this task.");
+        return config.AgentId.Value;
     }
 
     // Runs an operation against a short-lived DbContext-backed service, mirroring

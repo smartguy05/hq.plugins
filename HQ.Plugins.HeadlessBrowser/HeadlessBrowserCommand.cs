@@ -11,7 +11,7 @@ public class HeadlessBrowserCommand : CommandBase<ServiceRequest, ServiceConfig>
 {
     private BrowserClient _browserClient;
 
-    public override string Name => "HeadlessBrowser";
+    public override string Name => "Headless Browser";
     public override string Description => "Headless browser automation for navigating pages, reading content, filling forms, clicking elements, and taking screenshots";
     protected override INotificationService NotificationService { get; set; }
 

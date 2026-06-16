@@ -85,6 +85,12 @@ namespace HQ.Plugins.Tasks.Migrations
                         .ValueGeneratedOnAdd()
                         .HasColumnType("uuid");
 
+                    b.Property<Guid?>("AgentId")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("AgentName")
+                        .HasColumnType("text");
+
                     b.Property<string>("Assignee")
                         .HasColumnType("text");
 
@@ -103,7 +109,7 @@ namespace HQ.Plugins.Tasks.Migrations
                     b.Property<Guid>("OrganizationId")
                         .HasColumnType("uuid");
 
-                    b.Property<Guid>("ProjectId")
+                    b.Property<Guid?>("ProjectId")
                         .HasColumnType("uuid");
 
                     b.Property<int>("SortOrder")
@@ -116,6 +122,8 @@ namespace HQ.Plugins.Tasks.Migrations
                         .HasColumnType("text");
 
                     b.HasKey("Id");
+
+                    b.HasIndex("OrganizationId", "AgentId", "Status");
 
                     b.HasIndex("OrganizationId", "ProjectId", "Status");
 

@@ -5,9 +5,11 @@
     token: null,
     orgId: null,
     apiBaseUrl: null,
+    agents: [],
     projects: [],
     tasks: [],
-    currentProjectId: null,
+    // Current selection: { kind: 'agent' | 'project', id, name } or null.
+    selection: null,
     statusFilter: '',
   };
 
@@ -51,50 +53,83 @@
     return res.json();
   }
 
+  async function loadAgents() {
+    state.agents = (await api('/agents')) || [];
+  }
+
   async function loadProjects() {
     state.projects = (await api('/projects')) || [];
   }
 
   async function loadTasks() {
-    if (!state.currentProjectId) { state.tasks = []; return; }
-    const qs = new URLSearchParams({ projectId: state.currentProjectId });
+    if (!state.selection) { state.tasks = []; return; }
+    const qs = new URLSearchParams();
+    if (state.selection.kind === 'project') qs.set('projectId', state.selection.id);
+    else qs.set('agentId', state.selection.id);
     if (state.statusFilter) qs.set('status', state.statusFilter);
     state.tasks = (await api(`/tasks?${qs.toString()}`)) || [];
   }
 
   // --- Rendering -------------------------------------------------------------
 
-  function renderProjects() {
-    const list = document.getElementById('project-list');
-    list.innerHTML = '';
-    for (const p of state.projects) {
-      const li = document.createElement('li');
-      li.textContent = p.name;
-      li.dataset.id = p.id;
-      if (p.id === state.currentProjectId) li.classList.add('active');
-      li.addEventListener('click', () => selectProject(p.id));
-      list.appendChild(li);
+  function renderNavItem(list, kind, id, name) {
+    const li = document.createElement('li');
+    li.dataset.id = id;
+    if (state.selection && state.selection.kind === kind && state.selection.id === id) {
+      li.classList.add('active');
     }
+    li.addEventListener('click', () => selectNode(kind, id, name));
+
+    const label = document.createElement('span');
+    label.className = 'nav-label';
+    label.textContent = name || '(unnamed)';
+    li.appendChild(label);
+
+    // Projects can be deleted (agents are derived from task data, so they aren't).
+    if (kind === 'project') {
+      const del = document.createElement('button');
+      del.className = 'btn-ghost nav-del';
+      del.title = 'Delete project';
+      del.textContent = '×';
+      del.addEventListener('click', (ev) => {
+        ev.stopPropagation();
+        deleteProject(id, name);
+      });
+      li.appendChild(del);
+    }
+
+    list.appendChild(li);
+  }
+
+  function renderSidebar() {
+    const agentList = document.getElementById('agent-list');
+    agentList.innerHTML = '';
+    for (const a of state.agents) renderNavItem(agentList, 'agent', a.agentId, a.agentName);
+
+    const projectList = document.getElementById('project-list');
+    projectList.innerHTML = '';
+    for (const p of state.projects) renderNavItem(projectList, 'project', p.id, p.name);
   }
 
   function renderTasks() {
     const list = document.getElementById('task-list');
     list.innerHTML = '';
     const empty = document.getElementById('empty-state');
+    const heading = document.getElementById('current-scope-name');
 
-    if (!state.currentProjectId) {
+    if (!state.selection) {
       empty.hidden = false;
-      empty.textContent = state.projects.length === 0
-        ? 'Create a project to start tracking tasks.'
-        : 'Select a project on the left.';
+      empty.textContent = (state.agents.length === 0 && state.projects.length === 0)
+        ? 'No agents or projects yet. Create a project to start tracking tasks.'
+        : 'Select an agent or project on the left.';
+      heading.textContent = 'Select an agent or project';
       document.getElementById('new-task-form').hidden = true;
       return;
     }
 
     empty.hidden = true;
     document.getElementById('new-task-form').hidden = false;
-    const proj = state.projects.find((p) => p.id === state.currentProjectId);
-    document.getElementById('current-project-name').textContent = proj ? proj.name : '';
+    heading.textContent = state.selection.name || '';
 
     for (const t of state.tasks) {
       const li = document.createElement('li');
@@ -128,21 +163,30 @@
   }
 
   async function refresh() {
-    await loadProjects();
-    if (!state.currentProjectId && state.projects[0]) {
-      state.currentProjectId = state.projects[0].id;
+    await Promise.all([loadAgents(), loadProjects()]);
+    // Keep the current selection if it still exists; otherwise pick the first available node.
+    if (!selectionStillValid()) {
+      if (state.projects[0]) state.selection = { kind: 'project', id: state.projects[0].id, name: state.projects[0].name };
+      else if (state.agents[0]) state.selection = { kind: 'agent', id: state.agents[0].agentId, name: state.agents[0].agentName };
+      else state.selection = null;
     }
     await loadTasks();
-    renderProjects();
+    renderSidebar();
     renderTasks();
+  }
+
+  function selectionStillValid() {
+    if (!state.selection) return false;
+    if (state.selection.kind === 'project') return state.projects.some((p) => p.id === state.selection.id);
+    return state.agents.some((a) => a.agentId === state.selection.id);
   }
 
   // --- Actions ---------------------------------------------------------------
 
-  async function selectProject(id) {
-    state.currentProjectId = id;
+  async function selectNode(kind, id, name) {
+    state.selection = { kind, id, name };
     await loadTasks();
-    renderProjects();
+    renderSidebar();
     renderTasks();
   }
 
@@ -154,22 +198,32 @@
       body: JSON.stringify({ name, description: '', color: null }),
     });
     if (p) {
-      state.currentProjectId = p.id;
+      state.selection = { kind: 'project', id: p.id, name: p.name };
       await refresh();
       toast('success', `Created "${p.name}"`);
     }
+  }
+
+  async function deleteProject(id, name) {
+    if (!window.confirm(`Delete project "${name}" and all its tasks?`)) return;
+    await api(`/projects/${id}`, { method: 'DELETE' });
+    if (state.selection && state.selection.kind === 'project' && state.selection.id === id) {
+      state.selection = null;
+    }
+    await refresh();
+    toast('success', `Deleted "${name}"`);
   }
 
   async function addTask(ev) {
     ev.preventDefault();
     const input = document.getElementById('new-task-title');
     const title = input.value.trim();
-    if (!title || !state.currentProjectId) return;
+    if (!title || !state.selection) return;
     input.value = '';
-    await api('/tasks', {
-      method: 'POST',
-      body: JSON.stringify({ projectId: state.currentProjectId, title, description: '', assignee: null, due: null }),
-    });
+    const body = { title, description: '', assignee: null, due: null };
+    if (state.selection.kind === 'project') body.projectId = state.selection.id;
+    else { body.agentId = state.selection.id; body.agentName = state.selection.name; }
+    await api('/tasks', { method: 'POST', body: JSON.stringify(body) });
     await loadTasks();
     renderTasks();
   }

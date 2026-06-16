@@ -50,22 +50,35 @@ public static class TasksEndpoints
             return ok ? Results.NoContent() : Results.NotFound();
         });
 
+        // Agents (distinct owners of project-less tasks — for the UI sidebar)
+        routes.MapGet("/agents", async (HttpContext ctx) =>
+        {
+            var orgId = ResolveOrg(ctx);
+            if (orgId == Guid.Empty) return Results.BadRequest("Missing org");
+            using var db = TasksCommand.BuildDbContext();
+            var svc = new TasksService(db);
+            return Results.Ok(await svc.ListAgentsAsync(orgId));
+        });
+
         // Tasks
-        routes.MapGet("/tasks", async (HttpContext ctx, Guid? projectId, string status, string assignee) =>
+        routes.MapGet("/tasks", async (HttpContext ctx, Guid? projectId, Guid? agentId, string status, string assignee) =>
         {
             var orgId = ResolveOrg(ctx);
             using var db = TasksCommand.BuildDbContext();
             var svc = new TasksService(db);
-            var list = await svc.ListTasksAsync(orgId, projectId, status, assignee);
+            var list = await svc.ListTasksAsync(orgId, projectId, agentId, status, assignee);
             return Results.Ok(list);
         });
 
         routes.MapPost("/tasks", async (HttpContext ctx, TaskCreate body) =>
         {
             var orgId = ResolveOrg(ctx);
+            if (!body.ProjectId.HasValue && !body.AgentId.HasValue)
+                return Results.BadRequest("A task requires either a projectId or an agentId.");
             using var db = TasksCommand.BuildDbContext();
             var svc = new TasksService(db);
-            var t = await svc.CreateTaskAsync(orgId, body.ProjectId, body.Title, body.Description, body.Assignee, body.Due);
+            var t = await svc.CreateTaskAsync(orgId, body.ProjectId, body.AgentId, body.AgentName,
+                body.Title, body.Description, body.Assignee, body.Due);
             return Results.Ok(t);
         });
 
@@ -118,7 +131,7 @@ public static class TasksEndpoints
 
     public record ProjectCreate(string Name, string Description, string Color);
     public record ProjectUpdate(string Name, string Description, string Color, bool? Archived);
-    public record TaskCreate(Guid ProjectId, string Title, string Description, string Assignee, DateTime? Due);
+    public record TaskCreate(Guid? ProjectId, Guid? AgentId, string AgentName, string Title, string Description, string Assignee, DateTime? Due);
     public record TaskUpdate(string Title, string Description, string Status, string Assignee, DateTime? Due, int? SortOrder);
     public record CommentCreate(string Text, string Author);
 }
