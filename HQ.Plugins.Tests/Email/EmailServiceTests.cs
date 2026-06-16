@@ -72,10 +72,11 @@ public class EmailServiceTests
     }
 
     [Fact]
-    public void GetServiceFunctions_ReturnsAll17Tools()
+    public void GetServiceFunctions_ReturnsAllTools()
     {
         var tools = _service.GetServiceFunctions();
-        Assert.Equal(17, tools.Count);
+        // 17 email tools + 3 trusted-sender management tools
+        Assert.Equal(20, tools.Count);
     }
 
     [Fact]

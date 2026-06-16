@@ -7,7 +7,6 @@ using HQ.Models.Chat;
 using HQ.Models.Enums;
 using HQ.Models.Interfaces;
 using HQ.Plugins.Slack.Models;
-using HQ.Services;
 using HQ.Services.Orchestration;
 using SlackNet;
 using SlackNet.Blocks;
@@ -75,6 +74,8 @@ public class SlackService(
 
     public async Task Handle(MessageEvent slackEvent)
     {
+        await logger(LogLevel.Info, $"Slack event received - Channel: {slackEvent.Channel}, User: {slackEvent.User}, Subtype: {slackEvent.Subtype ?? "none"}, BotId: {slackEvent.BotId ?? "none"}");
+
         // Skip subtypes (edits, joins, etc.) but allow file_share and bot_message
         if (slackEvent.Subtype != null && slackEvent.Subtype != "file_share" && slackEvent.Subtype != "bot_message")
             return;
@@ -265,6 +266,17 @@ public class SlackService(
                     await logger(LogLevel.Error, "An error occurred while processing request for Slack message", e);
                     await SendMessage($"An error occurred while processing request. Error: {e.Message}",
                         replyTo);
+
+                    // Purge polluted conversation cache so the next message doesn't hit the same loop.
+                    // Don't retry — the error may be persistent (e.g., bad tool call schema).
+                    var cachedMessages = await MessageCache.GetCachedMessages(conversationId);
+                    if (cachedMessages.Any())
+                    {
+                        var purgedMessages = RemoveNonUserMessagesFromEnd(cachedMessages);
+                        await MessageCache.SaveCachedMessages(conversationId, purgedMessages);
+                        await logger(LogLevel.Info,
+                            $"Purged conversation cache after error for {conversationId}");
+                    }
                 }
             }
 

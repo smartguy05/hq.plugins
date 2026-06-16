@@ -30,4 +30,7 @@ public record ServiceRequest: IPluginServiceRequest
     public string Query { get; set; }
     public string SearchText { get; set; }
     public int? MaxResults { get; set; }
+
+    // Trusted-sender management
+    public string Reason { get; set; }
 }

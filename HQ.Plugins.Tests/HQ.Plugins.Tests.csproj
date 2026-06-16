@@ -22,22 +22,52 @@
         <ProjectReference Include="..\HQ.Logging.FileLogger\HQ.Logging.FileLogger.csproj" />
         <ProjectReference Include="..\HQ.Plugins.Email\HQ.Plugins.Email.csproj" />
         <ProjectReference Include="..\HQ.Plugins.GoogleCalendar\HQ.Plugins.GoogleCalendar.csproj" />
+        <ProjectReference Include="..\HQ.Plugins.GoogleWorkspace\HQ.Plugins.GoogleWorkspace.csproj" />
+        <ProjectReference Include="..\HQ.Plugins.Microsoft365\HQ.Plugins.Microsoft365.csproj" />
+        <ProjectReference Include="..\HQ.Plugins.Stripe\HQ.Plugins.Stripe.csproj" />
+        <ProjectReference Include="..\HQ.Plugins.Zendesk\HQ.Plugins.Zendesk.csproj" />
+        <ProjectReference Include="..\HQ.Plugins.Calendly\HQ.Plugins.Calendly.csproj" />
+        <ProjectReference Include="..\HQ.Plugins.QuickBooks\HQ.Plugins.QuickBooks.csproj" />
+        <ProjectReference Include="..\HQ.Plugins.DocuSign\HQ.Plugins.DocuSign.csproj" />
+        <ProjectReference Include="..\HQ.Plugins.Mailchimp\HQ.Plugins.Mailchimp.csproj" />
+        <ProjectReference Include="..\HQ.Plugins.GoogleAnalytics\HQ.Plugins.GoogleAnalytics.csproj" />
+        <ProjectReference Include="..\HQ.Plugins.GoogleForms\HQ.Plugins.GoogleForms.csproj" />
+        <ProjectReference Include="..\HQ.Plugins.Shopify\HQ.Plugins.Shopify.csproj" />
+        <ProjectReference Include="..\HQ.Plugins.Ramp\HQ.Plugins.Ramp.csproj" />
+        <ProjectReference Include="..\HQ.Plugins.Gusto\HQ.Plugins.Gusto.csproj" />
+        <ProjectReference Include="..\HQ.Plugins.Square\HQ.Plugins.Square.csproj" />
         <ProjectReference Include="..\HQ.Plugins.HomeAssistantAssist\HQ.Plugins.HomeAssistantAssist.csproj" />
         <ProjectReference Include="..\HQ.Plugins.Jira\HQ.Plugins.Jira.csproj" />
         <ProjectReference Include="..\HQ.Plugins.HeadlessBrowser\HQ.Plugins.HeadlessBrowser.csproj" />
         <ProjectReference Include="..\HQ.Plugins.HubSpot\HQ.Plugins.HubSpot.csproj" />
         <ProjectReference Include="..\HQ.Plugins.LinkedIn\HQ.Plugins.LinkedIn.csproj" />
+        <ProjectReference Include="..\HQ.Plugins.Perplexity\HQ.Plugins.Perplexity.csproj" />
         <ProjectReference Include="..\HQ.Plugins.ReportGenerator\HQ.Plugins.ReportGenerator.csproj" />
         <ProjectReference Include="..\HQ.Plugins.FileStorage\HQ.Plugins.FileStorage.csproj" />
         <ProjectReference Include="..\HQ.Plugins.Slack\HQ.Plugins.Slack.csproj" />
-        <PackageReference Include="HQ.Models" Version="2.1.0" />
+        <PackageReference Include="HQ.Models" Version="2.4.1" />
         <ProjectReference Include="..\HQ.Plugins.SupportChannelKb\HQ.Plugins.SupportChannelKb.csproj" />
         <ProjectReference Include="..\HQ.Plugins.Teams\HQ.Plugins.Teams.csproj" />
         <ProjectReference Include="..\HQ.Plugins.Telegram\HQ.Plugins.Telegram.csproj" />
         <ProjectReference Include="..\HQ.Plugins.Twilio\HQ.Plugins.Twilio.csproj" />
         <ProjectReference Include="..\HQ.Plugins.UseMemos\HQ.Plugins.UseMemos.csproj" />
+        <ProjectReference Include="..\HQ.Plugins.Asana\HQ.Plugins.Asana.csproj" />
+        <ProjectReference Include="..\HQ.Plugins.Tasks\HQ.Plugins.Tasks.csproj" />
         <ProjectReference Include="..\HQ.Plugins.WebSearch\HQ.Plugins.WebSearch.csproj" />
+        <ProjectReference Include="..\HQ.Plugins.WebReader\HQ.Plugins.WebReader.csproj" />
+        <ProjectReference Include="..\HQ.Plugins.Weather\HQ.Plugins.Weather.csproj" />
+        <ProjectReference Include="..\HQ.Plugins.Maps\HQ.Plugins.Maps.csproj" />
+        <ProjectReference Include="..\HQ.Plugins.Notion\HQ.Plugins.Notion.csproj" />
+        <ProjectReference Include="..\HQ.Plugins.GoogleContacts\HQ.Plugins.GoogleContacts.csproj" />
+        <ProjectReference Include="..\HQ.Plugins.Plaid\HQ.Plugins.Plaid.csproj" />
+        <ProjectReference Include="..\HQ.Plugins.Health\HQ.Plugins.Health.csproj" />
+        <ProjectReference Include="..\HQ.Plugins.DocumentAI\HQ.Plugins.DocumentAI.csproj" />
         <ProjectReference Include="..\Test_Plugin\Test_Plugin.csproj" />
+    </ItemGroup>
+
+    <ItemGroup>
+        <PackageReference Include="Microsoft.EntityFrameworkCore.InMemory" Version="9.0.3" />
+        <PackageReference Include="Microsoft.EntityFrameworkCore.Relational" Version="9.0.3" />
     </ItemGroup>
 
     <ItemGroup>
