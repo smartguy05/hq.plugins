@@ -29,14 +29,16 @@ public class EmailPathsTests
     }
 
     [Fact]
-    public void EmailDataDir_HonorsEnvOverride_WhenSet()
+    public void EmailDataDir_UsesSharedPluginDataSpace_WhenSet()
     {
-        const string varName = "HQ_EMAIL_DATA_DIR";
+        const string varName = "HQ_PLUGIN_DATA_DIR";
         var original = Environment.GetEnvironmentVariable(varName);
         try
         {
-            Environment.SetEnvironmentVariable(varName, "/var/lib/hq/email-data");
-            Assert.Equal("/var/lib/hq/email-data", EmailPaths.EmailDataDir());
+            Environment.SetEnvironmentVariable(varName, "/var/lib/hq/plugin-data");
+            Assert.Equal(
+                Path.Combine("/var/lib/hq/plugin-data", "HQ.Plugins.Email"),
+                EmailPaths.EmailDataDir());
         }
         finally
         {
@@ -47,7 +49,7 @@ public class EmailPathsTests
     [Fact]
     public void EmailDataDir_FallsBackToPluginDir_WhenEnvUnset()
     {
-        const string varName = "HQ_EMAIL_DATA_DIR";
+        const string varName = "HQ_PLUGIN_DATA_DIR";
         var original = Environment.GetEnvironmentVariable(varName);
         try
         {

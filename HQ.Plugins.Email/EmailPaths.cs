@@ -1,3 +1,5 @@
+using HQ.Models.Helpers;
+
 namespace HQ.Plugins.Email;
 
 /// <summary>
@@ -8,19 +10,15 @@ namespace HQ.Plugins.Email;
 public static class EmailPaths
 {
     /// <summary>
-    /// Directory holding the per-agent email cache DBs. Defaults to a folder next to
-    /// the plugin DLL, but honors the <c>HQ_EMAIL_DATA_DIR</c> environment variable so
-    /// deployments can point it at a writable, persistent volume (the plugin directory
-    /// is mounted read-only in production).
+    /// Directory holding the per-agent email cache DBs. Uses the shared writable plugin
+    /// data space (<c>HQ_PLUGIN_DATA_DIR</c>) under a per-plugin subfolder when set —
+    /// the plugin directory is mounted read-only in production — and falls back to a
+    /// folder next to the plugin DLL for local dev.
     /// </summary>
     public static string EmailDataDir()
     {
-        var overrideDir = Environment.GetEnvironmentVariable("HQ_EMAIL_DATA_DIR");
-        if (!string.IsNullOrWhiteSpace(overrideDir))
-            return overrideDir;
-
         var pluginDir = Path.GetDirectoryName(typeof(EmailPaths).Assembly.Location)!;
-        return Path.Combine(pluginDir, "EmailData");
+        return PluginDataDirectory.Resolve("HQ.Plugins.Email", Path.Combine(pluginDir, "EmailData"));
     }
 
     /// <summary>SQLite file name for an agent (or the shared file when no agent id).</summary>
