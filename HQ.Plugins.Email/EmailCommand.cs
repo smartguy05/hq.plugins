@@ -1,17 +1,30 @@
+using HQ.Models;
 using HQ.Models.Enums;
 using HQ.Models.Extensions;
 using HQ.Models.Interfaces;
 using HQ.Models.Tools;
 using HQ.Plugins.Email.Data;
 using HQ.Plugins.Email.Models;
+using Microsoft.AspNetCore.Routing;
 
 namespace HQ.Plugins.Email;
 
-public class EmailCommand: CommandBase<ServiceRequest,ServiceConfig>
+public class EmailCommand: CommandBase<ServiceRequest,ServiceConfig>, IHasFrontend, IHasHttpRoutes
 {
     public override string Name => "Email";
     public override string Description => "Manage, search, send, delete email for the specified email accounts.";
     protected override INotificationService NotificationService { get; set; }
+
+    // IHasFrontend — the inbox-viewer page surfaced in the host sidebar.
+    public FrontendManifest GetFrontendManifest() => new(
+        EntryPath: "ui/index.html",
+        Pages: new[]
+        {
+            new FrontendPage("/", "Email Inboxes", IconName: "mail", SidebarGroup: "Plugins")
+        });
+
+    // IHasHttpRoutes — data/test/action routes backing the UI.
+    public void MapRoutes(IEndpointRouteBuilder routes) => Endpoints.EmailEndpoints.Map(routes);
 
     private LocalEmailStore _store;
     private EmailVectorService _vectorService;
@@ -49,13 +62,8 @@ public class EmailCommand: CommandBase<ServiceRequest,ServiceConfig>
             var connString = config.SqliteConnectionString;
             if (string.IsNullOrWhiteSpace(connString))
             {
-                var pluginDir = Path.GetDirectoryName(typeof(EmailCommand).Assembly.Location);
-                var dbDir = Path.Combine(pluginDir!, "EmailData");
-                Directory.CreateDirectory(dbDir);
-                var dbName = !string.IsNullOrWhiteSpace(config.AgentId)
-                    ? $"agent-{config.AgentId}-emails.db"
-                    : "emails.db";
-                connString = $"Data Source={Path.Combine(dbDir, dbName)}";
+                Directory.CreateDirectory(EmailPaths.EmailDataDir());
+                connString = EmailPaths.ResolveConnectionString(config.AgentId);
             }
 
             // Initialize SQLite store

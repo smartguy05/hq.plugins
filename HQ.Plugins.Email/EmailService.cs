@@ -62,20 +62,244 @@ public class EmailService
         return mailAccount;
     }
 
-    private static async Task<ImapClient> ConnectImapAsync(EmailParameters account)
+    internal static async Task<ImapClient> ConnectImapAsync(EmailParameters account, CancellationToken ct = default)
     {
-        var client = new ImapClient();
-        await client.ConnectAsync(account.Imap, account.ImapPort, account.UseSsl);
-        await client.AuthenticateAsync(account.Username, account.Password);
+        // Timeout guards against an unreachable host / wrong port hanging forever.
+        var client = new ImapClient { Timeout = 20000 };
+        await client.ConnectAsync(account.Imap, account.ImapPort, account.UseSsl, ct);
+        await client.AuthenticateAsync(account.Username, account.Password, ct);
         return client;
     }
 
-    private static async Task<SmtpClient> ConnectSmtpAsync(EmailParameters account)
+    internal static async Task<SmtpClient> ConnectSmtpAsync(EmailParameters account, CancellationToken ct = default)
     {
-        var client = new SmtpClient();
-        await client.ConnectAsync(account.Smtp, account.SmtpPort);
-        await client.AuthenticateAsync(account.Username, account.Password);
+        var client = new SmtpClient { Timeout = 20000 };
+        await client.ConnectAsync(account.Smtp, account.SmtpPort, MailKit.Security.SecureSocketOptions.Auto, ct);
+        await client.AuthenticateAsync(account.Username, account.Password, ct);
         return client;
+    }
+
+    /// <summary>
+    /// Open a folder for read/write. A null/empty folder (or "INBOX") opens the inbox;
+    /// otherwise resolves by name (honoring the Gmail prefix fallback in GetFolderAsync).
+    /// </summary>
+    private static async Task<IMailFolder> OpenFolderReadWriteAsync(ImapClient client, string folder)
+    {
+        if (string.IsNullOrWhiteSpace(folder) || folder.Equals("INBOX", StringComparison.OrdinalIgnoreCase))
+        {
+            await client.Inbox.OpenAsync(FolderAccess.ReadWrite);
+            return client.Inbox;
+        }
+
+        var mailFolder = await GetFolderAsync(client, folder);
+        await mailFolder.OpenAsync(FolderAccess.ReadWrite);
+        return mailFolder;
+    }
+
+    // --- Shared mailbox mutations: used by both the agent tools and the inbox-viewer
+    //     HTTP routes. These perform the real IMAP change and keep the local cache in
+    //     sync, with no confirmation flow (a human clicking in the UI / a confirmed
+    //     tool call is the authorization). Throw on "not found" so callers can surface it.
+
+    internal static async Task SetSeenFlagAsync(EmailParameters account, string folder, string messageId,
+        bool read, LocalEmailStore store)
+    {
+        using var client = await ConnectImapAsync(account);
+        try
+        {
+            var mailFolder = await OpenFolderReadWriteAsync(client, folder);
+            var found = await FindMessageAsync(mailFolder, messageId);
+            if (found == null) throw new Exception("Email not found");
+
+            if (read)
+                await found.Value.folder.AddFlagsAsync(found.Value.uid, MessageFlags.Seen, true);
+            else
+                await found.Value.folder.RemoveFlagsAsync(found.Value.uid, MessageFlags.Seen, true);
+
+            if (store != null)
+                await store.UpdateFlagsAsync(messageId, isRead: read);
+        }
+        finally
+        {
+            await client.DisconnectAsync(true);
+        }
+    }
+
+    internal static async Task SetFlaggedAsync(EmailParameters account, string folder, string messageId,
+        bool flagged, LocalEmailStore store)
+    {
+        using var client = await ConnectImapAsync(account);
+        try
+        {
+            var mailFolder = await OpenFolderReadWriteAsync(client, folder);
+            var found = await FindMessageAsync(mailFolder, messageId);
+            if (found == null) throw new Exception("Email not found");
+
+            if (flagged)
+                await found.Value.folder.AddFlagsAsync(found.Value.uid, MessageFlags.Flagged, true);
+            else
+                await found.Value.folder.RemoveFlagsAsync(found.Value.uid, MessageFlags.Flagged, true);
+
+            if (store != null)
+                await store.UpdateFlagsAsync(messageId, isFlagged: flagged);
+        }
+        finally
+        {
+            await client.DisconnectAsync(true);
+        }
+    }
+
+    /// <summary>Delete a message from a folder (default inbox) and purge it from the caches.</summary>
+    internal static async Task<int> DeleteMessageAsync(EmailParameters account, string folder, string messageId,
+        LocalEmailStore store, EmailVectorService vectorService)
+    {
+        var deletedCount = 0;
+        using var client = await ConnectImapAsync(account);
+        try
+        {
+            var mailFolder = await OpenFolderReadWriteAsync(client, folder);
+            var uids = await mailFolder.SearchAsync(SearchOptions.All, SearchQuery.HeaderContains("Message-Id", messageId));
+            foreach (var uid in uids.UniqueIds)
+            {
+                await mailFolder.AddFlagsAsync(uid, MessageFlags.Deleted, true);
+                deletedCount++;
+            }
+            await mailFolder.ExpungeAsync();
+
+            if (store != null)
+            {
+                var localEmail = await store.GetByMessageIdAsync(messageId);
+                if (localEmail?.VectorId != null && vectorService != null)
+                    await vectorService.DeleteByVectorIdAsync(localEmail.VectorId);
+                await store.DeleteByMessageIdAsync(messageId);
+            }
+        }
+        finally
+        {
+            await client.DisconnectAsync(true);
+        }
+        return deletedCount;
+    }
+
+    /// <summary>
+    /// Delete several messages in a single IMAP session, grouped by folder (one expunge
+    /// per folder). Far cheaper than one connect per message for bulk deletes. Returns
+    /// the number of messages actually removed.
+    /// </summary>
+    internal static async Task<int> DeleteMessagesAsync(EmailParameters account,
+        IEnumerable<(string folder, string messageId)> items,
+        LocalEmailStore store, EmailVectorService vectorService)
+    {
+        var groups = items
+            .Where(i => !string.IsNullOrWhiteSpace(i.messageId))
+            .GroupBy(i => string.IsNullOrWhiteSpace(i.folder) ? "INBOX" : i.folder);
+
+        var deleted = 0;
+        using var client = await ConnectImapAsync(account);
+        try
+        {
+            foreach (var group in groups)
+            {
+                // Expunge the current folder before opening the next — only one folder
+                // is in the selected state per connection.
+                var mailFolder = await OpenFolderReadWriteAsync(client, group.Key);
+                var expunge = false;
+                foreach (var (_, messageId) in group)
+                {
+                    var uids = await mailFolder.SearchAsync(SearchOptions.All,
+                        SearchQuery.HeaderContains("Message-Id", messageId));
+                    foreach (var uid in uids.UniqueIds)
+                    {
+                        await mailFolder.AddFlagsAsync(uid, MessageFlags.Deleted, true);
+                        expunge = true;
+                        deleted++;
+                    }
+                    if (store != null)
+                    {
+                        var local = await store.GetByMessageIdAsync(messageId);
+                        if (local?.VectorId != null && vectorService != null)
+                            await vectorService.DeleteByVectorIdAsync(local.VectorId);
+                        await store.DeleteByMessageIdAsync(messageId);
+                    }
+                }
+                if (expunge) await mailFolder.ExpungeAsync();
+            }
+        }
+        finally
+        {
+            await client.DisconnectAsync(true);
+        }
+        return deleted;
+    }
+
+    // --- Connection testing (for the config "Test" button). Tries IMAP then SMTP
+    //     against the submitted credentials; never throws — failures are reported.
+
+    public record ProtocolTestResult(bool Ok, string Message);
+    public record AccountTestResult(ProtocolTestResult Imap, ProtocolTestResult Smtp);
+
+    // Per-protocol timeout for the test button — kept short so the HTTP request always
+    // returns well within any reverse-proxy gateway timeout instead of hanging (→ 504).
+    private const int TestTimeoutMs = 12000;
+
+    internal static async Task<AccountTestResult> TestAccountAsync(EmailParameters account)
+    {
+        // Run IMAP and SMTP concurrently so the worst case is one timeout, not two.
+        var imapTask = TestImapAsync(account);
+        var smtpTask = TestSmtpAsync(account);
+        await Task.WhenAll(imapTask, smtpTask);
+        return new AccountTestResult(imapTask.Result, smtpTask.Result);
+    }
+
+    private static async Task<ProtocolTestResult> TestImapAsync(EmailParameters account)
+    {
+        if (string.IsNullOrWhiteSpace(account?.Imap))
+            return new ProtocolTestResult(false, "No IMAP host configured.");
+        using var cts = new CancellationTokenSource(TestTimeoutMs);
+        try
+        {
+            using var client = await ConnectImapAsync(account, cts.Token);
+            await client.DisconnectAsync(true);
+            return new ProtocolTestResult(true, "Connected and authenticated.");
+        }
+        catch (Exception ex)
+        {
+            return new ProtocolTestResult(false, DescribeConnectionError(ex));
+        }
+    }
+
+    private static async Task<ProtocolTestResult> TestSmtpAsync(EmailParameters account)
+    {
+        if (string.IsNullOrWhiteSpace(account?.Smtp))
+            return new ProtocolTestResult(false, "No SMTP host configured.");
+        using var cts = new CancellationTokenSource(TestTimeoutMs);
+        try
+        {
+            using var client = await ConnectSmtpAsync(account, cts.Token);
+            await client.DisconnectAsync(true);
+            return new ProtocolTestResult(true, "Connected and authenticated.");
+        }
+        catch (Exception ex)
+        {
+            return new ProtocolTestResult(false, DescribeConnectionError(ex));
+        }
+    }
+
+    /// <summary>Map a MailKit connection/auth exception to a concise, user-readable message.</summary>
+    public static string DescribeConnectionError(Exception ex)
+    {
+        return ex switch
+        {
+            MailKit.Security.AuthenticationException =>
+                "Authentication failed — check the username and password (for Gmail/Outlook use an app password).",
+            MailKit.Security.SslHandshakeException =>
+                "TLS/SSL handshake failed — check the port and the 'Use SSL' setting.",
+            System.Net.Sockets.SocketException =>
+                "Could not reach the server — check the host and port.",
+            OperationCanceledException or TimeoutException =>
+                "Connection timed out — check the host, port, and 'Use SSL' setting.",
+            _ => ex.Message
+        };
     }
 
     private static async Task<(IMailFolder folder, UniqueId uid)?> FindMessageAsync(IMailFolder folder, string messageId)
@@ -920,30 +1144,9 @@ public class EmailService
             throw new Exception("MessageId is required");
 
         var account = GetMailAccount(request, config);
-        using var client = await ConnectImapAsync(account);
-        try
-        {
-            await client.Inbox.OpenAsync(FolderAccess.ReadWrite);
-            var found = await FindMessageAsync(client.Inbox, request.MessageId);
-            if (found == null)
-                return new { Success = false, Message = "Email not found" };
-
-            if (request.MarkAsRead == true)
-                await found.Value.folder.AddFlagsAsync(found.Value.uid, MessageFlags.Seen, true);
-            else
-                await found.Value.folder.RemoveFlagsAsync(found.Value.uid, MessageFlags.Seen, true);
-
-            // Update local store
-            if (_store != null)
-                await _store.UpdateFlagsAsync(request.MessageId, isRead: request.MarkAsRead);
-
-            var status = request.MarkAsRead == true ? "read" : "unread";
-            return new { Success = true, Message = $"Email marked as {status}" };
-        }
-        finally
-        {
-            await client.DisconnectAsync(true);
-        }
+        await SetSeenFlagAsync(account, request.Folder, request.MessageId, request.MarkAsRead == true, _store);
+        var status = request.MarkAsRead == true ? "read" : "unread";
+        return new { Success = true, Message = $"Email marked as {status}" };
     }
 
     [Display(Name = "flag_email")]
@@ -974,30 +1177,9 @@ public class EmailService
             throw new Exception("MessageId is required");
 
         var account = GetMailAccount(request, config);
-        using var client = await ConnectImapAsync(account);
-        try
-        {
-            await client.Inbox.OpenAsync(FolderAccess.ReadWrite);
-            var found = await FindMessageAsync(client.Inbox, request.MessageId);
-            if (found == null)
-                return new { Success = false, Message = "Email not found" };
-
-            if (request.Flag == true)
-                await found.Value.folder.AddFlagsAsync(found.Value.uid, MessageFlags.Flagged, true);
-            else
-                await found.Value.folder.RemoveFlagsAsync(found.Value.uid, MessageFlags.Flagged, true);
-
-            // Update local store
-            if (_store != null)
-                await _store.UpdateFlagsAsync(request.MessageId, isFlagged: request.Flag);
-
-            var status = request.Flag == true ? "flagged" : "unflagged";
-            return new { Success = true, Message = $"Email {status}" };
-        }
-        finally
-        {
-            await client.DisconnectAsync(true);
-        }
+        await SetFlaggedAsync(account, request.Folder, request.MessageId, request.Flag == true, _store);
+        var status = request.Flag == true ? "flagged" : "unflagged";
+        return new { Success = true, Message = $"Email {status}" };
     }
 
     [Display(Name = "move_to_folder")]
@@ -1237,40 +1419,12 @@ public class EmailService
     private async Task<object> ExecuteDeleteEmailAsync(ServiceConfig config, ServiceRequest request)
     {
         var account = GetMailAccount(request, config);
-        int deletedCount = 0;
+        var deletedCount = await DeleteMessageAsync(account, request.Folder, request.MessageId, _store, _vectorService);
 
-        using var client = await ConnectImapAsync(account);
-        try
-        {
-            await client.Inbox.OpenAsync(FolderAccess.ReadWrite);
-            var uids = await client.Inbox.SearchAsync(SearchOptions.All, SearchQuery.HeaderContains("Message-Id", request.MessageId));
-
-            foreach (var uid in uids.UniqueIds)
-            {
-                await client.Inbox.AddFlagsAsync(uid, MessageFlags.Deleted, true);
-                deletedCount++;
-            }
-
-            await client.Inbox.ExpungeAsync();
-
-            // Remove from local store and vector store
-            if (_store != null)
-            {
-                var localEmail = await _store.GetByMessageIdAsync(request.MessageId);
-                if (localEmail?.VectorId != null && _vectorService != null)
-                    await _vectorService.DeleteByVectorIdAsync(localEmail.VectorId);
-                await _store.DeleteByMessageIdAsync(request.MessageId);
-            }
-
-            var message = deletedCount > 0 ? "Email(s) Deleted!" : "Unable to delete email(s)!";
-            if (config.RequiresConfirmation && _notificationService != null)
-                return await _notificationService.SendNotification(message);
-            return new { Success = true, Message = message };
-        }
-        finally
-        {
-            await client.DisconnectAsync(true);
-        }
+        var message = deletedCount > 0 ? "Email(s) Deleted!" : "Unable to delete email(s)!";
+        if (config.RequiresConfirmation && _notificationService != null)
+            return await _notificationService.SendNotification(message);
+        return new { Success = true, Message = message };
     }
 
     #endregion
