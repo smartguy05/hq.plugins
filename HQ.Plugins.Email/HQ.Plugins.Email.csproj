@@ -12,13 +12,19 @@
 	</PropertyGroup>
 
 	<PropertyGroup Condition=" '$(Configuration)' == 'Debug' ">
-	  <OutputPath>..\..\hq\HQ\bin\Debug\net9.0\Plugins\</OutputPath>
+	  <OutputPath>..\..\hq\HQ\bin\Debug\net9.0\Plugins\HQ.Plugins.Email\</OutputPath>
 	</PropertyGroup>
 
 	<ItemGroup>
-		<PackageReference Include="HQ.Models" Version="2.3.0" ExcludeAssets="runtime" PrivateAssets="none">
+		<PackageReference Include="HQ.Models" Version="2.5.0" ExcludeAssets="runtime" PrivateAssets="none">
 		  <IncludeAssets>compile; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
 		</PackageReference>
+	</ItemGroup>
+
+	<!-- Compile against ASP.NET Core for IHasHttpRoutes (IEndpointRouteBuilder, minimal
+	     APIs) and the inbox-viewer routes. The host already hosts ASP.NET; don't ship it. -->
+	<ItemGroup>
+	  <FrameworkReference Include="Microsoft.AspNetCore.App" />
 	</ItemGroup>
 
 	<ItemGroup>
@@ -28,5 +34,13 @@
 	  <PackageReference Include="ChromaDB.Client" Version="1.0.0" />
 	  <PackageReference Include="OpenAI" Version="2.1.0" />
 	  <PackageReference Include="System.ClientModel" Version="1.3.0" />
+	</ItemGroup>
+
+	<!-- Static inbox-viewer UI, served by the host under /plugins/HQ.Plugins.Email/ui/. -->
+	<ItemGroup>
+	  <None Include="ui\dist\**\*" Condition="Exists('ui\dist')">
+	    <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+	    <TargetPath>ui\%(RecursiveDir)%(Filename)%(Extension)</TargetPath>
+	  </None>
 	</ItemGroup>
 </Project>

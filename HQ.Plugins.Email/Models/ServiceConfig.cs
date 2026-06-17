@@ -16,10 +16,14 @@ public record ServiceConfig: IPluginConfig
     [Hidden]
     public string SqliteConnectionString { get; set; }
 
-    [Tooltip("ChromaDB server URL for email embedding storage, e.g. http://127.0.0.1:8000")]
+    // System-managed: the internal Chroma URL is injected by the host at runtime and
+    // must not be shown or editable in the config UI.
+    [Hidden]
     public string ChromaUrl { get; set; }
 
-    [Tooltip("ChromaDB collection name for this agent's email embeddings")]
+    // System-managed: the collection name is auto-derived per-agent (agent-{id}-emails)
+    // by EmailVectorService and is never shown or editable.
+    [Hidden]
     public string ChromaCollectionName { get; set; }
 
     [Sensitive]
@@ -29,7 +33,7 @@ public record ServiceConfig: IPluginConfig
     [LlmProviderUrl]
     public string OpenAiUrl { get; set; }
 
-    [LlmProviderModel]
+    [LlmProviderModel("embedding")]
     public string EmbeddingModel { get; set; }
 
     [Hidden]

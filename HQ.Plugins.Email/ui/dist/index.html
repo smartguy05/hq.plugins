@@ -1,0 +1,71 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Email Inboxes</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body class="theme-light">
+  <div id="app">
+    <!-- Left: agents / accounts / folders -->
+    <aside id="sidebar">
+      <div class="sidebar-head">
+        <span>Inboxes</span>
+        <button id="refresh-agents" class="icon-btn" title="Reload agents">⟳</button>
+      </div>
+      <div id="agents" class="agents"></div>
+    </aside>
+
+    <!-- Middle: message list -->
+    <section id="list-pane">
+      <div class="list-head">
+        <input id="search" type="search" placeholder="Search this account…" />
+        <div class="list-subhead">
+          <span id="list-title" class="list-title"></span>
+          <div id="selbar" class="selbar hidden">
+            <span id="sel-count"></span>
+            <button id="sel-delete" class="btn btn-danger mini">Delete</button>
+            <button id="sel-clear" class="btn mini">Clear</button>
+          </div>
+        </div>
+      </div>
+      <div id="messages" class="messages"></div>
+      <div id="list-busy" class="busy-overlay hidden"><div class="spinner"></div></div>
+    </section>
+
+    <!-- Right: reader -->
+    <section id="reader-pane">
+      <div id="reader-empty" class="reader-empty">Select a message to read.</div>
+      <div id="reader" class="reader hidden">
+        <div class="reader-head">
+          <h2 id="r-subject"></h2>
+          <div class="reader-meta">
+            <span id="r-from"></span>
+            <span id="r-date"></span>
+          </div>
+          <div class="reader-actions">
+            <button id="a-read" class="btn"></button>
+            <button id="a-flag" class="btn"></button>
+            <button id="a-delete" class="btn btn-danger">Delete</button>
+          </div>
+          <div id="r-attachments" class="attachments"></div>
+        </div>
+        <iframe id="r-body" class="reader-body" sandbox="" referrerpolicy="no-referrer"></iframe>
+      </div>
+      <div id="reader-busy" class="busy-overlay hidden"><div class="spinner"></div></div>
+    </section>
+  </div>
+  <div id="confirm" class="confirm-overlay hidden">
+    <div class="confirm-box">
+      <p id="confirm-msg"></p>
+      <div class="confirm-actions">
+        <button id="confirm-cancel" class="btn">Cancel</button>
+        <button id="confirm-ok" class="btn btn-danger">Delete</button>
+      </div>
+    </div>
+  </div>
+  <div id="toast" class="toast hidden"></div>
+  <script src="app.js"></script>
+</body>
+</html>
