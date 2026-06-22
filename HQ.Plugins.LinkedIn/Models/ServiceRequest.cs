@@ -35,4 +35,8 @@ public record ServiceRequest : IPluginServiceRequest
     // New chat parameters
     public string AccountType { get; set; }
     public string Title { get; set; }
+
+    // Search / enrichment parameters
+    public string Query { get; set; }
+    public string CompanyId { get; set; }
 }

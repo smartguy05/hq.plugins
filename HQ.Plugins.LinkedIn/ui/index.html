@@ -1,0 +1,94 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>LinkedIn Login</title>
+  <style>
+    :root { color-scheme: light dark; }
+    body { font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif; margin: 0; padding: 1.5rem; }
+    h1 { font-size: 1.2rem; margin: 0 0 .25rem; }
+    p.sub { margin: 0 0 1rem; opacity: .75; font-size: .9rem; }
+    .row { display: flex; gap: .5rem; align-items: center; margin-bottom: 1rem; flex-wrap: wrap; }
+    button { padding: .5rem .9rem; border-radius: 6px; border: 1px solid #0a66c2; background: #0a66c2; color: #fff; cursor: pointer; }
+    button.secondary { background: transparent; color: #0a66c2; }
+    button:disabled { opacity: .5; cursor: default; }
+    #status { font-size: .85rem; padding: .4rem .6rem; border-radius: 6px; background: rgba(127,127,127,.12); }
+    #status.ok { background: rgba(40,167,69,.18); }
+    #status.err { background: rgba(220,53,69,.18); }
+    iframe { width: 100%; height: 640px; border: 1px solid rgba(127,127,127,.35); border-radius: 8px; background: #000; }
+    .note { font-size: .8rem; opacity: .7; margin-top: .75rem; line-height: 1.45; }
+  </style>
+</head>
+<body>
+  <h1>Connect your LinkedIn account</h1>
+  <p class="sub">Log in once in the live browser below. Your password is typed directly into LinkedIn and is never seen by HQ or the agent — only the resulting session is saved.</p>
+
+  <div class="row">
+    <button id="start">Start login</button>
+    <button id="cancel" class="secondary" disabled>Cancel</button>
+    <span id="status">Idle.</span>
+  </div>
+
+  <iframe id="viewer" hidden title="LinkedIn login (noVNC)"></iframe>
+
+  <p class="note">
+    After the page shows <strong>linkedin.com/feed</strong>, your session is captured automatically and this window can be closed.
+    Solve any 2-factor or security checkpoint right here in the live browser. The connection uses noVNC served from this host.
+  </p>
+
+  <script>
+    const startBtn = document.getElementById('start');
+    const cancelBtn = document.getElementById('cancel');
+    const statusEl = document.getElementById('status');
+    const viewer = document.getElementById('viewer');
+    let poll = null;
+
+    function setStatus(text, cls) {
+      statusEl.textContent = text;
+      statusEl.className = cls || '';
+    }
+
+    function vncUrl(s) {
+      // noVNC (websockify) is served on the host at the session's web port.
+      return `${location.protocol}//${location.hostname}:${s.vncWebPort}/vnc.html?autoconnect=true&resize=remote`;
+    }
+
+    async function refresh() {
+      const r = await fetch('login/status').then(r => r.json()).catch(() => null);
+      if (!r || !r.active) { setStatus('Idle.'); return; }
+      if (r.error) { setStatus('Error: ' + r.error, 'err'); stopPoll(); return; }
+      if (r.authenticated) {
+        setStatus('Connected! Session saved. You can close this window.', 'ok');
+        cancelBtn.disabled = true;
+        stopPoll();
+        return;
+      }
+      if (r.started && r.vncWebPort) {
+        viewer.hidden = false;
+        if (!viewer.src) viewer.src = vncUrl(r);
+        setStatus('Waiting for you to log in…');
+      } else {
+        setStatus('Starting browser…');
+      }
+    }
+
+    function startPoll() { stopPoll(); poll = setInterval(refresh, 2500); refresh(); }
+    function stopPoll() { if (poll) { clearInterval(poll); poll = null; } }
+
+    startBtn.addEventListener('click', async () => {
+      startBtn.disabled = true; cancelBtn.disabled = false;
+      setStatus('Starting browser…');
+      await fetch('login/start', { method: 'POST' }).catch(() => {});
+      startPoll();
+    });
+
+    cancelBtn.addEventListener('click', async () => {
+      await fetch('login/cancel', { method: 'POST' }).catch(() => {});
+      viewer.hidden = true; viewer.src = '';
+      startBtn.disabled = false; cancelBtn.disabled = true;
+      stopPoll(); setStatus('Cancelled.');
+    });
+  </script>
+</body>
+</html>
