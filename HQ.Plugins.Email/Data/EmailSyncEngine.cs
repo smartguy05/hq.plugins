@@ -68,6 +68,17 @@ public class EmailSyncEngine : IDisposable
 
         foreach (var account in _config.EmailAccounts ?? Enumerable.Empty<EmailParameters>())
         {
+            var label = AccountLabel(account);
+
+            // Skip half-configured accounts: connecting with a blank host throws
+            // "The host name cannot be empty" on every cycle. Not a failure, so log at Info.
+            if (account == null || string.IsNullOrWhiteSpace(account.Imap))
+            {
+                await _logger(LogLevel.Info, $"Skipping email account '{label}': no IMAP host configured.");
+                accountResults.Add(new { Account = label, Skipped = "No IMAP host configured." });
+                continue;
+            }
+
             try
             {
                 var result = await SyncAccountAsync(account, ct);
@@ -75,8 +86,8 @@ public class EmailSyncEngine : IDisposable
             }
             catch (Exception ex)
             {
-                await _logger(LogLevel.Error, $"Sync error for {account.Name}: {ex.Message}");
-                accountResults.Add(new { Account = account.Name, Error = ex.Message });
+                await _logger(LogLevel.Error, $"Sync error for {label}: {ex.Message}");
+                accountResults.Add(new { Account = label, Error = ex.Message });
             }
         }
 
@@ -333,6 +344,11 @@ public class EmailSyncEngine : IDisposable
 
         return string.Empty;
     }
+
+    private static string AccountLabel(EmailParameters a) =>
+        !string.IsNullOrWhiteSpace(a?.Name) ? a.Name
+        : !string.IsNullOrWhiteSpace(a?.Email) ? a.Email
+        : "<unnamed account>";
 
     private static string GetSpecialUse(IMailFolder folder)
     {
