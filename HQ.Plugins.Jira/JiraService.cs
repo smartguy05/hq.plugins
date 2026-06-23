@@ -24,8 +24,8 @@ public class JiraService
 
     [Display(Name = "jira_search_issues")]
     [Description("Search for Jira issues using JQL (Jira Query Language). Returns a summary of matching issues including key, summary, status, assignee, and priority.")]
-    [Parameters("""{"type":"object","properties":{"jql":{"type":"string","description":"JQL query string, e.g. 'project = PROJ AND status = \"In Progress\"'"},"maxResults":{"type":"integer","description":"Maximum number of results to return (default 50, max 100)"}},"required":["jql"]}""")]
-    public async Task<object> SearchIssues(ServiceConfig config, ServiceRequest request)
+    [Parameters(typeof(SearchIssuesArgs))]
+    public async Task<object> SearchIssues(ServiceConfig config, SearchIssuesArgs request)
     {
         if (string.IsNullOrWhiteSpace(request.Jql))
             throw new ArgumentException("Missing required parameter: jql");
@@ -67,8 +67,8 @@ public class JiraService
 
     [Display(Name = "jira_get_issue")]
     [Description("Get full details of a Jira issue by its key (e.g. PROJ-123). Returns all fields including description (converted from ADF to plain text), status, assignee, comments count, and subtasks.")]
-    [Parameters("""{"type":"object","properties":{"issueKey":{"type":"string","description":"The issue key, e.g. PROJ-123"},"fields":{"type":"string","description":"Comma-separated list of fields to return (optional, returns all by default)"},"expand":{"type":"string","description":"Comma-separated list of expansions (e.g. 'changelog,transitions')"}},"required":["issueKey"]}""")]
-    public async Task<object> GetIssue(ServiceConfig config, ServiceRequest request)
+    [Parameters(typeof(GetIssueArgs))]
+    public async Task<object> GetIssue(ServiceConfig config, GetIssueArgs request)
     {
         if (string.IsNullOrWhiteSpace(request.IssueKey))
             throw new ArgumentException("Missing required parameter: issueKey");
@@ -130,8 +130,8 @@ public class JiraService
 
     [Display(Name = "jira_create_issue")]
     [Description("Create a new Jira issue. Requires project key, issue type, and summary. Description is converted to Atlassian Document Format automatically.")]
-    [Parameters("""{"type":"object","properties":{"projectKey":{"type":"string","description":"The project key, e.g. PROJ"},"issueType":{"type":"string","description":"Issue type name, e.g. Task, Bug, Story, Epic"},"summary":{"type":"string","description":"Issue title/summary"},"description":{"type":"string","description":"Issue description (plain text, converted to ADF automatically)"},"priority":{"type":"string","description":"Priority name, e.g. High, Medium, Low"},"assigneeAccountId":{"type":"string","description":"Atlassian account ID of the assignee"},"labels":{"type":"string","description":"Comma-separated labels to apply"},"parentKey":{"type":"string","description":"Parent issue key for subtasks or child issues"}},"required":["projectKey","issueType","summary"]}""")]
-    public async Task<object> CreateIssue(ServiceConfig config, ServiceRequest request)
+    [Parameters(typeof(CreateIssueArgs))]
+    public async Task<object> CreateIssue(ServiceConfig config, CreateIssueArgs request)
     {
         if (string.IsNullOrWhiteSpace(request.ProjectKey))
             throw new ArgumentException("Missing required parameter: projectKey");
@@ -175,8 +175,8 @@ public class JiraService
 
     [Display(Name = "jira_update_issue")]
     [Description("Update fields on an existing Jira issue. Only non-null fields are updated. Description is converted to ADF automatically.")]
-    [Parameters("""{"type":"object","properties":{"issueKey":{"type":"string","description":"The issue key, e.g. PROJ-123"},"summary":{"type":"string","description":"New summary/title"},"description":{"type":"string","description":"New description (plain text, converted to ADF)"},"priority":{"type":"string","description":"New priority name"},"assigneeAccountId":{"type":"string","description":"New assignee account ID (use empty string to unassign)"},"labels":{"type":"string","description":"Comma-separated labels (replaces existing labels)"}},"required":["issueKey"]}""")]
-    public async Task<object> UpdateIssue(ServiceConfig config, ServiceRequest request)
+    [Parameters(typeof(UpdateIssueArgs))]
+    public async Task<object> UpdateIssue(ServiceConfig config, UpdateIssueArgs request)
     {
         if (string.IsNullOrWhiteSpace(request.IssueKey))
             throw new ArgumentException("Missing required parameter: issueKey");
@@ -210,8 +210,8 @@ public class JiraService
 
     [Display(Name = "jira_delete_issue")]
     [Description("Delete a Jira issue by its key. Also deletes subtasks.")]
-    [Parameters("""{"type":"object","properties":{"issueKey":{"type":"string","description":"The issue key to delete, e.g. PROJ-123"}},"required":["issueKey"]}""")]
-    public async Task<object> DeleteIssue(ServiceConfig config, ServiceRequest request)
+    [Parameters(typeof(DeleteIssueArgs))]
+    public async Task<object> DeleteIssue(ServiceConfig config, DeleteIssueArgs request)
     {
         if (string.IsNullOrWhiteSpace(request.IssueKey))
             throw new ArgumentException("Missing required parameter: issueKey");
@@ -223,8 +223,8 @@ public class JiraService
 
     [Display(Name = "jira_assign_issue")]
     [Description("Assign or unassign a Jira issue. Pass an accountId to assign, or omit/empty to unassign.")]
-    [Parameters("""{"type":"object","properties":{"issueKey":{"type":"string","description":"The issue key, e.g. PROJ-123"},"assigneeAccountId":{"type":"string","description":"Atlassian account ID to assign to, or empty/null to unassign"}},"required":["issueKey"]}""")]
-    public async Task<object> AssignIssue(ServiceConfig config, ServiceRequest request)
+    [Parameters(typeof(AssignIssueArgs))]
+    public async Task<object> AssignIssue(ServiceConfig config, AssignIssueArgs request)
     {
         if (string.IsNullOrWhiteSpace(request.IssueKey))
             throw new ArgumentException("Missing required parameter: issueKey");
@@ -241,8 +241,8 @@ public class JiraService
 
     [Display(Name = "jira_transition_issue")]
     [Description("Transition a Jira issue to a new status. If transitionId is not provided, returns the list of available transitions so you can pick one. If provided, executes the transition.")]
-    [Parameters("""{"type":"object","properties":{"issueKey":{"type":"string","description":"The issue key, e.g. PROJ-123"},"transitionId":{"type":"string","description":"The transition ID to execute. Omit to list available transitions."}},"required":["issueKey"]}""")]
-    public async Task<object> TransitionIssue(ServiceConfig config, ServiceRequest request)
+    [Parameters(typeof(TransitionIssueArgs))]
+    public async Task<object> TransitionIssue(ServiceConfig config, TransitionIssueArgs request)
     {
         if (string.IsNullOrWhiteSpace(request.IssueKey))
             throw new ArgumentException("Missing required parameter: issueKey");
@@ -281,8 +281,8 @@ public class JiraService
 
     [Display(Name = "jira_add_comment")]
     [Description("Add a comment to a Jira issue. The comment body is plain text and will be converted to ADF automatically.")]
-    [Parameters("""{"type":"object","properties":{"issueKey":{"type":"string","description":"The issue key, e.g. PROJ-123"},"commentBody":{"type":"string","description":"The comment text"}},"required":["issueKey","commentBody"]}""")]
-    public async Task<object> AddComment(ServiceConfig config, ServiceRequest request)
+    [Parameters(typeof(AddCommentArgs))]
+    public async Task<object> AddComment(ServiceConfig config, AddCommentArgs request)
     {
         if (string.IsNullOrWhiteSpace(request.IssueKey))
             throw new ArgumentException("Missing required parameter: issueKey");
@@ -304,8 +304,8 @@ public class JiraService
 
     [Display(Name = "jira_get_comments")]
     [Description("Get comments on a Jira issue. Comment bodies are converted from ADF to plain text.")]
-    [Parameters("""{"type":"object","properties":{"issueKey":{"type":"string","description":"The issue key, e.g. PROJ-123"},"maxResults":{"type":"integer","description":"Maximum number of comments to return (default 50)"}},"required":["issueKey"]}""")]
-    public async Task<object> GetComments(ServiceConfig config, ServiceRequest request)
+    [Parameters(typeof(GetCommentsArgs))]
+    public async Task<object> GetComments(ServiceConfig config, GetCommentsArgs request)
     {
         if (string.IsNullOrWhiteSpace(request.IssueKey))
             throw new ArgumentException("Missing required parameter: issueKey");
@@ -339,8 +339,8 @@ public class JiraService
 
     [Display(Name = "jira_link_issues")]
     [Description("Create a link between two Jira issues with a specified relationship type (e.g. Blocks, Relates, Duplicate, Cloners).")]
-    [Parameters("""{"type":"object","properties":{"linkType":{"type":"string","description":"The link type name, e.g. 'Blocks', 'Relates', 'Duplicate', 'Cloners'"},"inwardIssueKey":{"type":"string","description":"The inward issue key (e.g. the issue that 'is blocked by')"},"outwardIssueKey":{"type":"string","description":"The outward issue key (e.g. the issue that 'blocks')"}},"required":["linkType","inwardIssueKey","outwardIssueKey"]}""")]
-    public async Task<object> LinkIssues(ServiceConfig config, ServiceRequest request)
+    [Parameters(typeof(LinkIssuesArgs))]
+    public async Task<object> LinkIssues(ServiceConfig config, LinkIssuesArgs request)
     {
         if (string.IsNullOrWhiteSpace(request.LinkType))
             throw new ArgumentException("Missing required parameter: linkType");
@@ -367,8 +367,8 @@ public class JiraService
 
     [Display(Name = "jira_list_projects")]
     [Description("List Jira projects accessible to the authenticated user. Returns project key, name, type, and lead.")]
-    [Parameters("""{"type":"object","properties":{"maxResults":{"type":"integer","description":"Maximum number of projects to return (default 50)"}},"required":[]}""")]
-    public async Task<object> ListProjects(ServiceConfig config, ServiceRequest request)
+    [Parameters(typeof(ListProjectsArgs))]
+    public async Task<object> ListProjects(ServiceConfig config, ListProjectsArgs request)
     {
         var maxResults = request.MaxResults ?? 50;
         var result = await _client.GetAsync($"project/search?maxResults={maxResults}");
@@ -395,8 +395,8 @@ public class JiraService
 
     [Display(Name = "jira_get_project")]
     [Description("Get details of a Jira project by its key, including issue types, components, and project lead.")]
-    [Parameters("""{"type":"object","properties":{"projectKey":{"type":"string","description":"The project key, e.g. PROJ"}},"required":["projectKey"]}""")]
-    public async Task<object> GetProject(ServiceConfig config, ServiceRequest request)
+    [Parameters(typeof(GetProjectArgs))]
+    public async Task<object> GetProject(ServiceConfig config, GetProjectArgs request)
     {
         if (string.IsNullOrWhiteSpace(request.ProjectKey))
             throw new ArgumentException("Missing required parameter: projectKey");
@@ -448,8 +448,8 @@ public class JiraService
 
     [Display(Name = "jira_list_boards")]
     [Description("List Jira boards, optionally filtered by project key. Uses the Agile REST API.")]
-    [Parameters("""{"type":"object","properties":{"projectKey":{"type":"string","description":"Optional project key to filter boards"},"maxResults":{"type":"integer","description":"Maximum number of boards to return (default 50)"}},"required":[]}""")]
-    public async Task<object> ListBoards(ServiceConfig config, ServiceRequest request)
+    [Parameters(typeof(ListBoardsArgs))]
+    public async Task<object> ListBoards(ServiceConfig config, ListBoardsArgs request)
     {
         var maxResults = request.MaxResults ?? 50;
         var path = $"board?maxResults={maxResults}";
@@ -477,8 +477,8 @@ public class JiraService
 
     [Display(Name = "jira_get_sprint")]
     [Description("Get sprints for a board. By default returns active sprints. Specify state to filter (active, future, closed).")]
-    [Parameters("""{"type":"object","properties":{"boardId":{"type":"integer","description":"The board ID"},"sprintName":{"type":"string","description":"Optional filter: state of sprints to return (active, future, closed). Defaults to 'active'."}},"required":["boardId"]}""")]
-    public async Task<object> GetSprint(ServiceConfig config, ServiceRequest request)
+    [Parameters(typeof(GetSprintArgs))]
+    public async Task<object> GetSprint(ServiceConfig config, GetSprintArgs request)
     {
         if (request.BoardId == null)
             throw new ArgumentException("Missing required parameter: boardId");
@@ -508,8 +508,8 @@ public class JiraService
 
     [Display(Name = "jira_get_sprint_issues")]
     [Description("Get issues in a specific sprint, ordered by rank.")]
-    [Parameters("""{"type":"object","properties":{"sprintId":{"type":"integer","description":"The sprint ID"},"maxResults":{"type":"integer","description":"Maximum number of issues to return (default 50)"}},"required":["sprintId"]}""")]
-    public async Task<object> GetSprintIssues(ServiceConfig config, ServiceRequest request)
+    [Parameters(typeof(GetSprintIssuesArgs))]
+    public async Task<object> GetSprintIssues(ServiceConfig config, GetSprintIssuesArgs request)
     {
         if (request.SprintId == null)
             throw new ArgumentException("Missing required parameter: sprintId");
@@ -542,8 +542,8 @@ public class JiraService
 
     [Display(Name = "jira_move_to_sprint")]
     [Description("Move one or more issues into a sprint. Maximum 50 issues per call.")]
-    [Parameters("""{"type":"object","properties":{"sprintId":{"type":"integer","description":"The target sprint ID"},"issueKeys":{"type":"string","description":"Comma-separated issue keys to move, e.g. 'PROJ-1,PROJ-2,PROJ-3'"}},"required":["sprintId","issueKeys"]}""")]
-    public async Task<object> MoveToSprint(ServiceConfig config, ServiceRequest request)
+    [Parameters(typeof(MoveToSprintArgs))]
+    public async Task<object> MoveToSprint(ServiceConfig config, MoveToSprintArgs request)
     {
         if (request.SprintId == null)
             throw new ArgumentException("Missing required parameter: sprintId");
@@ -566,8 +566,8 @@ public class JiraService
 
     [Display(Name = "jira_search_users")]
     [Description("Search for Jira users by name or email. Optionally filter to users assignable to a specific project.")]
-    [Parameters("""{"type":"object","properties":{"query":{"type":"string","description":"Search string (name or email)"},"projectKey":{"type":"string","description":"Optional project key to filter to assignable users"}},"required":["query"]}""")]
-    public async Task<object> SearchUsers(ServiceConfig config, ServiceRequest request)
+    [Parameters(typeof(SearchUsersArgs))]
+    public async Task<object> SearchUsers(ServiceConfig config, SearchUsersArgs request)
     {
         if (string.IsNullOrWhiteSpace(request.Query))
             throw new ArgumentException("Missing required parameter: query");
@@ -606,8 +606,8 @@ public class JiraService
 
     [Display(Name = "jira_add_worklog")]
     [Description("Log time spent on a Jira issue. Takes time in seconds, a start datetime, and an optional comment.")]
-    [Parameters("""{"type":"object","properties":{"issueKey":{"type":"string","description":"The issue key, e.g. PROJ-123"},"timeSpentSeconds":{"type":"integer","description":"Time spent in seconds (e.g. 3600 for 1 hour)"},"worklogStarted":{"type":"string","description":"When the work started in ISO 8601 format, e.g. 2024-01-15T09:00:00.000+0000"},"worklogComment":{"type":"string","description":"Optional comment describing the work done"}},"required":["issueKey","timeSpentSeconds","worklogStarted"]}""")]
-    public async Task<object> AddWorklog(ServiceConfig config, ServiceRequest request)
+    [Parameters(typeof(AddWorklogArgs))]
+    public async Task<object> AddWorklog(ServiceConfig config, AddWorklogArgs request)
     {
         if (string.IsNullOrWhiteSpace(request.IssueKey))
             throw new ArgumentException("Missing required parameter: issueKey");
@@ -638,8 +638,8 @@ public class JiraService
 
     [Display(Name = "jira_get_worklogs")]
     [Description("Get worklogs (time entries) for a Jira issue.")]
-    [Parameters("""{"type":"object","properties":{"issueKey":{"type":"string","description":"The issue key, e.g. PROJ-123"}},"required":["issueKey"]}""")]
-    public async Task<object> GetWorklogs(ServiceConfig config, ServiceRequest request)
+    [Parameters(typeof(GetWorklogsArgs))]
+    public async Task<object> GetWorklogs(ServiceConfig config, GetWorklogsArgs request)
     {
         if (string.IsNullOrWhiteSpace(request.IssueKey))
             throw new ArgumentException("Missing required parameter: issueKey");
@@ -678,8 +678,8 @@ public class JiraService
 
     [Display(Name = "jira_get_issue_types")]
     [Description("Get the issue types available for a project (useful before creating an issue to know valid types).")]
-    [Parameters("""{"type":"object","properties":{"projectKey":{"type":"string","description":"The project key, e.g. PROJ"}},"required":["projectKey"]}""")]
-    public async Task<object> GetIssueTypes(ServiceConfig config, ServiceRequest request)
+    [Parameters(typeof(GetIssueTypesArgs))]
+    public async Task<object> GetIssueTypes(ServiceConfig config, GetIssueTypesArgs request)
     {
         if (string.IsNullOrWhiteSpace(request.ProjectKey))
             throw new ArgumentException("Missing required parameter: projectKey");
@@ -706,8 +706,8 @@ public class JiraService
 
     [Display(Name = "jira_get_statuses")]
     [Description("Get the available statuses for a project, grouped by issue type. Useful for understanding workflow states.")]
-    [Parameters("""{"type":"object","properties":{"projectKey":{"type":"string","description":"The project key, e.g. PROJ"}},"required":["projectKey"]}""")]
-    public async Task<object> GetStatuses(ServiceConfig config, ServiceRequest request)
+    [Parameters(typeof(GetStatusesArgs))]
+    public async Task<object> GetStatuses(ServiceConfig config, GetStatusesArgs request)
     {
         if (string.IsNullOrWhiteSpace(request.ProjectKey))
             throw new ArgumentException("Missing required parameter: projectKey");

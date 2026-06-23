@@ -26,8 +26,8 @@ public class HeadlessBrowserService
 
     [Display(Name = BrowserMethods.NavigateToUrl)]
     [Description("Navigate to a URL and return the page title and a content summary. This initializes the browser session if not already open.")]
-    [Parameters("""{"type":"object","properties":{"url":{"type":"string","description":"The URL to navigate to"}},"required":["url"]}""")]
-    public async Task<object> NavigateToUrl(ServiceConfig config, ServiceRequest request)
+    [Parameters(typeof(NavigateToUrlArgs))]
+    public async Task<object> NavigateToUrl(ServiceConfig config, NavigateToUrlArgs request)
     {
         if (string.IsNullOrWhiteSpace(request.Url))
             throw new ArgumentException("Missing required parameter: url");
@@ -130,8 +130,8 @@ public class HeadlessBrowserService
 
     [Display(Name = BrowserMethods.GetPageContent)]
     [Description("Get page content in aria (default, compact accessibility tree), compressed (clean DOM with noise removal), text, or html format. The 'aria' format uses ~80% fewer tokens.")]
-    [Parameters("""{"type":"object","properties":{"selector":{"type":"string","description":"CSS selector for a specific element (optional)"},"format":{"type":"string","description":"'aria' (default), 'compressed' (clean DOM), 'text', or 'html'"},"taskHint":{"type":"string","description":"Filter hint: 'form_fill', 'navigation', 'data_extraction', 'search', or 'general' (default)"},"maxLength":{"type":"integer","description":"Maximum content length (default 50000 for text/html, 300 lines for aria)"}},"required":[]}""")]
-    public async Task<object> GetPageContent(ServiceConfig config, ServiceRequest request)
+    [Parameters(typeof(GetPageContentArgs))]
+    public async Task<object> GetPageContent(ServiceConfig config, GetPageContentArgs request)
     {
         try
         {
@@ -270,8 +270,8 @@ public class HeadlessBrowserService
 
     [Display(Name = BrowserMethods.GetInteractiveElements)]
     [Description("List interactive elements (links, buttons, inputs) on the current page. Returns role and name from the accessibility tree. Use format 'legacy' for CSS selectors instead.")]
-    [Parameters("""{"type":"object","properties":{"elementType":{"type":"string","description":"Filter: 'links', 'buttons', 'inputs', 'all' (default 'all')"},"selector":{"type":"string","description":"Scope search within this CSS selector"},"format":{"type":"string","description":"'aria' (default, from accessibility tree) or 'legacy' (CSS selectors via DOM walk)"}},"required":[]}""")]
-    public async Task<object> GetInteractiveElements(ServiceConfig config, ServiceRequest request)
+    [Parameters(typeof(GetInteractiveElementsArgs))]
+    public async Task<object> GetInteractiveElements(ServiceConfig config, GetInteractiveElementsArgs request)
     {
         try
         {
@@ -337,7 +337,7 @@ public class HeadlessBrowserService
         }
     }
 
-    private async Task<object> GetInteractiveElementsLegacy(IPage page, ServiceRequest request)
+    private async Task<object> GetInteractiveElementsLegacy(IPage page, GetInteractiveElementsArgs request)
     {
         var elementType = request.ElementType?.ToLowerInvariant() ?? "all";
         var scope = string.IsNullOrWhiteSpace(request.Selector) ? "document" : $"document.querySelector('{request.Selector.Replace("'", "\\'")}')";
@@ -390,8 +390,8 @@ public class HeadlessBrowserService
 
     [Display(Name = BrowserMethods.GetOutline)]
     [Description("Get a compact structural outline of the current page: headings, navigation, forms, and key interactive elements with ref IDs. Much smaller than full content.")]
-    [Parameters("""{"type":"object","properties":{},"required":[]}""")]
-    public async Task<object> GetOutline(ServiceConfig config, ServiceRequest request)
+    [Parameters(typeof(EmptyArgs))]
+    public async Task<object> GetOutline(ServiceConfig config, EmptyArgs request)
     {
         try
         {
@@ -430,8 +430,8 @@ public class HeadlessBrowserService
 
     [Display(Name = BrowserMethods.SearchPage)]
     [Description("Search the current page for text. Returns matching lines with surrounding context and nearby ref IDs. Does not re-fetch the page.")]
-    [Parameters("""{"type":"object","properties":{"query":{"type":"string","description":"Text to search for (case-insensitive)"}},"required":["query"]}""")]
-    public async Task<object> SearchPage(ServiceConfig config, ServiceRequest request)
+    [Parameters(typeof(SearchPageArgs))]
+    public async Task<object> SearchPage(ServiceConfig config, SearchPageArgs request)
     {
         if (string.IsNullOrWhiteSpace(request.Query))
             throw new ArgumentException("Missing required parameter: query");
@@ -478,8 +478,8 @@ public class HeadlessBrowserService
 
     [Display(Name = BrowserMethods.GetElement)]
     [Description("Get the full subtree of a specific element by ref ID. Use after get_outline to drill into a section.")]
-    [Parameters("""{"type":"object","properties":{"ref":{"type":"string","description":"Ref ID to expand (e.g. 'e5')"}},"required":["ref"]}""")]
-    public async Task<object> GetElement(ServiceConfig config, ServiceRequest request)
+    [Parameters(typeof(GetElementArgs))]
+    public async Task<object> GetElement(ServiceConfig config, GetElementArgs request)
     {
         if (string.IsNullOrWhiteSpace(request.Ref))
             throw new ArgumentException("Missing required parameter: ref");
@@ -536,8 +536,8 @@ public class HeadlessBrowserService
 
     [Display(Name = BrowserMethods.GetVisibleText)]
     [Description("Get the main readable text content (like reader view). Strips navigation, sidebars, footers, and ads. Good for content-heavy pages.")]
-    [Parameters("""{"type":"object","properties":{"maxLength":{"type":"integer","description":"Maximum text length (default 10000)"}},"required":[]}""")]
-    public async Task<object> GetVisibleText(ServiceConfig config, ServiceRequest request)
+    [Parameters(typeof(GetVisibleTextArgs))]
+    public async Task<object> GetVisibleText(ServiceConfig config, GetVisibleTextArgs request)
     {
         try
         {
@@ -581,8 +581,8 @@ public class HeadlessBrowserService
 
     [Display(Name = BrowserMethods.ClickElement)]
     [Description("Click an element by ref ID (e.g. 'e5') or CSS selector. Set diffMode to true to get a delta of what changed.")]
-    [Parameters("""{"type":"object","properties":{"ref":{"type":"string","description":"Ref ID from page snapshot (e.g. 'e5'). Preferred over selector."},"selector":{"type":"string","description":"CSS selector (fallback if ref not available)"},"diffMode":{"type":"boolean","description":"Return only what changed after the click (default false)"}},"required":[]}""")]
-    public async Task<object> ClickElement(ServiceConfig config, ServiceRequest request)
+    [Parameters(typeof(ClickElementArgs))]
+    public async Task<object> ClickElement(ServiceConfig config, ClickElementArgs request)
     {
         if (string.IsNullOrWhiteSpace(request.Ref) && string.IsNullOrWhiteSpace(request.Selector))
             throw new ArgumentException("Provide either 'ref' or 'selector'");
@@ -595,7 +595,7 @@ public class HeadlessBrowserService
                 if (locator is null)
                     return new { Success = false, StaleRef = true, Message = $"Ref '{request.Ref}' not found. Call get_page_content or navigate_to_url to refresh." };
 
-                return await WithDiffIfEnabled(request, async () =>
+                return await WithDiffIfEnabled(request.DiffMode, async () =>
                 {
                     return await _client.ExecuteAsync(async page =>
                     {
@@ -608,7 +608,7 @@ public class HeadlessBrowserService
                 });
             }
 
-            return await WithDiffIfEnabled(request, async () =>
+            return await WithDiffIfEnabled(request.DiffMode, async () =>
             {
                 return await _client.ExecuteAsync(async page =>
                 {
@@ -632,8 +632,8 @@ public class HeadlessBrowserService
 
     [Display(Name = BrowserMethods.FillField)]
     [Description("Fill a form field by ref ID (e.g. 'e3') or CSS selector. Clears the field first.")]
-    [Parameters("""{"type":"object","properties":{"ref":{"type":"string","description":"Ref ID from page snapshot (e.g. 'e3'). Preferred over selector."},"selector":{"type":"string","description":"CSS selector (fallback if ref not available)"},"value":{"type":"string","description":"The value to type into the field"}},"required":["value"]}""")]
-    public async Task<object> FillField(ServiceConfig config, ServiceRequest request)
+    [Parameters(typeof(FillFieldArgs))]
+    public async Task<object> FillField(ServiceConfig config, FillFieldArgs request)
     {
         if (string.IsNullOrWhiteSpace(request.Ref) && string.IsNullOrWhiteSpace(request.Selector))
             throw new ArgumentException("Provide either 'ref' or 'selector'");
@@ -662,8 +662,8 @@ public class HeadlessBrowserService
 
     [Display(Name = BrowserMethods.SubmitForm)]
     [Description("Submit a form by clicking a submit button (by ref or selector). Set diffMode to true to get a delta of what changed.")]
-    [Parameters("""{"type":"object","properties":{"ref":{"type":"string","description":"Ref ID of the submit button (e.g. 'e7'). Preferred over selector."},"selector":{"type":"string","description":"CSS selector of the submit button or form element"},"diffMode":{"type":"boolean","description":"Return only what changed after submit (default false)"}},"required":[]}""")]
-    public async Task<object> SubmitForm(ServiceConfig config, ServiceRequest request)
+    [Parameters(typeof(SubmitFormArgs))]
+    public async Task<object> SubmitForm(ServiceConfig config, SubmitFormArgs request)
     {
         if (string.IsNullOrWhiteSpace(request.Ref) && string.IsNullOrWhiteSpace(request.Selector))
             throw new ArgumentException("Provide either 'ref' or 'selector'");
@@ -676,7 +676,7 @@ public class HeadlessBrowserService
                 if (locator is null)
                     return new { Success = false, StaleRef = true, Message = $"Ref '{request.Ref}' not found. Call get_page_content or navigate_to_url to refresh." };
 
-                return await WithDiffIfEnabled(request, async () =>
+                return await WithDiffIfEnabled(request.DiffMode, async () =>
                 {
                     return await _client.ExecuteAsync(async page =>
                     {
@@ -689,7 +689,7 @@ public class HeadlessBrowserService
                 });
             }
 
-            return await WithDiffIfEnabled(request, async () =>
+            return await WithDiffIfEnabled(request.DiffMode, async () =>
             {
                 return await _client.ExecuteAsync(async page =>
                 {
@@ -720,8 +720,8 @@ public class HeadlessBrowserService
 
     [Display(Name = BrowserMethods.TakeScreenshot)]
     [Description("Take a screenshot of the current page and save to disk. Returns the file path to the saved screenshot.")]
-    [Parameters("""{"type":"object","properties":{"fileName":{"type":"string","description":"Custom file name for the screenshot (optional, defaults to timestamp)"},"fullPage":{"type":"boolean","description":"Capture the full scrollable page (default false)"},"selector":{"type":"string","description":"CSS selector to screenshot a specific element instead of the full page"}},"required":[]}""")]
-    public async Task<object> TakeScreenshot(ServiceConfig config, ServiceRequest request)
+    [Parameters(typeof(TakeScreenshotArgs))]
+    public async Task<object> TakeScreenshot(ServiceConfig config, TakeScreenshotArgs request)
     {
         return await _client.ExecuteAsync(async page =>
         {
@@ -768,8 +768,8 @@ public class HeadlessBrowserService
 
     [Display(Name = BrowserMethods.ExecuteJavascript)]
     [Description("Execute arbitrary JavaScript in the browser page context and return the result. Use for advanced interactions or data extraction.")]
-    [Parameters("""{"type":"object","properties":{"script":{"type":"string","description":"JavaScript code to execute in the page context. Use 'return' for expressions or write a function body."}},"required":["script"]}""")]
-    public async Task<object> ExecuteJavascript(ServiceConfig config, ServiceRequest request)
+    [Parameters(typeof(ExecuteJavascriptArgs))]
+    public async Task<object> ExecuteJavascript(ServiceConfig config, ExecuteJavascriptArgs request)
     {
         if (string.IsNullOrWhiteSpace(request.Script))
             throw new ArgumentException("Missing required parameter: script");
@@ -799,8 +799,8 @@ public class HeadlessBrowserService
 
     [Display(Name = BrowserMethods.CloseBrowser)]
     [Description("Close the browser session and release all resources. Call when done with browser automation.")]
-    [Parameters("""{"type":"object","properties":{},"required":[]}""")]
-    public async Task<object> CloseBrowser(ServiceConfig config, ServiceRequest request)
+    [Parameters(typeof(EmptyArgs))]
+    public async Task<object> CloseBrowser(ServiceConfig config, EmptyArgs request)
     {
         await _client.DisposeAsync();
 
@@ -811,11 +811,11 @@ public class HeadlessBrowserService
         };
     }
 
-    private async Task<object> WithDiffIfEnabled(ServiceRequest request, Func<Task<(bool success, string url, string title, string message)>> action)
+    private async Task<object> WithDiffIfEnabled(bool? diffMode, Func<Task<(bool success, string url, string title, string message)>> action)
     {
         // Take a pre-action snapshot if diff mode is requested
         PageSnapshot priorSnapshot = null;
-        if (request.DiffMode == true && _config.PreferAriaSnapshot)
+        if (diffMode == true && _config.PreferAriaSnapshot)
             priorSnapshot = await _client.TakeSnapshotAsync(_config.DefaultTimeoutMs);
 
         var (success, url, title, message) = await action();

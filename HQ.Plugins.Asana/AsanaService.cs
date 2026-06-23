@@ -24,8 +24,8 @@ public class AsanaService
 
     [Display(Name = "list_workspaces")]
     [Description("List all Asana workspaces accessible to the authenticated user.")]
-    [Parameters("""{"type":"object","properties":{"limit":{"type":"integer","description":"Max results per page (1-100)"},"optFields":{"type":"string","description":"Comma-separated fields to include (e.g. name,is_organization)"}},"required":[]}""")]
-    public async Task<object> ListWorkspaces(ServiceConfig config, ServiceRequest request)
+    [Parameters(typeof(ListWorkspacesArgs))]
+    public async Task<object> ListWorkspaces(ServiceConfig config, ListWorkspacesArgs request)
     {
         var query = BuildQuery(
             ("limit", request.Limit?.ToString()),
@@ -51,8 +51,8 @@ public class AsanaService
 
     [Display(Name = "get_user")]
     [Description("Get details about an Asana user. Defaults to the authenticated user ('me').")]
-    [Parameters("""{"type":"object","properties":{"userId":{"type":"string","description":"User GID or 'me' for the authenticated user (default: me)"},"optFields":{"type":"string","description":"Comma-separated fields to include"}},"required":[]}""")]
-    public async Task<object> GetUser(ServiceConfig config, ServiceRequest request)
+    [Parameters(typeof(GetUserArgs))]
+    public async Task<object> GetUser(ServiceConfig config, GetUserArgs request)
     {
         var userId = string.IsNullOrWhiteSpace(request.UserId) ? "me" : request.UserId;
         var query = BuildQuery(("opt_fields", request.OptFields ?? "name,email,workspaces,workspaces.name"));
@@ -85,8 +85,8 @@ public class AsanaService
 
     [Display(Name = "create_task")]
     [Description("Create a new task in Asana. Must provide a workspace or a project to place the task in.")]
-    [Parameters("""{"type":"object","properties":{"name":{"type":"string","description":"Task name/title"},"notes":{"type":"string","description":"Plain text description"},"htmlNotes":{"type":"string","description":"Rich text description in HTML"},"assignee":{"type":"string","description":"Assignee: user GID, email, or 'me'"},"dueOn":{"type":"string","description":"Due date (YYYY-MM-DD)"},"dueAt":{"type":"string","description":"Due datetime (ISO 8601)"},"startOn":{"type":"string","description":"Start date (YYYY-MM-DD)"},"completed":{"type":"boolean","description":"Whether the task is completed"},"projectId":{"type":"string","description":"Project GID to add the task to"},"sectionId":{"type":"string","description":"Section GID to place the task in"},"parent":{"type":"string","description":"Parent task GID (creates a subtask)"},"workspace":{"type":"string","description":"Workspace GID (required if no project specified)"},"followers":{"type":"string","description":"Comma-separated user GIDs or emails to add as followers"},"customFields":{"type":"string","description":"JSON object mapping custom field GIDs to values"}},"required":["name"]}""")]
-    public async Task<object> CreateTask(ServiceConfig config, ServiceRequest request)
+    [Parameters(typeof(CreateTaskArgs))]
+    public async Task<object> CreateTask(ServiceConfig config, CreateTaskArgs request)
     {
         if (string.IsNullOrWhiteSpace(request.Name))
             throw new ArgumentException("Missing required parameter: name");
@@ -127,8 +127,8 @@ public class AsanaService
 
     [Display(Name = "get_task")]
     [Description("Get full details of an Asana task by its GID. Optionally include subtasks and comments.")]
-    [Parameters("""{"type":"object","properties":{"taskId":{"type":"string","description":"The task GID"},"optFields":{"type":"string","description":"Comma-separated fields to include"},"includeSubtasks":{"type":"boolean","description":"Also fetch subtasks (default: false)"},"includeComments":{"type":"boolean","description":"Also fetch comments/stories (default: false)"}},"required":["taskId"]}""")]
-    public async Task<object> GetTask(ServiceConfig config, ServiceRequest request)
+    [Parameters(typeof(GetTaskArgs))]
+    public async Task<object> GetTask(ServiceConfig config, GetTaskArgs request)
     {
         if (string.IsNullOrWhiteSpace(request.TaskId))
             throw new ArgumentException("Missing required parameter: taskId");
@@ -205,8 +205,8 @@ public class AsanaService
 
     [Display(Name = "update_task")]
     [Description("Update properties of an existing Asana task.")]
-    [Parameters("""{"type":"object","properties":{"taskId":{"type":"string","description":"The task GID"},"name":{"type":"string","description":"Updated task name"},"notes":{"type":"string","description":"Updated plain text description"},"htmlNotes":{"type":"string","description":"Updated rich text description in HTML"},"assignee":{"type":"string","description":"Updated assignee: user GID, email, or 'me'"},"dueOn":{"type":"string","description":"Updated due date (YYYY-MM-DD)"},"dueAt":{"type":"string","description":"Updated due datetime (ISO 8601)"},"startOn":{"type":"string","description":"Updated start date (YYYY-MM-DD)"},"completed":{"type":"boolean","description":"Mark task as completed or incomplete"}},"required":["taskId"]}""")]
-    public async Task<object> UpdateTask(ServiceConfig config, ServiceRequest request)
+    [Parameters(typeof(UpdateTaskArgs))]
+    public async Task<object> UpdateTask(ServiceConfig config, UpdateTaskArgs request)
     {
         if (string.IsNullOrWhiteSpace(request.TaskId))
             throw new ArgumentException("Missing required parameter: taskId");
@@ -232,8 +232,8 @@ public class AsanaService
 
     [Display(Name = "delete_task")]
     [Description("Permanently delete an Asana task by its GID.")]
-    [Parameters("""{"type":"object","properties":{"taskId":{"type":"string","description":"The task GID to delete"}},"required":["taskId"]}""")]
-    public async Task<object> DeleteTask(ServiceConfig config, ServiceRequest request)
+    [Parameters(typeof(DeleteTaskArgs))]
+    public async Task<object> DeleteTask(ServiceConfig config, DeleteTaskArgs request)
     {
         if (string.IsNullOrWhiteSpace(request.TaskId))
             throw new ArgumentException("Missing required parameter: taskId");
@@ -245,8 +245,8 @@ public class AsanaService
 
     [Display(Name = "search_tasks")]
     [Description("Search for tasks in a workspace using text, assignee, project, date, and completion filters.")]
-    [Parameters("""{"type":"object","properties":{"workspace":{"type":"string","description":"Workspace GID (required)"},"text":{"type":"string","description":"Full-text search query"},"assigneeAny":{"type":"string","description":"Comma-separated user GIDs to filter by assignee"},"projectsAny":{"type":"string","description":"Comma-separated project GIDs to filter by project"},"completed":{"type":"boolean","description":"Filter by completion status"},"dueOnBefore":{"type":"string","description":"Tasks due before this date (YYYY-MM-DD)"},"dueOnAfter":{"type":"string","description":"Tasks due after this date (YYYY-MM-DD)"},"sortBy":{"type":"string","description":"Sort field: due_date, created_at, completed_at, likes, modified_at (default: modified_at)"},"sortAscending":{"type":"boolean","description":"Sort ascending (default: false)"},"optFields":{"type":"string","description":"Comma-separated fields to include"},"limit":{"type":"integer","description":"Max results (1-100)"}},"required":["workspace"]}""")]
-    public async Task<object> SearchTasks(ServiceConfig config, ServiceRequest request)
+    [Parameters(typeof(SearchTasksArgs))]
+    public async Task<object> SearchTasks(ServiceConfig config, SearchTasksArgs request)
     {
         if (string.IsNullOrWhiteSpace(request.Workspace))
             throw new ArgumentException("Missing required parameter: workspace");
@@ -285,8 +285,8 @@ public class AsanaService
 
     [Display(Name = "get_tasks")]
     [Description("List tasks filtered by project, section, or assignee. Provide at least one filter.")]
-    [Parameters("""{"type":"object","properties":{"projectId":{"type":"string","description":"Project GID to list tasks from"},"sectionId":{"type":"string","description":"Section GID to list tasks from"},"assignee":{"type":"string","description":"User GID or 'me' to filter by assignee (requires workspace)"},"workspace":{"type":"string","description":"Workspace GID (required when filtering by assignee)"},"completed":{"type":"boolean","description":"Filter by completion status"},"optFields":{"type":"string","description":"Comma-separated fields to include"},"limit":{"type":"integer","description":"Max results per page (1-100)"},"offset":{"type":"string","description":"Pagination offset token"}},"required":[]}""")]
-    public async Task<object> GetTasks(ServiceConfig config, ServiceRequest request)
+    [Parameters(typeof(GetTasksArgs))]
+    public async Task<object> GetTasks(ServiceConfig config, GetTasksArgs request)
     {
         var defaultFields = "name,completed,assignee,assignee.name,due_on,projects,projects.name";
 
@@ -335,8 +335,8 @@ public class AsanaService
 
     [Display(Name = "set_parent_for_task")]
     [Description("Set a parent task for an Asana task, making it a subtask.")]
-    [Parameters("""{"type":"object","properties":{"taskId":{"type":"string","description":"The task GID to reparent"},"parent":{"type":"string","description":"The parent task GID (or null to remove parent)"}},"required":["taskId","parent"]}""")]
-    public async Task<object> SetParentForTask(ServiceConfig config, ServiceRequest request)
+    [Parameters(typeof(SetParentForTaskArgs))]
+    public async Task<object> SetParentForTask(ServiceConfig config, SetParentForTaskArgs request)
     {
         if (string.IsNullOrWhiteSpace(request.TaskId))
             throw new ArgumentException("Missing required parameter: taskId");
@@ -350,8 +350,8 @@ public class AsanaService
 
     [Display(Name = "add_task_followers")]
     [Description("Add followers to an Asana task so they receive notifications about it.")]
-    [Parameters("""{"type":"object","properties":{"taskId":{"type":"string","description":"The task GID"},"followers":{"type":"string","description":"Comma-separated user GIDs or emails to add as followers"}},"required":["taskId","followers"]}""")]
-    public async Task<object> AddTaskFollowers(ServiceConfig config, ServiceRequest request)
+    [Parameters(typeof(AddTaskFollowersArgs))]
+    public async Task<object> AddTaskFollowers(ServiceConfig config, AddTaskFollowersArgs request)
     {
         if (string.IsNullOrWhiteSpace(request.TaskId))
             throw new ArgumentException("Missing required parameter: taskId");
@@ -366,8 +366,8 @@ public class AsanaService
 
     [Display(Name = "move_task_to_section")]
     [Description("Move an existing task to a different section (column) within its project. Use this to move tasks between board columns like Today, Past-Due, Completed, etc.")]
-    [Parameters("""{"type":"object","properties":{"taskId":{"type":"string","description":"The task GID to move"},"sectionId":{"type":"string","description":"The target section GID"}},"required":["taskId","sectionId"]}""")]
-    public async Task<object> MoveTaskToSection(ServiceConfig config, ServiceRequest request)
+    [Parameters(typeof(MoveTaskToSectionArgs))]
+    public async Task<object> MoveTaskToSection(ServiceConfig config, MoveTaskToSectionArgs request)
     {
         if (string.IsNullOrWhiteSpace(request.TaskId))
             throw new ArgumentException("Missing required parameter: taskId");
@@ -383,8 +383,8 @@ public class AsanaService
 
     [Display(Name = "get_projects")]
     [Description("List projects in a workspace, optionally filtered by team or archived status.")]
-    [Parameters("""{"type":"object","properties":{"workspace":{"type":"string","description":"Workspace GID (required)"},"team":{"type":"string","description":"Team GID to filter by"},"archived":{"type":"boolean","description":"Filter by archived status (default: false)"},"optFields":{"type":"string","description":"Comma-separated fields to include"},"limit":{"type":"integer","description":"Max results per page (1-100)"},"offset":{"type":"string","description":"Pagination offset token"}},"required":["workspace"]}""")]
-    public async Task<object> GetProjects(ServiceConfig config, ServiceRequest request)
+    [Parameters(typeof(GetProjectsArgs))]
+    public async Task<object> GetProjects(ServiceConfig config, GetProjectsArgs request)
     {
         if (string.IsNullOrWhiteSpace(request.Workspace))
             throw new ArgumentException("Missing required parameter: workspace");
@@ -421,8 +421,8 @@ public class AsanaService
 
     [Display(Name = "get_project")]
     [Description("Get full details of an Asana project by its GID.")]
-    [Parameters("""{"type":"object","properties":{"projectId":{"type":"string","description":"The project GID"},"optFields":{"type":"string","description":"Comma-separated fields to include"}},"required":["projectId"]}""")]
-    public async Task<object> GetProject(ServiceConfig config, ServiceRequest request)
+    [Parameters(typeof(GetProjectArgs))]
+    public async Task<object> GetProject(ServiceConfig config, GetProjectArgs request)
     {
         if (string.IsNullOrWhiteSpace(request.ProjectId))
             throw new ArgumentException("Missing required parameter: projectId");
@@ -456,8 +456,8 @@ public class AsanaService
 
     [Display(Name = "get_project_sections")]
     [Description("List all sections (columns) in an Asana project.")]
-    [Parameters("""{"type":"object","properties":{"projectId":{"type":"string","description":"The project GID"},"optFields":{"type":"string","description":"Comma-separated fields to include"},"limit":{"type":"integer","description":"Max results per page (1-100)"}},"required":["projectId"]}""")]
-    public async Task<object> GetProjectSections(ServiceConfig config, ServiceRequest request)
+    [Parameters(typeof(GetProjectSectionsArgs))]
+    public async Task<object> GetProjectSections(ServiceConfig config, GetProjectSectionsArgs request)
     {
         if (string.IsNullOrWhiteSpace(request.ProjectId))
             throw new ArgumentException("Missing required parameter: projectId");
@@ -485,8 +485,8 @@ public class AsanaService
 
     [Display(Name = "create_task_story")]
     [Description("Add a comment or story to an Asana task.")]
-    [Parameters("""{"type":"object","properties":{"taskId":{"type":"string","description":"The task GID to comment on"},"storyText":{"type":"string","description":"Plain text comment"},"htmlText":{"type":"string","description":"Rich text comment in HTML"}},"required":["taskId","storyText"]}""")]
-    public async Task<object> CreateTaskStory(ServiceConfig config, ServiceRequest request)
+    [Parameters(typeof(CreateTaskStoryArgs))]
+    public async Task<object> CreateTaskStory(ServiceConfig config, CreateTaskStoryArgs request)
     {
         if (string.IsNullOrWhiteSpace(request.TaskId))
             throw new ArgumentException("Missing required parameter: taskId");
@@ -509,8 +509,8 @@ public class AsanaService
 
     [Display(Name = "get_stories_for_task")]
     [Description("Get the activity feed (comments, status changes) for an Asana task.")]
-    [Parameters("""{"type":"object","properties":{"taskId":{"type":"string","description":"The task GID"},"optFields":{"type":"string","description":"Comma-separated fields to include"},"limit":{"type":"integer","description":"Max results per page (1-100)"}},"required":["taskId"]}""")]
-    public async Task<object> GetStoriesForTask(ServiceConfig config, ServiceRequest request)
+    [Parameters(typeof(GetStoriesForTaskArgs))]
+    public async Task<object> GetStoriesForTask(ServiceConfig config, GetStoriesForTaskArgs request)
     {
         if (string.IsNullOrWhiteSpace(request.TaskId))
             throw new ArgumentException("Missing required parameter: taskId");
@@ -541,8 +541,8 @@ public class AsanaService
 
     [Display(Name = "typeahead_search")]
     [Description("Typeahead search across Asana resources (tasks, projects, users, etc.) in a workspace.")]
-    [Parameters("""{"type":"object","properties":{"workspace":{"type":"string","description":"Workspace GID (required)"},"query":{"type":"string","description":"Search query string"},"resourceType":{"type":"string","description":"Type to search: task, project, user, tag, portfolio (default: task)"},"count":{"type":"integer","description":"Max results (1-100, default: 20)"},"optFields":{"type":"string","description":"Comma-separated fields to include"}},"required":["workspace","query"]}""")]
-    public async Task<object> TypeaheadSearch(ServiceConfig config, ServiceRequest request)
+    [Parameters(typeof(TypeaheadSearchArgs))]
+    public async Task<object> TypeaheadSearch(ServiceConfig config, TypeaheadSearchArgs request)
     {
         if (string.IsNullOrWhiteSpace(request.Workspace))
             throw new ArgumentException("Missing required parameter: workspace");

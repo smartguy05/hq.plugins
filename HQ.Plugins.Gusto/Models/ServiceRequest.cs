@@ -26,15 +26,4 @@ public record ServiceRequest : IPluginServiceRequest
     public string ToolCallId { get; set; }
     public string RequestingService { get; set; }
     public string ConfirmationId { get; set; }
-
-    // CompanyId is optional — resolved from /v1/me when omitted.
-    [JsonConverter(typeof(StringOrNumberConverter))] public string CompanyId { get; set; }
-    [JsonConverter(typeof(StringOrNumberConverter))] public string EmployeeId { get; set; }
-    [JsonConverter(typeof(StringOrNumberConverter))] public string PayrollId { get; set; }
-
-    // Time-off request
-    public string StartDate { get; set; }   // YYYY-MM-DD
-    public string EndDate { get; set; }
-    public double? Hours { get; set; }
-    public string RequestType { get; set; } // vacation | sick
 }

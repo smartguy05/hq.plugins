@@ -22,8 +22,8 @@ public class ZendeskService
 
     [Display(Name = ZendeskMethods.SearchTickets)]
     [Description("Search tickets using Zendesk search syntax, e.g. \"status:open priority:high\".")]
-    [Parameters("""{"type":"object","properties":{"query":{"type":"string","description":"Zendesk search query (the 'type:ticket' filter is added automatically)"},"pageSize":{"type":"integer","description":"Max results (default 25)"}},"required":["query"]}""")]
-    public Task<object> SearchTickets(ServiceConfig config, ServiceRequest r) =>
+    [Parameters(typeof(SearchTicketsArgs))]
+    public Task<object> SearchTickets(ServiceConfig config, SearchTicketsArgs r) =>
         Guard(async () =>
         {
             using var client = Client(config);
@@ -34,8 +34,8 @@ public class ZendeskService
 
     [Display(Name = ZendeskMethods.GetTicket)]
     [Description("Get a single ticket by ID.")]
-    [Parameters("""{"type":"object","properties":{"ticketId":{"type":"string","description":"The ticket ID"}},"required":["ticketId"]}""")]
-    public Task<object> GetTicket(ServiceConfig config, ServiceRequest r) =>
+    [Parameters(typeof(GetTicketArgs))]
+    public Task<object> GetTicket(ServiceConfig config, GetTicketArgs r) =>
         Guard(async () =>
         {
             using var client = Client(config);
@@ -45,8 +45,8 @@ public class ZendeskService
 
     [Display(Name = ZendeskMethods.CreateTicket)]
     [Description("Create a new support ticket.")]
-    [Parameters("""{"type":"object","properties":{"subject":{"type":"string"},"comment":{"type":"string","description":"Initial comment / description body"},"requesterId":{"type":"string","description":"Requester user ID"},"assigneeId":{"type":"string","description":"Assignee agent ID"},"priority":{"type":"string","description":"low | normal | high | urgent"},"status":{"type":"string","description":"new | open | pending | hold | solved | closed"},"tags":{"type":"string","description":"Comma-separated tags"}},"required":["subject","comment"]}""")]
-    public Task<object> CreateTicket(ServiceConfig config, ServiceRequest r) =>
+    [Parameters(typeof(CreateTicketArgs))]
+    public Task<object> CreateTicket(ServiceConfig config, CreateTicketArgs r) =>
         Guard(async () =>
         {
             using var client = Client(config);
@@ -67,8 +67,8 @@ public class ZendeskService
 
     [Display(Name = ZendeskMethods.UpdateTicket)]
     [Description("Update a ticket's status, priority, assignee or tags.")]
-    [Parameters("""{"type":"object","properties":{"ticketId":{"type":"string"},"status":{"type":"string","description":"new | open | pending | hold | solved | closed"},"priority":{"type":"string","description":"low | normal | high | urgent"},"assigneeId":{"type":"string"},"tags":{"type":"string","description":"Comma-separated tags (replaces existing)"}},"required":["ticketId"]}""")]
-    public Task<object> UpdateTicket(ServiceConfig config, ServiceRequest r) =>
+    [Parameters(typeof(UpdateTicketArgs))]
+    public Task<object> UpdateTicket(ServiceConfig config, UpdateTicketArgs r) =>
         Guard(async () =>
         {
             using var client = Client(config);
@@ -85,8 +85,8 @@ public class ZendeskService
 
     [Display(Name = ZendeskMethods.AddTicketComment)]
     [Description("Add a comment to a ticket. Set public=false for an internal note that the customer cannot see.")]
-    [Parameters("""{"type":"object","properties":{"ticketId":{"type":"string"},"comment":{"type":"string","description":"Comment body"},"public":{"type":"boolean","description":"true = customer-facing reply, false = internal note. Default true."}},"required":["ticketId","comment"]}""")]
-    public Task<object> AddTicketComment(ServiceConfig config, ServiceRequest r) =>
+    [Parameters(typeof(AddTicketCommentArgs))]
+    public Task<object> AddTicketComment(ServiceConfig config, AddTicketCommentArgs r) =>
         Guard(async () =>
         {
             using var client = Client(config);
@@ -97,8 +97,8 @@ public class ZendeskService
 
     [Display(Name = ZendeskMethods.ListTickets)]
     [Description("List recent tickets.")]
-    [Parameters("""{"type":"object","properties":{"pageSize":{"type":"integer","description":"Max results (default 25)"}},"required":[]}""")]
-    public Task<object> ListTickets(ServiceConfig config, ServiceRequest r) =>
+    [Parameters(typeof(ListTicketsArgs))]
+    public Task<object> ListTickets(ServiceConfig config, ListTicketsArgs r) =>
         Guard(async () =>
         {
             using var client = Client(config);
@@ -108,8 +108,8 @@ public class ZendeskService
 
     [Display(Name = ZendeskMethods.GetUser)]
     [Description("Get a Zendesk user (end user or agent) by ID.")]
-    [Parameters("""{"type":"object","properties":{"userId":{"type":"string"}},"required":["userId"]}""")]
-    public Task<object> GetUser(ServiceConfig config, ServiceRequest r) =>
+    [Parameters(typeof(GetUserArgs))]
+    public Task<object> GetUser(ServiceConfig config, GetUserArgs r) =>
         Guard(async () =>
         {
             using var client = Client(config);
@@ -119,8 +119,8 @@ public class ZendeskService
 
     [Display(Name = ZendeskMethods.SearchUsers)]
     [Description("Search users by name, email or other attributes.")]
-    [Parameters("""{"type":"object","properties":{"query":{"type":"string","description":"Search text (name or email)"}},"required":["query"]}""")]
-    public Task<object> SearchUsers(ServiceConfig config, ServiceRequest r) =>
+    [Parameters(typeof(SearchUsersArgs))]
+    public Task<object> SearchUsers(ServiceConfig config, SearchUsersArgs r) =>
         Guard(async () =>
         {
             using var client = Client(config);
@@ -130,8 +130,8 @@ public class ZendeskService
 
     [Display(Name = ZendeskMethods.ListMacros)]
     [Description("List available macros (canned ticket actions/responses).")]
-    [Parameters("""{"type":"object","properties":{"pageSize":{"type":"integer","description":"Max results (default 50)"}},"required":[]}""")]
-    public Task<object> ListMacros(ServiceConfig config, ServiceRequest r) =>
+    [Parameters(typeof(ListMacrosArgs))]
+    public Task<object> ListMacros(ServiceConfig config, ListMacrosArgs r) =>
         Guard(async () =>
         {
             using var client = Client(config);
@@ -141,8 +141,8 @@ public class ZendeskService
 
     [Display(Name = ZendeskMethods.ApplyMacro)]
     [Description("Apply a macro to a ticket — renders the macro's changes and saves them to the ticket.")]
-    [Parameters("""{"type":"object","properties":{"ticketId":{"type":"string"},"macroId":{"type":"string"}},"required":["ticketId","macroId"]}""")]
-    public Task<object> ApplyMacro(ServiceConfig config, ServiceRequest r) =>
+    [Parameters(typeof(ApplyMacroArgs))]
+    public Task<object> ApplyMacro(ServiceConfig config, ApplyMacroArgs r) =>
         Guard(async () =>
         {
             using var client = Client(config);

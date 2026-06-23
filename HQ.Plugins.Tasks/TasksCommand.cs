@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Threading.Tasks;
 using HQ.Models;
 using HQ.Models.Enums;
+using HQ.Models.Extensions;
 using HQ.Models.Interfaces;
 using HQ.Models.Tools;
 using HQ.Plugins.Tasks.Models;
@@ -77,7 +78,8 @@ public class TasksCommand :
     {
         try
         {
-            return await Tools.TasksTools.InvokeAsync(request, config);
+            var impl = new Tools.TasksToolImpl();
+            return await impl.ProcessRequest(RawServiceRequest, config, NotificationService);
         }
         catch (Exception ex)
         {

@@ -32,107 +32,107 @@ public class GoogleWorkspaceService
 
     [Display(Name = GoogleWorkspaceMethods.DriveListFiles)]
     [Description("List files and folders in Google Drive. Optionally scope to a folder or pass a raw Drive query.")]
-    [Parameters("""{"type":"object","properties":{"folderId":{"type":"string","description":"Folder ID to list children of (omit for Drive root)"},"query":{"type":"string","description":"Optional raw Drive query clause, e.g. \"mimeType='application/pdf'\""},"pageSize":{"type":"integer","description":"Max results (1-1000, default 100)"},"orderBy":{"type":"string","description":"Sort order, e.g. 'modifiedTime desc'"}},"required":[]}""")]
-    public Task<object> DriveListFiles(ServiceConfig config, ServiceRequest r) => Guard(() => _drive.Value.ListFiles(r));
+    [Parameters(typeof(DriveListFilesArgs))]
+    public Task<object> DriveListFiles(ServiceConfig config, DriveListFilesArgs request) => Guard(() => _drive.Value.ListFiles(request));
 
     [Display(Name = GoogleWorkspaceMethods.DriveSearchFiles)]
     [Description("Full-text search across the user's Google Drive and return matching files.")]
-    [Parameters("""{"type":"object","properties":{"query":{"type":"string","description":"Text to search for in file names and contents"},"pageSize":{"type":"integer","description":"Max results (1-1000, default 50)"}},"required":["query"]}""")]
-    public Task<object> DriveSearchFiles(ServiceConfig config, ServiceRequest r) => Guard(() => _drive.Value.SearchFiles(r));
+    [Parameters(typeof(DriveSearchFilesArgs))]
+    public Task<object> DriveSearchFiles(ServiceConfig config, DriveSearchFilesArgs request) => Guard(() => _drive.Value.SearchFiles(request));
 
     [Display(Name = GoogleWorkspaceMethods.DriveGetFile)]
     [Description("Get metadata for a single Drive file (name, type, size, link, parents).")]
-    [Parameters("""{"type":"object","properties":{"fileId":{"type":"string","description":"The Drive file ID"}},"required":["fileId"]}""")]
-    public Task<object> DriveGetFile(ServiceConfig config, ServiceRequest r) => Guard(() => _drive.Value.GetFile(r));
+    [Parameters(typeof(DriveGetFileArgs))]
+    public Task<object> DriveGetFile(ServiceConfig config, DriveGetFileArgs request) => Guard(() => _drive.Value.GetFile(request));
 
     [Display(Name = GoogleWorkspaceMethods.DriveDownloadFile)]
     [Description("Download a Drive file's contents as base64. Google-native files (Docs/Sheets/Slides) are exported; override the export format with mimeType.")]
-    [Parameters("""{"type":"object","properties":{"fileId":{"type":"string","description":"The Drive file ID"},"mimeType":{"type":"string","description":"Export MIME type for Google-native files, e.g. 'application/pdf'"}},"required":["fileId"]}""")]
-    public Task<object> DriveDownloadFile(ServiceConfig config, ServiceRequest r) => Guard(() => _drive.Value.DownloadFile(r));
+    [Parameters(typeof(DriveDownloadFileArgs))]
+    public Task<object> DriveDownloadFile(ServiceConfig config, DriveDownloadFileArgs request) => Guard(() => _drive.Value.DownloadFile(request));
 
     [Display(Name = GoogleWorkspaceMethods.DriveUploadFile)]
     [Description("Upload a new file to Drive from base64-encoded content.")]
-    [Parameters("""{"type":"object","properties":{"name":{"type":"string","description":"File name"},"content":{"type":"string","description":"Base64-encoded file bytes"},"mimeType":{"type":"string","description":"MIME type of the file"},"folderId":{"type":"string","description":"Destination folder ID (omit for root)"}},"required":["name","content"]}""")]
-    public Task<object> DriveUploadFile(ServiceConfig config, ServiceRequest r) => Guard(() => _drive.Value.UploadFile(r));
+    [Parameters(typeof(DriveUploadFileArgs))]
+    public Task<object> DriveUploadFile(ServiceConfig config, DriveUploadFileArgs request) => Guard(() => _drive.Value.UploadFile(request));
 
     [Display(Name = GoogleWorkspaceMethods.DriveCreateFolder)]
     [Description("Create a new folder in Drive.")]
-    [Parameters("""{"type":"object","properties":{"name":{"type":"string","description":"Folder name"},"folderId":{"type":"string","description":"Parent folder ID (omit for root)"}},"required":["name"]}""")]
-    public Task<object> DriveCreateFolder(ServiceConfig config, ServiceRequest r) => Guard(() => _drive.Value.CreateFolder(r));
+    [Parameters(typeof(DriveCreateFolderArgs))]
+    public Task<object> DriveCreateFolder(ServiceConfig config, DriveCreateFolderArgs request) => Guard(() => _drive.Value.CreateFolder(request));
 
     [Display(Name = GoogleWorkspaceMethods.DriveMoveFile)]
     [Description("Move a file to a different folder.")]
-    [Parameters("""{"type":"object","properties":{"fileId":{"type":"string","description":"The file to move"},"folderId":{"type":"string","description":"Destination folder ID"}},"required":["fileId","folderId"]}""")]
-    public Task<object> DriveMoveFile(ServiceConfig config, ServiceRequest r) => Guard(() => _drive.Value.MoveFile(r));
+    [Parameters(typeof(DriveMoveFileArgs))]
+    public Task<object> DriveMoveFile(ServiceConfig config, DriveMoveFileArgs request) => Guard(() => _drive.Value.MoveFile(request));
 
     [Display(Name = GoogleWorkspaceMethods.DriveCopyFile)]
     [Description("Create a copy of a Drive file, optionally with a new name and destination folder.")]
-    [Parameters("""{"type":"object","properties":{"fileId":{"type":"string","description":"The file to copy"},"name":{"type":"string","description":"Name for the copy"},"folderId":{"type":"string","description":"Destination folder ID"}},"required":["fileId"]}""")]
-    public Task<object> DriveCopyFile(ServiceConfig config, ServiceRequest r) => Guard(() => _drive.Value.CopyFile(r));
+    [Parameters(typeof(DriveCopyFileArgs))]
+    public Task<object> DriveCopyFile(ServiceConfig config, DriveCopyFileArgs request) => Guard(() => _drive.Value.CopyFile(request));
 
     [Display(Name = GoogleWorkspaceMethods.DriveDeleteFile)]
     [Description("Delete a Drive file. Moves it to trash by default; set permanent=true to delete forever.")]
-    [Parameters("""{"type":"object","properties":{"fileId":{"type":"string","description":"The file to delete"},"permanent":{"type":"boolean","description":"Permanently delete instead of trashing"}},"required":["fileId"]}""")]
-    public Task<object> DriveDeleteFile(ServiceConfig config, ServiceRequest r) => Guard(() => _drive.Value.DeleteFile(r));
+    [Parameters(typeof(DriveDeleteFileArgs))]
+    public Task<object> DriveDeleteFile(ServiceConfig config, DriveDeleteFileArgs request) => Guard(() => _drive.Value.DeleteFile(request));
 
     [Display(Name = GoogleWorkspaceMethods.DriveShareFile)]
     [Description("Share a Drive file by creating a permission and returning a shareable link.")]
-    [Parameters("""{"type":"object","properties":{"fileId":{"type":"string","description":"The file to share"},"role":{"type":"string","description":"reader | writer | commenter | owner (default reader)"},"type":{"type":"string","description":"user | group | domain | anyone (default anyone)"},"emailAddress":{"type":"string","description":"Email for user/group grants"}},"required":["fileId"]}""")]
-    public Task<object> DriveShareFile(ServiceConfig config, ServiceRequest r) => Guard(() => _drive.Value.ShareFile(r));
+    [Parameters(typeof(DriveShareFileArgs))]
+    public Task<object> DriveShareFile(ServiceConfig config, DriveShareFileArgs request) => Guard(() => _drive.Value.ShareFile(request));
 
     // ───────────────────────────── Docs ─────────────────────────────
 
     [Display(Name = GoogleWorkspaceMethods.DocsCreate)]
     [Description("Create a new Google Doc with an optional initial body of text.")]
-    [Parameters("""{"type":"object","properties":{"title":{"type":"string","description":"Document title"},"text":{"type":"string","description":"Optional initial body text"}},"required":["title"]}""")]
-    public Task<object> DocsCreate(ServiceConfig config, ServiceRequest r) => Guard(() => _docs.Value.Create(r));
+    [Parameters(typeof(DocsCreateArgs))]
+    public Task<object> DocsCreate(ServiceConfig config, DocsCreateArgs request) => Guard(() => _docs.Value.Create(request));
 
     [Display(Name = GoogleWorkspaceMethods.DocsGetText)]
     [Description("Read the full plain-text body of a Google Doc.")]
-    [Parameters("""{"type":"object","properties":{"fileId":{"type":"string","description":"The document ID"}},"required":["fileId"]}""")]
-    public Task<object> DocsGetText(ServiceConfig config, ServiceRequest r) => Guard(() => _docs.Value.GetText(r));
+    [Parameters(typeof(DocsGetTextArgs))]
+    public Task<object> DocsGetText(ServiceConfig config, DocsGetTextArgs request) => Guard(() => _docs.Value.GetText(request));
 
     [Display(Name = GoogleWorkspaceMethods.DocsAppendText)]
     [Description("Append text to the end of a Google Doc.")]
-    [Parameters("""{"type":"object","properties":{"fileId":{"type":"string","description":"The document ID"},"text":{"type":"string","description":"Text to append"}},"required":["fileId","text"]}""")]
-    public Task<object> DocsAppendText(ServiceConfig config, ServiceRequest r) => Guard(() => _docs.Value.AppendText(r));
+    [Parameters(typeof(DocsAppendTextArgs))]
+    public Task<object> DocsAppendText(ServiceConfig config, DocsAppendTextArgs request) => Guard(() => _docs.Value.AppendText(request));
 
     [Display(Name = GoogleWorkspaceMethods.DocsReplaceText)]
     [Description("Find and replace all occurrences of text in a Google Doc.")]
-    [Parameters("""{"type":"object","properties":{"fileId":{"type":"string","description":"The document ID"},"find":{"type":"string","description":"Text to find"},"replace":{"type":"string","description":"Replacement text"},"matchCase":{"type":"boolean","description":"Case-sensitive match (default false)"}},"required":["fileId","find"]}""")]
-    public Task<object> DocsReplaceText(ServiceConfig config, ServiceRequest r) => Guard(() => _docs.Value.ReplaceText(r));
+    [Parameters(typeof(DocsReplaceTextArgs))]
+    public Task<object> DocsReplaceText(ServiceConfig config, DocsReplaceTextArgs request) => Guard(() => _docs.Value.ReplaceText(request));
 
     // ───────────────────────────── Sheets ─────────────────────────────
 
     [Display(Name = GoogleWorkspaceMethods.SheetsCreate)]
     [Description("Create a new Google Sheets spreadsheet.")]
-    [Parameters("""{"type":"object","properties":{"title":{"type":"string","description":"Spreadsheet title"}},"required":["title"]}""")]
-    public Task<object> SheetsCreate(ServiceConfig config, ServiceRequest r) => Guard(() => _sheets.Value.Create(r));
+    [Parameters(typeof(SheetsCreateArgs))]
+    public Task<object> SheetsCreate(ServiceConfig config, SheetsCreateArgs request) => Guard(() => _sheets.Value.Create(request));
 
     [Display(Name = GoogleWorkspaceMethods.SheetsGetValues)]
     [Description("Read cell values from an A1 range of a spreadsheet.")]
-    [Parameters("""{"type":"object","properties":{"fileId":{"type":"string","description":"The spreadsheet ID"},"range":{"type":"string","description":"A1 notation range, e.g. 'Sheet1!A1:C10'"}},"required":["fileId","range"]}""")]
-    public Task<object> SheetsGetValues(ServiceConfig config, ServiceRequest r) => Guard(() => _sheets.Value.GetValues(r));
+    [Parameters(typeof(SheetsGetValuesArgs))]
+    public Task<object> SheetsGetValues(ServiceConfig config, SheetsGetValuesArgs request) => Guard(() => _sheets.Value.GetValues(request));
 
     [Display(Name = GoogleWorkspaceMethods.SheetsUpdateValues)]
     [Description("Write a 2D array of values to an A1 range of a spreadsheet.")]
-    [Parameters("""{"type":"object","properties":{"fileId":{"type":"string","description":"The spreadsheet ID"},"range":{"type":"string","description":"A1 notation range to write to"},"values":{"type":"array","description":"2D array of rows; each row is an array of cell values","items":{"type":"array","items":{}}}},"required":["fileId","range","values"]}""")]
-    public Task<object> SheetsUpdateValues(ServiceConfig config, ServiceRequest r) => Guard(() => _sheets.Value.UpdateValues(r));
+    [Parameters(typeof(SheetsUpdateValuesArgs))]
+    public Task<object> SheetsUpdateValues(ServiceConfig config, SheetsUpdateValuesArgs request) => Guard(() => _sheets.Value.UpdateValues(request));
 
     [Display(Name = GoogleWorkspaceMethods.SheetsAppendRow)]
     [Description("Append one or more rows to a spreadsheet after the last row of data.")]
-    [Parameters("""{"type":"object","properties":{"fileId":{"type":"string","description":"The spreadsheet ID"},"range":{"type":"string","description":"Range/table to append into, e.g. 'Sheet1!A1' (default A1)"},"values":{"type":"array","description":"2D array of rows to append","items":{"type":"array","items":{}}}},"required":["fileId","values"]}""")]
-    public Task<object> SheetsAppendRow(ServiceConfig config, ServiceRequest r) => Guard(() => _sheets.Value.AppendRow(r));
+    [Parameters(typeof(SheetsAppendRowArgs))]
+    public Task<object> SheetsAppendRow(ServiceConfig config, SheetsAppendRowArgs request) => Guard(() => _sheets.Value.AppendRow(request));
 
     [Display(Name = GoogleWorkspaceMethods.SheetsClearValues)]
     [Description("Clear all values from an A1 range of a spreadsheet.")]
-    [Parameters("""{"type":"object","properties":{"fileId":{"type":"string","description":"The spreadsheet ID"},"range":{"type":"string","description":"A1 notation range to clear"}},"required":["fileId","range"]}""")]
-    public Task<object> SheetsClearValues(ServiceConfig config, ServiceRequest r) => Guard(() => _sheets.Value.ClearValues(r));
+    [Parameters(typeof(SheetsClearValuesArgs))]
+    public Task<object> SheetsClearValues(ServiceConfig config, SheetsClearValuesArgs request) => Guard(() => _sheets.Value.ClearValues(request));
 
     [Display(Name = GoogleWorkspaceMethods.SheetsListSheets)]
     [Description("List the tabs (sheets) in a spreadsheet with their titles, IDs and grid sizes.")]
-    [Parameters("""{"type":"object","properties":{"fileId":{"type":"string","description":"The spreadsheet ID"}},"required":["fileId"]}""")]
-    public Task<object> SheetsListSheets(ServiceConfig config, ServiceRequest r) => Guard(() => _sheets.Value.ListSheets(r));
+    [Parameters(typeof(SheetsListSheetsArgs))]
+    public Task<object> SheetsListSheets(ServiceConfig config, SheetsListSheetsArgs request) => Guard(() => _sheets.Value.ListSheets(request));
 
     private async Task<object> Guard(Func<Task<object>> action)
     {

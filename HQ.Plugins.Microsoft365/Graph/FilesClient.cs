@@ -17,30 +17,30 @@ public class FilesClient
         _defaultDriveId = config.DefaultDriveId;
     }
 
-    private string DriveId(ServiceRequest r)
+    private string DriveId(string requestDriveId)
     {
-        var id = string.IsNullOrWhiteSpace(r.DriveId) ? _defaultDriveId : r.DriveId;
+        var id = string.IsNullOrWhiteSpace(requestDriveId) ? _defaultDriveId : requestDriveId;
         if (string.IsNullOrWhiteSpace(id))
             throw new InvalidOperationException("driveId is required (or set DefaultDriveId in the plugin config).");
         return id;
     }
 
     // Resolve the target item id, supporting either an explicit itemId, a path, or root.
-    private async Task<string> ResolveItemId(string driveId, ServiceRequest r)
+    private async Task<string> ResolveItemId(string driveId, string itemId, string path)
     {
-        if (!string.IsNullOrWhiteSpace(r.ItemId)) return r.ItemId;
-        if (!string.IsNullOrWhiteSpace(r.Path))
+        if (!string.IsNullOrWhiteSpace(itemId)) return itemId;
+        if (!string.IsNullOrWhiteSpace(path))
         {
-            var item = await _graph.Drives[driveId].Items["root"].ItemWithPath(r.Path).GetAsync();
-            return item?.Id ?? throw new InvalidOperationException($"No item found at path '{r.Path}'.");
+            var item = await _graph.Drives[driveId].Items["root"].ItemWithPath(path).GetAsync();
+            return item?.Id ?? throw new InvalidOperationException($"No item found at path '{path}'.");
         }
         return "root";
     }
 
-    public async Task<object> List(ServiceRequest r)
+    public async Task<object> List(FilesListArgs r)
     {
-        var driveId = DriveId(r);
-        var itemId = await ResolveItemId(driveId, r);
+        var driveId = DriveId(r.DriveId);
+        var itemId = await ResolveItemId(driveId, r.ItemId, r.Path);
         var children = await _graph.Drives[driveId].Items[itemId].Children.GetAsync(rc =>
         {
             rc.QueryParameters.Top = r.PageSize is > 0 and <= 999 ? r.PageSize.Value : 100;
@@ -48,10 +48,10 @@ public class FilesClient
         return new { Success = true, Items = children?.Value?.Select(MapItem) ?? [] };
     }
 
-    public async Task<object> Search(ServiceRequest r)
+    public async Task<object> Search(FilesSearchArgs r)
     {
         if (string.IsNullOrWhiteSpace(r.Query)) return new { Success = false, Error = "query is required" };
-        var driveId = DriveId(r);
+        var driveId = DriveId(r.DriveId);
         var results = await _graph.Drives[driveId].Items["root"].SearchWithQ(r.Query).GetAsSearchWithQGetResponseAsync(rc =>
         {
             rc.QueryParameters.Top = r.PageSize is > 0 and <= 999 ? r.PageSize.Value : 50;
@@ -59,18 +59,18 @@ public class FilesClient
         return new { Success = true, Items = results?.Value?.Select(MapItem) ?? [] };
     }
 
-    public async Task<object> Get(ServiceRequest r)
+    public async Task<object> Get(FilesGetArgs r)
     {
-        var driveId = DriveId(r);
-        var itemId = await ResolveItemId(driveId, r);
+        var driveId = DriveId(r.DriveId);
+        var itemId = await ResolveItemId(driveId, r.ItemId, r.Path);
         var item = await _graph.Drives[driveId].Items[itemId].GetAsync();
         return new { Success = true, Item = MapItem(item) };
     }
 
-    public async Task<object> Download(ServiceRequest r)
+    public async Task<object> Download(FilesDownloadArgs r)
     {
-        var driveId = DriveId(r);
-        var itemId = await ResolveItemId(driveId, r);
+        var driveId = DriveId(r.DriveId);
+        var itemId = await ResolveItemId(driveId, r.ItemId, r.Path);
         var item = await _graph.Drives[driveId].Items[itemId].GetAsync();
         var stream = await _graph.Drives[driveId].Items[itemId].Content.GetAsync();
         if (stream is null) return new { Success = false, Error = "File content stream was null" };
@@ -87,14 +87,14 @@ public class FilesClient
         };
     }
 
-    public async Task<object> Upload(ServiceRequest r)
+    public async Task<object> Upload(FilesUploadArgs r)
     {
         if (string.IsNullOrWhiteSpace(r.Name)) return new { Success = false, Error = "name is required" };
         if (string.IsNullOrWhiteSpace(r.Content)) return new { Success = false, Error = "content (base64) is required" };
 
-        var driveId = DriveId(r);
+        var driveId = DriveId(r.DriveId);
         // Upload into the resolved folder (itemId/path → folder, default root).
-        var parentId = await ResolveItemId(driveId, r);
+        var parentId = await ResolveItemId(driveId, r.ItemId, r.Path);
 
         var bytes = Convert.FromBase64String(r.Content);
         using var stream = new MemoryStream(bytes);
@@ -102,11 +102,11 @@ public class FilesClient
         return new { Success = true, Item = MapItem(uploaded) };
     }
 
-    public async Task<object> CreateFolder(ServiceRequest r)
+    public async Task<object> CreateFolder(FilesCreateFolderArgs r)
     {
         if (string.IsNullOrWhiteSpace(r.Name)) return new { Success = false, Error = "name is required" };
-        var driveId = DriveId(r);
-        var parentId = await ResolveItemId(driveId, r);
+        var driveId = DriveId(r.DriveId);
+        var parentId = await ResolveItemId(driveId, r.ItemId, r.Path);
 
         var folder = await _graph.Drives[driveId].Items[parentId].Children.PostAsync(new DriveItem
         {
@@ -117,11 +117,11 @@ public class FilesClient
         return new { Success = true, Item = MapItem(folder) };
     }
 
-    public async Task<object> Move(ServiceRequest r)
+    public async Task<object> Move(FilesMoveArgs r)
     {
         if (string.IsNullOrWhiteSpace(r.ItemId)) return new { Success = false, Error = "itemId is required" };
         if (string.IsNullOrWhiteSpace(r.DestinationFolderId)) return new { Success = false, Error = "destinationFolderId is required" };
-        var driveId = DriveId(r);
+        var driveId = DriveId(r.DriveId);
 
         var patch = new DriveItem { ParentReference = new ItemReference { Id = r.DestinationFolderId } };
         if (!string.IsNullOrWhiteSpace(r.Name)) patch.Name = r.Name;
@@ -129,10 +129,10 @@ public class FilesClient
         return new { Success = true, Item = MapItem(moved) };
     }
 
-    public async Task<object> Copy(ServiceRequest r)
+    public async Task<object> Copy(FilesCopyArgs r)
     {
         if (string.IsNullOrWhiteSpace(r.ItemId)) return new { Success = false, Error = "itemId is required" };
-        var driveId = DriveId(r);
+        var driveId = DriveId(r.DriveId);
 
         var body = new Microsoft.Graph.Drives.Item.Items.Item.Copy.CopyPostRequestBody();
         if (!string.IsNullOrWhiteSpace(r.Name)) body.Name = r.Name;
@@ -144,18 +144,18 @@ public class FilesClient
         return new { Success = true, ItemId = r.ItemId, Status = "Copy accepted (asynchronous)" };
     }
 
-    public async Task<object> Delete(ServiceRequest r)
+    public async Task<object> Delete(FilesDeleteArgs r)
     {
         if (string.IsNullOrWhiteSpace(r.ItemId)) return new { Success = false, Error = "itemId is required" };
-        var driveId = DriveId(r);
+        var driveId = DriveId(r.DriveId);
         await _graph.Drives[driveId].Items[r.ItemId].DeleteAsync();
         return new { Success = true, ItemId = r.ItemId, Deleted = true };
     }
 
-    public async Task<object> Share(ServiceRequest r)
+    public async Task<object> Share(FilesShareArgs r)
     {
         if (string.IsNullOrWhiteSpace(r.ItemId)) return new { Success = false, Error = "itemId is required" };
-        var driveId = DriveId(r);
+        var driveId = DriveId(r.DriveId);
 
         var link = await _graph.Drives[driveId].Items[r.ItemId].CreateLink.PostAsync(new CreateLinkPostRequestBody
         {

@@ -32,7 +32,7 @@ public class FileStorageCommand : CommandBase<ServiceRequest, ServiceConfig>, IF
         try
         {
             var service = new FileStorageService(config, Logger);
-            return await service.ProcessRequest(serviceRequest, config, NotificationService);
+            return await service.ProcessRequest(RawServiceRequest, config, NotificationService);
         }
         catch (Exception e)
         {

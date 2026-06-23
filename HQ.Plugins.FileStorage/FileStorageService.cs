@@ -41,8 +41,8 @@ public partial class FileStorageService
 
     [Display(Name = "workspace_create")]
     [Description("Create a new persistent Docker workspace with Python 3, Node.js, and common CLI tools pre-installed. No network access. Files persist across restarts via Docker volumes. Optionally specify a teamId to mount a shared volume at /shared for cross-workspace collaboration.")]
-    [Parameters("""{"type":"object","properties":{"workspaceId":{"type":"string","description":"Unique workspace identifier (alphanumeric and hyphens only)"},"teamId":{"type":"string","description":"Optional team ID. Workspaces with the same teamId share a read-write volume mounted at /shared."}},"required":["workspaceId"]}""")]
-    public async Task<object> CreateWorkspace(ServiceConfig config, ServiceRequest request)
+    [Parameters(typeof(CreateWorkspaceArgs))]
+    public async Task<object> CreateWorkspace(ServiceConfig config, CreateWorkspaceArgs request)
     {
         ValidateWorkspaceId(request.WorkspaceId);
 
@@ -53,8 +53,8 @@ public partial class FileStorageService
 
     [Display(Name = "workspace_destroy")]
     [Description("Stop and remove a workspace container and its data volume. Team shared volumes are preserved. This action is irreversible.")]
-    [Parameters("""{"type":"object","properties":{"workspaceId":{"type":"string","description":"The workspace ID to destroy"}},"required":["workspaceId"]}""")]
-    public async Task<object> DestroyWorkspace(ServiceConfig config, ServiceRequest request)
+    [Parameters(typeof(DestroyWorkspaceArgs))]
+    public async Task<object> DestroyWorkspace(ServiceConfig config, DestroyWorkspaceArgs request)
     {
         ValidateWorkspaceId(request.WorkspaceId);
 
@@ -65,8 +65,8 @@ public partial class FileStorageService
 
     [Display(Name = "workspace_list")]
     [Description("List all HQ workspaces with their IDs, team associations, and current status.")]
-    [Parameters("""{"type":"object","properties":{}}""")]
-    public async Task<object> ListWorkspaces(ServiceConfig config, ServiceRequest request)
+    [Parameters(typeof(EmptyArgs))]
+    public async Task<object> ListWorkspaces(ServiceConfig config, EmptyArgs request)
     {
         await _logger(LogLevel.Info, "[FileAccess] action=list_workspaces");
 
@@ -75,8 +75,8 @@ public partial class FileStorageService
 
     [Display(Name = "workspace_status")]
     [Description("Get detailed status of a workspace including container state, mounts, and resource configuration.")]
-    [Parameters("""{"type":"object","properties":{"workspaceId":{"type":"string","description":"The workspace ID to inspect"}},"required":["workspaceId"]}""")]
-    public async Task<object> GetWorkspaceStatus(ServiceConfig config, ServiceRequest request)
+    [Parameters(typeof(WorkspaceStatusArgs))]
+    public async Task<object> GetWorkspaceStatus(ServiceConfig config, WorkspaceStatusArgs request)
     {
         ValidateWorkspaceId(request.WorkspaceId);
 
@@ -89,8 +89,8 @@ public partial class FileStorageService
 
     [Display(Name = "workspace_write_file")]
     [Description("Write a file to a workspace. Content can be plain text or base64-encoded binary. Parent directories are created automatically. Files are written to the persistent /workspace volume.")]
-    [Parameters("""{"type":"object","properties":{"workspaceId":{"type":"string","description":"The workspace ID"},"filePath":{"type":"string","description":"Absolute path inside the container (e.g. /workspace/script.py)"},"fileContent":{"type":"string","description":"The file content (text or base64-encoded)"},"isBase64":{"type":"boolean","description":"Set to true if fileContent is base64-encoded binary data. Defaults to false."}},"required":["workspaceId","filePath","fileContent"]}""")]
-    public async Task<object> WriteFile(ServiceConfig config, ServiceRequest request)
+    [Parameters(typeof(WriteFileArgs))]
+    public async Task<object> WriteFile(ServiceConfig config, WriteFileArgs request)
     {
         ValidateWorkspaceId(request.WorkspaceId);
         if (string.IsNullOrWhiteSpace(request.FilePath))
@@ -117,8 +117,8 @@ public partial class FileStorageService
 
     [Display(Name = "workspace_read_file")]
     [Description("Read a file from a workspace. Returns the content as base64-encoded data along with the file size.")]
-    [Parameters("""{"type":"object","properties":{"workspaceId":{"type":"string","description":"The workspace ID"},"filePath":{"type":"string","description":"Absolute path inside the container (e.g. /workspace/output.txt)"}},"required":["workspaceId","filePath"]}""")]
-    public async Task<object> ReadFile(ServiceConfig config, ServiceRequest request)
+    [Parameters(typeof(ReadFileArgs))]
+    public async Task<object> ReadFile(ServiceConfig config, ReadFileArgs request)
     {
         ValidateWorkspaceId(request.WorkspaceId);
         if (string.IsNullOrWhiteSpace(request.FilePath))
@@ -141,8 +141,8 @@ public partial class FileStorageService
 
     [Display(Name = "workspace_list_files")]
     [Description("List files and directories at a path in the workspace. Defaults to /workspace if no path specified.")]
-    [Parameters("""{"type":"object","properties":{"workspaceId":{"type":"string","description":"The workspace ID"},"filePath":{"type":"string","description":"Path to list (defaults to /workspace)"}},"required":["workspaceId"]}""")]
-    public async Task<object> ListFiles(ServiceConfig config, ServiceRequest request)
+    [Parameters(typeof(ListFilesArgs))]
+    public async Task<object> ListFiles(ServiceConfig config, ListFilesArgs request)
     {
         ValidateWorkspaceId(request.WorkspaceId);
 
@@ -163,8 +163,8 @@ public partial class FileStorageService
 
     [Display(Name = "workspace_delete_file")]
     [Description("Delete a file or directory from a workspace. Set recursive to true for directories. Protected system paths cannot be deleted.")]
-    [Parameters("""{"type":"object","properties":{"workspaceId":{"type":"string","description":"The workspace ID"},"filePath":{"type":"string","description":"Path to delete"},"recursive":{"type":"boolean","description":"Set to true to recursively delete a directory. Defaults to false."}},"required":["workspaceId","filePath"]}""")]
-    public async Task<object> DeleteFile(ServiceConfig config, ServiceRequest request)
+    [Parameters(typeof(DeleteFileArgs))]
+    public async Task<object> DeleteFile(ServiceConfig config, DeleteFileArgs request)
     {
         ValidateWorkspaceId(request.WorkspaceId);
         if (string.IsNullOrWhiteSpace(request.FilePath))
@@ -191,8 +191,8 @@ public partial class FileStorageService
 
     [Display(Name = "workspace_exec")]
     [Description("Execute a shell command in a workspace via /bin/bash -c. Returns stdout, stderr, and exit code. No network access. Maximum timeout is 300 seconds.")]
-    [Parameters("""{"type":"object","properties":{"workspaceId":{"type":"string","description":"The workspace ID"},"command":{"type":"string","description":"The shell command to execute"},"workingDirectory":{"type":"string","description":"Working directory inside the container (defaults to /workspace)"},"timeoutSeconds":{"type":"integer","description":"Timeout in seconds (default 30, max 300)"}},"required":["workspaceId","command"]}""")]
-    public async Task<object> ExecCommand(ServiceConfig config, ServiceRequest request)
+    [Parameters(typeof(ExecCommandArgs))]
+    public async Task<object> ExecCommand(ServiceConfig config, ExecCommandArgs request)
     {
         ValidateWorkspaceId(request.WorkspaceId);
         if (string.IsNullOrWhiteSpace(request.Command))
@@ -217,8 +217,8 @@ public partial class FileStorageService
 
     [Display(Name = "workspace_exec_script")]
     [Description("Write a script to the workspace and execute it. Supports Python and Node.js. The script file is cleaned up after execution. No network access.")]
-    [Parameters("""{"type":"object","properties":{"workspaceId":{"type":"string","description":"The workspace ID"},"scriptContent":{"type":"string","description":"The script source code"},"scriptType":{"type":"string","description":"Script type: 'python' or 'node'"},"timeoutSeconds":{"type":"integer","description":"Timeout in seconds (default 30, max 300)"}},"required":["workspaceId","scriptContent","scriptType"]}""")]
-    public async Task<object> ExecScript(ServiceConfig config, ServiceRequest request)
+    [Parameters(typeof(ExecScriptArgs))]
+    public async Task<object> ExecScript(ServiceConfig config, ExecScriptArgs request)
     {
         ValidateWorkspaceId(request.WorkspaceId);
         if (string.IsNullOrWhiteSpace(request.ScriptContent))
@@ -280,8 +280,8 @@ public partial class FileStorageService
 
     [Display(Name = "workspace_copy_between")]
     [Description("Copy a file from one workspace to another. Both workspaces must be running. Reads the file from the source and writes it to the destination.")]
-    [Parameters("""{"type":"object","properties":{"sourceWorkspaceId":{"type":"string","description":"The source workspace ID"},"sourcePath":{"type":"string","description":"File path in the source workspace"},"destWorkspaceId":{"type":"string","description":"The destination workspace ID"},"destPath":{"type":"string","description":"File path in the destination workspace"}},"required":["sourceWorkspaceId","sourcePath","destWorkspaceId","destPath"]}""")]
-    public async Task<object> CopyBetweenWorkspaces(ServiceConfig config, ServiceRequest request)
+    [Parameters(typeof(CopyBetweenWorkspacesArgs))]
+    public async Task<object> CopyBetweenWorkspaces(ServiceConfig config, CopyBetweenWorkspacesArgs request)
     {
         if (string.IsNullOrWhiteSpace(request.SourceWorkspaceId))
             throw new ArgumentException("Missing required parameter: sourceWorkspaceId");

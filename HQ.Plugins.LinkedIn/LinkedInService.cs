@@ -47,14 +47,14 @@ public class LinkedInService
 
     [Display(Name = "get_all_chats")]
     [Description("Retrieves all LinkedIn chat conversations")]
-    [Parameters("""{"type":"object","properties":{},"required":[]}""")]
-    public Task<object> GetAllChats(ServiceConfig config, ServiceRequest request)
+    [Parameters(typeof(EmptyArgs))]
+    public Task<object> GetAllChats(ServiceConfig config, EmptyArgs request)
         => Read(() => _browser.VoyagerAsync("GET", Voyager.Conversations), "conversations");
 
     [Display(Name = "get_chat_messages")]
     [Description("Retrieves messages from a specific LinkedIn chat conversation")]
-    [Parameters("""{"type":"object","properties":{"chatId":{"type":"string","description":"The ID of the chat conversation"},"before":{"type":"string","description":"Retrieve messages before this timestamp"},"after":{"type":"string","description":"Retrieve messages after this timestamp"},"cursor":{"type":"string","description":"Pagination cursor"},"limit":{"type":"integer","description":"Maximum number of messages to retrieve"}},"required":["chatId"]}""")]
-    public Task<object> GetChatMessages(ServiceConfig config, ServiceRequest request)
+    [Parameters(typeof(GetChatMessagesArgs))]
+    public Task<object> GetChatMessages(ServiceConfig config, GetChatMessagesArgs request)
     {
         Require(request.ChatId, "chatId");
         return Read(() => _browser.VoyagerAsync("GET", Voyager.ConversationEvents(request.ChatId)), "messages");
@@ -64,8 +64,8 @@ public class LinkedInService
 
     [Display(Name = "get_user_profile")]
     [Description("Retrieves a LinkedIn user's profile information by username")]
-    [Parameters("""{"type":"object","properties":{"username":{"type":"string","description":"The LinkedIn username to look up"},"notifyProfile":{"type":"boolean","description":"Whether to notify the profile owner of the view"}},"required":["username"]}""")]
-    public Task<object> GetUserProfile(ServiceConfig config, ServiceRequest request)
+    [Parameters(typeof(GetUserProfileArgs))]
+    public Task<object> GetUserProfile(ServiceConfig config, GetUserProfileArgs request)
     {
         Require(request.Username, "username");
         return Metered(RateLimitCategory.Search, config.MaxSearchesPerDay, async () =>
@@ -77,8 +77,8 @@ public class LinkedInService
 
     [Display(Name = "search_people")]
     [Description("Searches LinkedIn for people matching a query (name, title, company, keywords)")]
-    [Parameters("""{"type":"object","properties":{"query":{"type":"string","description":"The search keywords"},"limit":{"type":"integer","description":"Maximum number of results"}},"required":["query"]}""")]
-    public Task<object> SearchPeople(ServiceConfig config, ServiceRequest request)
+    [Parameters(typeof(SearchPeopleArgs))]
+    public Task<object> SearchPeople(ServiceConfig config, SearchPeopleArgs request)
     {
         Require(request.Query, "query");
         return Metered(RateLimitCategory.Search, config.MaxSearchesPerDay, async () =>
@@ -90,8 +90,8 @@ public class LinkedInService
 
     [Display(Name = "lookup_person")]
     [Description("Looks up a single LinkedIn person's full profile by username")]
-    [Parameters("""{"type":"object","properties":{"username":{"type":"string","description":"The LinkedIn username (the slug in linkedin.com/in/{slug})"}},"required":["username"]}""")]
-    public Task<object> LookupPerson(ServiceConfig config, ServiceRequest request)
+    [Parameters(typeof(LookupPersonArgs))]
+    public Task<object> LookupPerson(ServiceConfig config, LookupPersonArgs request)
     {
         Require(request.Username, "username");
         return Metered(RateLimitCategory.Search, config.MaxSearchesPerDay, async () =>
@@ -103,8 +103,8 @@ public class LinkedInService
 
     [Display(Name = "search_companies")]
     [Description("Searches LinkedIn for companies matching a query")]
-    [Parameters("""{"type":"object","properties":{"query":{"type":"string","description":"The company search keywords"},"limit":{"type":"integer","description":"Maximum number of results"}},"required":["query"]}""")]
-    public Task<object> SearchCompanies(ServiceConfig config, ServiceRequest request)
+    [Parameters(typeof(SearchCompaniesArgs))]
+    public Task<object> SearchCompanies(ServiceConfig config, SearchCompaniesArgs request)
     {
         Require(request.Query, "query");
         return Metered(RateLimitCategory.Search, config.MaxSearchesPerDay, async () =>
@@ -116,8 +116,8 @@ public class LinkedInService
 
     [Display(Name = "lookup_company")]
     [Description("Looks up a single LinkedIn company by its universal name (the slug in linkedin.com/company/{slug})")]
-    [Parameters("""{"type":"object","properties":{"companyId":{"type":"string","description":"The company universal name / slug"}},"required":["companyId"]}""")]
-    public Task<object> LookupCompany(ServiceConfig config, ServiceRequest request)
+    [Parameters(typeof(LookupCompanyArgs))]
+    public Task<object> LookupCompany(ServiceConfig config, LookupCompanyArgs request)
     {
         Require(request.CompanyId, "companyId");
         return Metered(RateLimitCategory.Search, config.MaxSearchesPerDay, async () =>
@@ -129,17 +129,17 @@ public class LinkedInService
 
     [Display(Name = "get_inmail_balance")]
     [Description("Retrieves the current InMail credit balance")]
-    [Parameters("""{"type":"object","properties":{},"required":[]}""")]
-    public Task<object> GetInMailBalance(ServiceConfig config, ServiceRequest request)
+    [Parameters(typeof(EmptyArgs))]
+    public Task<object> GetInMailBalance(ServiceConfig config, EmptyArgs request)
         => Read(() => _browser.VoyagerAsync("GET", Voyager.Entitlements), "entitlements");
 
     // ===================== Posting / engagement (writes) =====================
 
     [Display(Name = "create_post")]
     [Description("Creates a new LinkedIn post with the given caption and optional attachments")]
-    [Parameters("""{"type":"object","properties":{"caption":{"type":"string","description":"The text content of the post"},"attachments":{"type":"string","description":"Comma-separated attachment URLs"}},"required":["caption"]}""")]
+    [Parameters(typeof(CreatePostArgs))]
     [SupportsConfirmation]
-    public Task<object> CreatePost(ServiceConfig config, ServiceRequest request)
+    public Task<object> CreatePost(ServiceConfig config, CreatePostArgs request)
     {
         Require(request.Caption, "caption");
         return Confirm(config, request, "Publish this LinkedIn post?", request.Caption, () =>
@@ -148,9 +148,9 @@ public class LinkedInService
 
     [Display(Name = "send_comment")]
     [Description("Sends a comment on a LinkedIn post")]
-    [Parameters("""{"type":"object","properties":{"postId":{"type":"string","description":"The ID of the post to comment on"},"text":{"type":"string","description":"The comment text"}},"required":["postId","text"]}""")]
+    [Parameters(typeof(SendCommentArgs))]
     [SupportsConfirmation]
-    public Task<object> SendComment(ServiceConfig config, ServiceRequest request)
+    public Task<object> SendComment(ServiceConfig config, SendCommentArgs request)
     {
         Require(request.PostId, "postId");
         Require(request.Text, "text");
@@ -161,9 +161,9 @@ public class LinkedInService
 
     [Display(Name = "react_to_post")]
     [Description("Reacts to a LinkedIn post (e.g. like)")]
-    [Parameters("""{"type":"object","properties":{"postId":{"type":"string","description":"The ID (thread URN) of the post to react to"},"text":{"type":"string","description":"Reaction type: LIKE, PRAISE, EMPATHY, INTEREST, APPRECIATION, ENTERTAINMENT. Defaults to LIKE."}},"required":["postId"]}""")]
+    [Parameters(typeof(ReactToPostArgs))]
     [SupportsConfirmation]
-    public Task<object> ReactToPost(ServiceConfig config, ServiceRequest request)
+    public Task<object> ReactToPost(ServiceConfig config, ReactToPostArgs request)
     {
         Require(request.PostId, "postId");
         var reaction = string.IsNullOrWhiteSpace(request.Text) ? "LIKE" : request.Text.ToUpperInvariant();
@@ -176,9 +176,9 @@ public class LinkedInService
 
     [Display(Name = "send_invitation")]
     [Description("Sends a LinkedIn connection invitation to a user")]
-    [Parameters("""{"type":"object","properties":{"username":{"type":"string","description":"The LinkedIn username to invite"},"invitationMessage":{"type":"string","description":"The message to include with the invitation"},"conversationId":{"type":"string","description":"Optional existing conversation ID"}},"required":["username","invitationMessage"]}""")]
+    [Parameters(typeof(SendInvitationArgs))]
     [SupportsConfirmation]
-    public Task<object> SendInvitation(ServiceConfig config, ServiceRequest request)
+    public Task<object> SendInvitation(ServiceConfig config, SendInvitationArgs request)
     {
         Require(request.Username, "username");
         Require(request.InvitationMessage, "invitationMessage");
@@ -198,9 +198,9 @@ public class LinkedInService
 
     [Display(Name = "send_message")]
     [Description("Sends a message in an existing LinkedIn chat conversation")]
-    [Parameters("""{"type":"object","properties":{"chatId":{"type":"string","description":"The ID of the chat conversation"},"text":{"type":"string","description":"The message text to send"}},"required":["chatId","text"]}""")]
+    [Parameters(typeof(SendMessageArgs))]
     [SupportsConfirmation]
-    public Task<object> SendMessage(ServiceConfig config, ServiceRequest request)
+    public Task<object> SendMessage(ServiceConfig config, SendMessageArgs request)
     {
         Require(request.ChatId, "chatId");
         Require(request.Text, "text");
@@ -214,9 +214,9 @@ public class LinkedInService
 
     [Display(Name = "start_new_chat")]
     [Description("Starts a new LinkedIn chat conversation with a user")]
-    [Parameters("""{"type":"object","properties":{"accountType":{"type":"string","description":"The LinkedIn account type (e.g. 'premium', 'basic')"},"username":{"type":"string","description":"The LinkedIn username to chat with"},"text":{"type":"string","description":"The initial message text"},"title":{"type":"string","description":"Optional title for the conversation"}},"required":["accountType","username","text"]}""")]
+    [Parameters(typeof(StartNewChatArgs))]
     [SupportsConfirmation]
-    public Task<object> StartNewChat(ServiceConfig config, ServiceRequest request)
+    public Task<object> StartNewChat(ServiceConfig config, StartNewChatArgs request)
     {
         Require(request.AccountType, "accountType");
         Require(request.Username, "username");
@@ -236,7 +236,7 @@ public class LinkedInService
 
     // ===================== Voyager write-body builders (drift-prone — verify vs live client) =====================
 
-    private static object BuildShareBody(ServiceRequest request)
+    private static object BuildShareBody(CreatePostArgs request)
     {
         var attachments = string.IsNullOrWhiteSpace(request.Attachments)
             ? Array.Empty<string>()
@@ -276,7 +276,7 @@ public class LinkedInService
         => Guard(async () => Shape(await call(), "result"));
 
     /// <summary>Stripe-style confirmation wrapper: first call requests confirmation, second executes.</summary>
-    private async Task<object> Confirm(ServiceConfig config, ServiceRequest request, string message, string content, Func<Task<object>> execute)
+    private async Task<object> Confirm(ServiceConfig config, IPluginServiceRequest request, string message, string content, Func<Task<object>> execute)
     {
         if (config.RequiresConfirmation && _notificationService != null)
         {

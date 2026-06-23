@@ -1,4 +1,4 @@
-﻿using System.ComponentModel;
+using System.ComponentModel;
 using System.ComponentModel.DataAnnotations;
 using System.Globalization;
 using HQ.Models;
@@ -47,10 +47,10 @@ public class CalService
         });
     }
 
-    public async Task<object> GetEvents(ServiceRequest serviceRequest)
+    public async Task<object> GetEvents(string calendarId)
     {
-        var calendarId = !string.IsNullOrWhiteSpace(serviceRequest.CalendarId) 
-            ? serviceRequest.CalendarId 
+        calendarId = !string.IsNullOrWhiteSpace(calendarId)
+            ? calendarId
             : "primary";
         try
         {
@@ -61,11 +61,11 @@ public class CalService
             throw new Exception($"Error fetching event: {ex.Message}");
         }
     }
-    
-    public async Task<object> GetCalendar(ServiceRequest serviceRequest)
+
+    public async Task<object> GetCalendar(string calendarId)
     {
-        var calendarId = !string.IsNullOrWhiteSpace(serviceRequest.CalendarId) 
-            ? serviceRequest.CalendarId 
+        calendarId = !string.IsNullOrWhiteSpace(calendarId)
+            ? calendarId
             : "primary";
         try
         {
@@ -77,17 +77,17 @@ public class CalService
         }
     }
 
-    public async Task<object> GetCalendars(ServiceRequest serviceRequest)
+    public async Task<object> GetCalendars(GetCalendarsArgs request)
     {
         try
         {
             var result = await _calendarService.CalendarList.List().ExecuteAsync();
-            if (!string.IsNullOrWhiteSpace(serviceRequest.RequestingService))
+            if (!string.IsNullOrWhiteSpace(request.RequestingService))
             {
                 return new OrchestratorRequest
                 {
-                    Service = serviceRequest.RequestingService,
-                    ToolCallId = serviceRequest.ToolCallId
+                    Service = request.RequestingService,
+                    ToolCallId = request.ToolCallId
                 };
             }
 
@@ -98,17 +98,16 @@ public class CalService
             throw new Exception($"Error fetching event: {ex.Message}");
         }
     }
-    
-    public async Task<object> GetEvent(ServiceRequest serviceRequest)
+
+    public async Task<object> GetEvent(string eventId, string calendarId)
     {
-        if (string.IsNullOrWhiteSpace(serviceRequest.EventId))
+        if (string.IsNullOrWhiteSpace(eventId))
         {
             throw new Exception("Missing parameter: eventId.");
         }
 
-        var eventId = serviceRequest.EventId;
-        var calendarId = !string.IsNullOrWhiteSpace(serviceRequest.CalendarId) 
-            ? serviceRequest.CalendarId 
+        calendarId = !string.IsNullOrWhiteSpace(calendarId)
+            ? calendarId
             : "primary";
 
         try
@@ -122,17 +121,17 @@ public class CalService
     }
 
     // Edit event details on Google Calendar
-    public async Task<object> EditEvent(ServiceRequest serviceRequest)
+    public async Task<object> EditEvent(EditCalendarEventArgs request)
     {
-        if (string.IsNullOrWhiteSpace(serviceRequest.EventId) || string.IsNullOrWhiteSpace(serviceRequest.Summary))
+        if (string.IsNullOrWhiteSpace(request.EventId) || string.IsNullOrWhiteSpace(request.Summary))
         {
             throw new Exception("Missing required parameters: eventId, summary.");
         }
 
-        var eventId = serviceRequest.EventId;
-        var summary = serviceRequest.Summary;
-        var calendarId = !string.IsNullOrWhiteSpace(serviceRequest.CalendarId) 
-            ? serviceRequest.CalendarId
+        var eventId = request.EventId;
+        var summary = request.Summary;
+        var calendarId = !string.IsNullOrWhiteSpace(request.CalendarId)
+            ? request.CalendarId
             : "primary";
 
         try
@@ -157,40 +156,40 @@ public class CalService
             throw new Exception($"Error updating event: {ex.Message}");
         }
     }
-    
-    public async Task<object> AddEvent(ServiceRequest serviceRequest)
+
+    public async Task<object> AddEvent(AddCalendarEventArgs request)
     {
-        if (string.IsNullOrWhiteSpace(serviceRequest.Summary))
+        if (string.IsNullOrWhiteSpace(request.Summary))
         {
             throw new Exception("Missing required parameters: summary.");
         }
-        
-        var calendarId = !string.IsNullOrWhiteSpace(serviceRequest.CalendarId) 
-            ? serviceRequest.CalendarId
+
+        var calendarId = !string.IsNullOrWhiteSpace(request.CalendarId)
+            ? request.CalendarId
             : "primary";
 
         try
         {
             var calendarEvent = new Event
             {
-                Attendees = serviceRequest.Attendees.Select(s => s.ToGoogleEventAttendee()).ToList(),
-                Description = serviceRequest.Description,
-                Location = serviceRequest.Location,
+                Attendees = request.Attendees.Select(s => s.ToGoogleEventAttendee()).ToList(),
+                Description = request.Description,
+                Location = request.Location,
                 Start = new EventDateTime
                 {
-                    DateTimeRaw = serviceRequest.StartDate.ToString()
+                    DateTimeRaw = request.StartDate.ToString()
                 },
                 End = new EventDateTime
                 {
-                    DateTimeRaw = serviceRequest.EndDate.ToString()
+                    DateTimeRaw = request.EndDate.ToString()
                 },
                 Reminders = new Event.RemindersData
                 {
-                    Overrides = serviceRequest.Reminders
+                    Overrides = request.Reminders
                 }
             };
             var insertRequest = await _calendarService.Events.Insert(calendarEvent, calendarId).ExecuteAsync();
-            
+
             return new
             {
                 EventId = insertRequest.Id,
@@ -205,8 +204,8 @@ public class CalService
             throw new Exception($"Error updating event: {ex.Message}");
         }
     }
-    
-    public async Task<object> GetEventsForDay(ServiceRequest serviceRequest)
+
+    public async Task<object> GetEventsForDay(GetCalendarEventsForDayArgs request)
     {
         if (string.IsNullOrWhiteSpace("date"))
         {
@@ -214,16 +213,16 @@ public class CalService
         }
 
         // Parse the input date
-        if (!DateTime.TryParseExact(serviceRequest.Date.Value.ToString("yyyy-MM-dd"), "yyyy-MM-dd", CultureInfo.InvariantCulture, DateTimeStyles.None, out var date))
+        if (!DateTime.TryParseExact(request.Date.Value.ToString("yyyy-MM-dd"), "yyyy-MM-dd", CultureInfo.InvariantCulture, DateTimeStyles.None, out var date))
         {
             throw new Exception("Invalid date format. Use 'yyyy-MM-dd'.");
         }
 
-        if (!string.IsNullOrWhiteSpace(serviceRequest.CalendarId))
+        if (!string.IsNullOrWhiteSpace(request.CalendarId))
         {
-            return await GetCalendar(serviceRequest.CalendarId, serviceRequest.Date.Value);
+            return await GetCalendar(request.CalendarId, request.Date.Value);
         }
-        
+
         var calendarList = await _calendarService.CalendarList.List().ExecuteAsync();
         List<object> calendarItems = new();
         if (calendarList.Items.Any())
@@ -253,15 +252,15 @@ public class CalService
         return null;
     }
 
-    public async Task<object> GetEventsForDateRange(ServiceRequest serviceRequest)
+    public async Task<object> GetEventsForDateRange(GetCalendarEventsForRangeArgs request)
     {
-        if (serviceRequest.StartDate == null || serviceRequest.EndDate == null)
+        if (request.StartDate == null || request.EndDate == null)
         {
             throw new Exception("Missing parameters: startDate and endDate are required.");
         }
 
         // Validate date range
-        if (serviceRequest.StartDate > serviceRequest.EndDate)
+        if (request.StartDate > request.EndDate)
         {
             throw new Exception("Start date must be before or equal to end date.");
         }
@@ -275,7 +274,7 @@ public class CalService
             {
                 try
                 {
-                    var events = await GetEventsInDateRange(calendar.Id, serviceRequest.StartDate.Value, serviceRequest.EndDate.Value);
+                    var events = await GetEventsInDateRange(calendar.Id, request.StartDate.Value, request.EndDate.Value);
                     allEvents.AddRange(events);
                 }
                 catch (Exception ex)
@@ -349,64 +348,64 @@ public class CalService
 
     [Display(Name = "get_calendar_events")]
     [Description("Retrieves all events from a Google Calendar. Optionally specify a calendarId, defaults to primary calendar.")]
-    [Parameters("""{"type":"object","properties":{"calendarId":{"type":"string","description":"The calendar ID to retrieve events from. Defaults to 'primary'."}},"required":[]}""")]
-    public async Task<object> GetCalendarEvents(ServiceConfig config, ServiceRequest request)
+    [Parameters(typeof(GetCalendarEventsArgs))]
+    public async Task<object> GetCalendarEvents(ServiceConfig config, GetCalendarEventsArgs request)
     {
-        return await GetEvents(request);
+        return await GetEvents(request.CalendarId);
     }
 
     [Display(Name = "get_calendar_event")]
     [Description("Retrieves a specific event from a Google Calendar by its event ID.")]
-    [Parameters("""{"type":"object","properties":{"eventId":{"type":"string","description":"The ID of the event to retrieve"},"calendarId":{"type":"string","description":"The calendar ID. Defaults to 'primary'."}},"required":["eventId"]}""")]
-    public async Task<object> GetCalendarEvent(ServiceConfig config, ServiceRequest request)
+    [Parameters(typeof(GetCalendarEventArgs))]
+    public async Task<object> GetCalendarEvent(ServiceConfig config, GetCalendarEventArgs request)
     {
-        return await GetEvent(request);
+        return await GetEvent(request.EventId, request.CalendarId);
     }
 
     [Display(Name = "edit_calendar_event")]
     [Description("Edits an existing event on a Google Calendar. Requires the event ID and new summary.")]
-    [Parameters("""{"type":"object","properties":{"eventId":{"type":"string","description":"The ID of the event to edit"},"summary":{"type":"string","description":"The new summary/title for the event"},"calendarId":{"type":"string","description":"The calendar ID. Defaults to 'primary'."}},"required":["eventId","summary"]}""")]
-    public async Task<object> EditCalendarEvent(ServiceConfig config, ServiceRequest request)
+    [Parameters(typeof(EditCalendarEventArgs))]
+    public async Task<object> EditCalendarEvent(ServiceConfig config, EditCalendarEventArgs request)
     {
         return await EditEvent(request);
     }
 
     [Display(Name = "get_calendar_events_for_day")]
     [Description("Retrieves all events across all calendars for a specific date. Optionally specify a calendarId to filter to one calendar.")]
-    [Parameters("""{"type":"object","properties":{"date":{"type":"string","description":"The date to retrieve events for in yyyy-MM-dd format"},"calendarId":{"type":"string","description":"Optional calendar ID to filter events to a specific calendar"}},"required":["date"]}""")]
-    public async Task<object> GetCalendarEventsForDay(ServiceConfig config, ServiceRequest request)
+    [Parameters(typeof(GetCalendarEventsForDayArgs))]
+    public async Task<object> GetCalendarEventsForDay(ServiceConfig config, GetCalendarEventsForDayArgs request)
     {
         return await GetEventsForDay(request);
     }
 
     [Display(Name = "get_calendar_events_for_range")]
     [Description("Retrieves all events across all calendars for a date range.")]
-    [Parameters("""{"type":"object","properties":{"startDate":{"type":"string","description":"The start date of the range in yyyy-MM-dd format"},"endDate":{"type":"string","description":"The end date of the range in yyyy-MM-dd format"}},"required":["startDate","endDate"]}""")]
-    public async Task<object> GetCalendarEventsForRange(ServiceConfig config, ServiceRequest request)
+    [Parameters(typeof(GetCalendarEventsForRangeArgs))]
+    public async Task<object> GetCalendarEventsForRange(ServiceConfig config, GetCalendarEventsForRangeArgs request)
     {
         return await GetEventsForDateRange(request);
     }
 
     [Display(Name = "get_calendars")]
     [Description("Retrieves a list of all available Google Calendars for the authenticated user.")]
-    [Parameters("""{"type":"object","properties":{},"required":[]}""")]
-    public async Task<object> GetAllCalendars(ServiceConfig config, ServiceRequest request)
+    [Parameters(typeof(GetCalendarsArgs))]
+    public async Task<object> GetAllCalendars(ServiceConfig config, GetCalendarsArgs request)
     {
         return await GetCalendars(request);
     }
 
     [Display(Name = "get_calendar")]
     [Description("Retrieves details of a specific Google Calendar by its calendar ID.")]
-    [Parameters("""{"type":"object","properties":{"calendarId":{"type":"string","description":"The calendar ID to retrieve. Defaults to 'primary'."}},"required":[]}""")]
-    public async Task<object> GetSingleCalendar(ServiceConfig config, ServiceRequest request)
+    [Parameters(typeof(GetSingleCalendarArgs))]
+    public async Task<object> GetSingleCalendar(ServiceConfig config, GetSingleCalendarArgs request)
     {
-        return await GetCalendar(request);
+        return await GetCalendar(request.CalendarId);
     }
 
     [Display(Name = "add_calendar_event")]
     [Description("Creates a new event on a Google Calendar with summary, start/end times, location, attendees, and reminders.")]
-    [Parameters("""{"type":"object","properties":{"summary":{"type":"string","description":"The title/summary of the event"},"startDate":{"type":"string","description":"The start date and time of the event"},"endDate":{"type":"string","description":"The end date and time of the event"},"calendarId":{"type":"string","description":"The calendar ID. Defaults to 'primary'."},"location":{"type":"string","description":"The location of the event"},"description":{"type":"string","description":"A description of the event"},"attendees":{"type":"array","description":"List of attendees","items":{"type":"object","properties":{"email":{"type":"string"},"displayName":{"type":"string"}}}}},"required":["summary","startDate","endDate"]}""")]
-    public async Task<object> AddCalendarEvent(ServiceConfig config, ServiceRequest request)
+    [Parameters(typeof(AddCalendarEventArgs))]
+    public async Task<object> AddCalendarEvent(ServiceConfig config, AddCalendarEventArgs request)
     {
         return await AddEvent(request);
     }

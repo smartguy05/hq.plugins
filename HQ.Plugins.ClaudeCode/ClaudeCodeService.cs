@@ -4,6 +4,7 @@ using System.Text;
 using System.Text.Json;
 using HQ.Models;
 using HQ.Models.Enums;
+using HQ.Models.Extensions;
 using HQ.Models.Helpers;
 using HQ.Models.Interfaces;
 using HQ.Plugins.ClaudeCode.Models;
@@ -15,6 +16,7 @@ public class ClaudeCodeService
     private readonly ServiceConfig _config;
     private readonly LogDelegate _logger;
     private readonly ContainerManager _containers;
+    private INotificationService _notificationService;
 
     public ClaudeCodeService(ServiceConfig config, LogDelegate logger)
     {
@@ -23,27 +25,18 @@ public class ClaudeCodeService
         _containers = new ContainerManager(config);
     }
 
-    public async Task<object> ProcessRequest(ServiceRequest request, ServiceConfig config, INotificationService notificationService)
+    public Task<object> ProcessRequest(object rawServiceRequest, ServiceConfig config, INotificationService notificationService)
     {
-        return request.Method switch
-        {
-            ClaudeCodeMethods.Task => await RunTask(request),
-            ClaudeCodeMethods.Continue => await ContinueSession(request),
-            ClaudeCodeMethods.Review => await ReviewChanges(request),
-            ClaudeCodeMethods.Status => await GetStatus(request),
-            ClaudeCodeMethods.GetDiff => await GetDiff(request),
-            ClaudeCodeMethods.CreatePr => await CreatePr(request, notificationService),
-            ClaudeCodeMethods.DestroySession => await DestroySession(request),
-            _ => new { Success = false, Message = $"Unknown method: {request.Method}" }
-        };
+        _notificationService = notificationService;
+        return this.ProcessRequest<ClaudeCodeService>(rawServiceRequest, config, notificationService);
     }
 
     // ───────────────────────────── Tools ─────────────────────────────
 
     [Display(Name = ClaudeCodeMethods.Task)]
     [Description("Run a coding task with Claude Code. Clones a repo (if needed), prompts Claude Code to do the work, and returns structured JSON results. Use for bug fixes, new features, refactoring, tests, etc.")]
-    [Parameters("""{"type":"object","properties":{"prompt":{"type":"string","description":"The task/instruction for Claude Code (e.g. 'Fix the auth bug in login.ts and add tests')"},"repoUrl":{"type":"string","description":"GitHub repo URL to clone (e.g. 'https://github.com/org/repo'). Optional if repo already cloned in session."},"branch":{"type":"string","description":"Branch to checkout or create for the work"},"baseBranch":{"type":"string","description":"Base branch for new branch creation (default: main)"},"sessionId":{"type":"string","description":"Session ID to reuse an existing container. If omitted, a new session is created."},"maxTurns":{"type":"integer","description":"Override max agentic iterations (default from config)"},"allowedTools":{"type":"string","description":"Override tool allowlist (comma-separated, e.g. 'Bash,Read,Edit,Write')"},"systemPrompt":{"type":"string","description":"Additional system prompt to append (e.g. coding standards, constraints)"}},"required":["prompt"]}""")]
-    public async Task<object> RunTask(ServiceRequest request)
+    [Parameters(typeof(TaskArgs))]
+    public async Task<object> RunTask(ServiceConfig config, TaskArgs request)
     {
         var sessionId = request.SessionId ?? Guid.NewGuid().ToString("N")[..12];
         await _containers.EnsureContainerAsync(sessionId);
@@ -55,28 +48,28 @@ public class ClaudeCodeService
         }
 
         // Run Claude Code
-        var result = await RunClaudeCode(sessionId, request.Prompt, request);
+        var result = await RunClaudeCode(sessionId, request.Prompt, request.MaxTurns, request.AllowedTools, request.SystemPrompt);
         result.SessionId = sessionId;
         return result;
     }
 
     [Display(Name = ClaudeCodeMethods.Continue)]
     [Description("Continue a previous Claude Code session with a follow-up prompt. Uses --resume to maintain context. For multi-step workflows like 'now write tests for what you just built.'")]
-    [Parameters("""{"type":"object","properties":{"sessionId":{"type":"string","description":"Session ID from a previous claude_code_task call"},"prompt":{"type":"string","description":"Follow-up instruction (e.g. 'Now write tests for the changes you just made')"},"maxTurns":{"type":"integer","description":"Override max agentic iterations"},"allowedTools":{"type":"string","description":"Override tool allowlist"}},"required":["sessionId","prompt"]}""")]
-    public async Task<object> ContinueSession(ServiceRequest request)
+    [Parameters(typeof(ContinueArgs))]
+    public async Task<object> ContinueSession(ServiceConfig config, ContinueArgs request)
     {
         if (string.IsNullOrWhiteSpace(request.SessionId))
             return new { Success = false, Message = "sessionId is required" };
 
-        var result = await RunClaudeCode(request.SessionId, request.Prompt, request, resume: true);
+        var result = await RunClaudeCode(request.SessionId, request.Prompt, request.MaxTurns, request.AllowedTools, null, resume: true);
         result.SessionId = request.SessionId;
         return result;
     }
 
     [Display(Name = ClaudeCodeMethods.Review)]
     [Description("Ask Claude Code to review its own changes against criteria (security, style, correctness). Returns structured pass/fail assessment.")]
-    [Parameters("""{"type":"object","properties":{"sessionId":{"type":"string","description":"Session ID of the container with changes to review"},"prompt":{"type":"string","description":"Review criteria (e.g. 'Check for security vulnerabilities, edge cases, and code style issues'). If omitted, uses a default review prompt."}},"required":["sessionId"]}""")]
-    public async Task<object> ReviewChanges(ServiceRequest request)
+    [Parameters(typeof(ReviewArgs))]
+    public async Task<object> ReviewChanges(ServiceConfig config, ReviewArgs request)
     {
         if (string.IsNullOrWhiteSpace(request.SessionId))
             return new { Success = false, Message = "sessionId is required" };
@@ -85,15 +78,15 @@ public class ClaudeCodeService
             ? "Review the current git diff. Check for: 1) Security vulnerabilities 2) Correctness issues 3) Edge cases not handled 4) Code style problems. Return a JSON object with fields: passed (bool), issues (array of {severity, description, file, line}), summary (string)."
             : request.Prompt;
 
-        var result = await RunClaudeCode(request.SessionId, reviewPrompt, request);
+        var result = await RunClaudeCode(request.SessionId, reviewPrompt, null, null, null);
         result.SessionId = request.SessionId;
         return result;
     }
 
     [Display(Name = ClaudeCodeMethods.Status)]
     [Description("Check if a Claude Code session container is running and get its status.")]
-    [Parameters("""{"type":"object","properties":{"sessionId":{"type":"string","description":"Session ID to check"}},"required":["sessionId"]}""")]
-    public async Task<object> GetStatus(ServiceRequest request)
+    [Parameters(typeof(StatusArgs))]
+    public async Task<object> GetStatus(ServiceConfig config, StatusArgs request)
     {
         if (string.IsNullOrWhiteSpace(request.SessionId))
             return new { Success = false, Message = "sessionId is required" };
@@ -104,8 +97,8 @@ public class ClaudeCodeService
 
     [Display(Name = ClaudeCodeMethods.GetDiff)]
     [Description("Get the current git diff from the container without prompting Claude Code. Useful for inspecting changes before approving a PR.")]
-    [Parameters("""{"type":"object","properties":{"sessionId":{"type":"string","description":"Session ID of the container with changes"}},"required":["sessionId"]}""")]
-    public async Task<object> GetDiff(ServiceRequest request)
+    [Parameters(typeof(GetDiffArgs))]
+    public async Task<object> GetDiff(ServiceConfig config, GetDiffArgs request)
     {
         if (string.IsNullOrWhiteSpace(request.SessionId))
             return new { Success = false, Message = "sessionId is required" };
@@ -133,9 +126,10 @@ public class ClaudeCodeService
 
     [Display(Name = ClaudeCodeMethods.CreatePr)]
     [Description("Prompt Claude Code to commit, push, and create a PR. Uses confirmation flow since this is externally visible. The HQ agent should review the diff first via claude_code_get_diff.")]
-    [Parameters("""{"type":"object","properties":{"sessionId":{"type":"string","description":"Session ID of the container with changes to commit and push"},"prompt":{"type":"string","description":"PR creation instructions (e.g. 'Commit all changes and create a PR titled Fix #42: auth bug')"}},"required":["sessionId","prompt"]}""")]
-    public async Task<object> CreatePr(ServiceRequest request, INotificationService notificationService)
+    [Parameters(typeof(CreatePrArgs))]
+    public async Task<object> CreatePr(ServiceConfig config, CreatePrArgs request)
     {
+        var notificationService = _notificationService;
         if (string.IsNullOrWhiteSpace(request.SessionId))
             return new { Success = false, Message = "sessionId is required" };
 
@@ -176,15 +170,15 @@ public class ClaudeCodeService
             ? "Commit all changes with a descriptive message, push the branch, and create a pull request."
             : request.Prompt;
 
-        var result = await RunClaudeCode(request.SessionId, prPrompt, request);
+        var result = await RunClaudeCode(request.SessionId, prPrompt, null, null, null);
         result.SessionId = request.SessionId;
         return result;
     }
 
     [Display(Name = ClaudeCodeMethods.DestroySession)]
     [Description("Stop and remove the container and volume for a Claude Code session. Call when the workflow is complete or abandoned.")]
-    [Parameters("""{"type":"object","properties":{"sessionId":{"type":"string","description":"Session ID to destroy"}},"required":["sessionId"]}""")]
-    public async Task<object> DestroySession(ServiceRequest request)
+    [Parameters(typeof(DestroySessionArgs))]
+    public async Task<object> DestroySession(ServiceConfig config, DestroySessionArgs request)
     {
         if (string.IsNullOrWhiteSpace(request.SessionId))
             return new { Success = false, Message = "sessionId is required" };
@@ -242,11 +236,11 @@ public class ClaudeCodeService
             "git config user.email 'hq-agent@automated.dev' && git config user.name 'HQ Agent'", cloneDir, 10);
     }
 
-    private async Task<TaskResult> RunClaudeCode(string sessionId, string prompt, ServiceRequest request, bool resume = false)
+    private async Task<TaskResult> RunClaudeCode(string sessionId, string prompt, int? maxTurnsOverride, string allowedToolsOverride, string systemPrompt, bool resume = false)
     {
-        var maxTurns = request.MaxTurns ?? _config.MaxTurns;
-        var allowedTools = request.AllowedTools ?? _config.AllowedTools;
-        var outputFormat = request.OutputFormat ?? "json";
+        var maxTurns = maxTurnsOverride ?? _config.MaxTurns;
+        var allowedTools = allowedToolsOverride ?? _config.AllowedTools;
+        var outputFormat = "json";
         var timeout = _config.TimeoutSeconds;
 
         // Build claude command
@@ -268,9 +262,9 @@ public class ClaudeCodeService
                 cmd.Append($" --allowedTools '{tool}'");
         }
 
-        if (!string.IsNullOrWhiteSpace(request.SystemPrompt))
+        if (!string.IsNullOrWhiteSpace(systemPrompt))
         {
-            var escapedSystem = request.SystemPrompt.Replace("'", "'\\''");
+            var escapedSystem = systemPrompt.Replace("'", "'\\''");
             cmd.Append($" --append-system-prompt '{escapedSystem}'");
         }
 

@@ -22,7 +22,7 @@ public class GoogleCalendarCommand : CommandBase<ServiceRequest,ServiceConfig>
         try
         {
             var calendarService = new CalService(config, Logger);
-            return await calendarService.ProcessRequest(serviceRequest, config, NotificationService);
+            return await calendarService.ProcessRequest(RawServiceRequest, config, NotificationService);
         }
         catch (Exception e)
         {

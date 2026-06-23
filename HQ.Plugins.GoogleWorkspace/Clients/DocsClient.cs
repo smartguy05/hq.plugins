@@ -12,7 +12,7 @@ public class DocsClient
 
     public DocsClient(ServiceConfig config) => _docs = GoogleClientFactory.CreateDocs(config);
 
-    public async Task<object> Create(ServiceRequest r)
+    public async Task<object> Create(DocsCreateArgs r)
     {
         var doc = await _docs.Documents.Create(new Document { Title = r.Title ?? r.Name ?? "Untitled document" }).ExecuteAsync();
 
@@ -44,14 +44,14 @@ public class DocsClient
         };
     }
 
-    public async Task<object> GetText(ServiceRequest r)
+    public async Task<object> GetText(DocsGetTextArgs r)
     {
         if (string.IsNullOrWhiteSpace(r.FileId)) return new { Success = false, Error = "fileId (documentId) is required" };
         var doc = await _docs.Documents.Get(r.FileId).ExecuteAsync();
         return new { Success = true, DocumentId = doc.DocumentId, doc.Title, Text = ExtractText(doc.Body) };
     }
 
-    public async Task<object> AppendText(ServiceRequest r)
+    public async Task<object> AppendText(DocsAppendTextArgs r)
     {
         if (string.IsNullOrWhiteSpace(r.FileId)) return new { Success = false, Error = "fileId (documentId) is required" };
         if (string.IsNullOrEmpty(r.Text)) return new { Success = false, Error = "text is required" };
@@ -79,7 +79,7 @@ public class DocsClient
         return new { Success = true, DocumentId = r.FileId, InsertedAt = insertAt };
     }
 
-    public async Task<object> ReplaceText(ServiceRequest r)
+    public async Task<object> ReplaceText(DocsReplaceTextArgs r)
     {
         if (string.IsNullOrWhiteSpace(r.FileId)) return new { Success = false, Error = "fileId (documentId) is required" };
         if (string.IsNullOrEmpty(r.Find)) return new { Success = false, Error = "find is required" };

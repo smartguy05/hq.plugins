@@ -25,73 +25,15 @@ public class StringOrNumberConverter : JsonConverter<string>
         => writer.WriteStringValue(value);
 }
 
+/// <summary>
+/// Framework request envelope (the <c>T</c> in <c>CommandBase&lt;T, ServiceConfig&gt;</c>). Carries
+/// only the orchestrator-supplied routing fields; per-tool LLM arguments now live on each tool's
+/// dedicated args type (see <c>ToolArgs.cs</c>) and are bound by <c>ProcessRequest</c>.
+/// </summary>
 public record ServiceRequest : IPluginServiceRequest
 {
     public string Method { get; set; }
     public string ToolCallId { get; set; }
     public string RequestingService { get; set; }
     public string ConfirmationId { get; set; }
-
-    // Task fields — converter handles LLMs sending numeric GIDs without quotes
-    [JsonConverter(typeof(StringOrNumberConverter))]
-    public string TaskId { get; set; }
-    public string Name { get; set; }
-    public string Notes { get; set; }
-    public string HtmlNotes { get; set; }
-    public string Assignee { get; set; }
-    public string DueOn { get; set; }
-    public string DueAt { get; set; }
-    public string StartOn { get; set; }
-    public bool? Completed { get; set; }
-    [JsonConverter(typeof(StringOrNumberConverter))]
-    public string Parent { get; set; }
-    public string Followers { get; set; }
-    public string CustomFields { get; set; }
-
-    // Project fields
-    [JsonConverter(typeof(StringOrNumberConverter))]
-    public string ProjectId { get; set; }
-    [JsonConverter(typeof(StringOrNumberConverter))]
-    public string SectionId { get; set; }
-    public bool? Archived { get; set; }
-
-    // Aliases — LLMs sometimes use "project"/"section" instead of "projectId"/"sectionId",
-    // and may send numeric GIDs instead of strings.
-    [JsonPropertyName("project")]
-    public JsonElement? ProjectAlias { set => ProjectId ??= value?.ToString(); }
-
-    [JsonPropertyName("section")]
-    public JsonElement? SectionAlias { set => SectionId ??= value?.ToString(); }
-
-    // Workspace/org fields
-    public string Workspace { get; set; }
-    public string Team { get; set; }
-
-    // User fields
-    public string UserId { get; set; }
-
-    // Search fields
-    public string Text { get; set; }
-    public string Query { get; set; }
-    public string ResourceType { get; set; }
-    public string AssigneeAny { get; set; }
-    public string ProjectsAny { get; set; }
-    public string DueOnBefore { get; set; }
-    public string DueOnAfter { get; set; }
-    public string SortBy { get; set; }
-    public bool? SortAscending { get; set; }
-
-    // Story/comment fields
-    public string StoryText { get; set; }
-    public string HtmlText { get; set; }
-
-    // Pagination & options
-    public int? Limit { get; set; }
-    public string Offset { get; set; }
-    public string OptFields { get; set; }
-    public int? Count { get; set; }
-
-    // Flags
-    public bool? IncludeSubtasks { get; set; }
-    public bool? IncludeComments { get; set; }
 }

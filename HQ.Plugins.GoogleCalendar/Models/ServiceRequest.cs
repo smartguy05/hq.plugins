@@ -1,22 +1,16 @@
-﻿using HQ.Models.Interfaces;
-using Google.Apis.Calendar.v3.Data;
+using HQ.Models.Interfaces;
 
 namespace HQ.Plugins.GoogleCalendar.Models;
 
-public record ServiceRequest: IPluginServiceRequest
+/// <summary>
+/// Framework request envelope (the <c>T</c> in <c>CommandBase&lt;T, ServiceConfig&gt;</c>). Carries
+/// only the orchestrator-supplied routing fields; per-tool LLM arguments now live on each tool's
+/// dedicated args type (see <c>ToolArgs.cs</c>) and are bound by <c>ProcessRequest</c>.
+/// </summary>
+public record ServiceRequest : IPluginServiceRequest
 {
     public string Method { get; set; }
     public string ToolCallId { get; set; }
     public string RequestingService { get; set; }
     public string ConfirmationId { get; set; }
-    public string EventId { get; init; }
-    public string CalendarId { get; init; }
-    public string Summary { get; init; }
-    public string Location { get; set; }
-    public string Description { get; set; }
-    public DateTime? Date { get; init; }
-    public DateTime? StartDate { get; set; }
-    public DateTime? EndDate { get; set; }
-    public List<CalendarEventAttendee> Attendees { get; set; }
-    public List<EventReminder> Reminders { get; set; }
 }

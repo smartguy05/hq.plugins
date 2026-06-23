@@ -2,19 +2,15 @@ using HQ.Models.Interfaces;
 
 namespace HQ.Plugins.Teams.Models;
 
+/// <summary>
+/// Framework request envelope (the <c>T</c> in <c>CommandBase&lt;T, ServiceConfig&gt;</c>). Carries
+/// only the orchestrator-supplied routing fields; per-tool LLM arguments now live on each tool's
+/// dedicated args type (see <c>ToolArgs.cs</c>) and are bound by <c>ProcessRequest</c>.
+/// </summary>
 public class ServiceRequest : IPluginServiceRequest
 {
     public string Method { get; set; }
     public string ToolCallId { get; set; }
     public string RequestingService { get; set; }
     public string ConfirmationId { get; set; }
-    // Teams-specific
-    public string TeamId { get; set; }
-    public string ChannelId { get; set; }
-    public string ChatId { get; set; }
-    public string MessageText { get; set; }
-    public string FileContent { get; set; }     // Base64
-    public string FileName { get; set; }
-    public string FileType { get; set; }
-    public string DriveItemId { get; set; }
 }

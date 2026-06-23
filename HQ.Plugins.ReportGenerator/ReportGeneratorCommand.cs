@@ -31,13 +31,13 @@ public class ReportGeneratorCommand : CommandBase<ServiceRequest, ServiceConfig>
 
     protected override async Task<object> DoWork(ServiceRequest serviceRequest, ServiceConfig config, IEnumerable<ToolCall> availableToolCalls)
     {
-        return await this.ProcessRequest(serviceRequest, config, NotificationService);
+        return await this.ProcessRequest(RawServiceRequest, config, NotificationService);
     }
 
     [Display(Name = "generate_report")]
     [Description("Generate a formatted report from markdown content. Outputs HTML or Markdown file to the configured output directory.")]
-    [Parameters("""{"type":"object","properties":{"title":{"type":"string","description":"Report title"},"content":{"type":"string","description":"Report content in Markdown format"},"format":{"type":"string","description":"Output format: html or markdown (default: html)"},"fileName":{"type":"string","description":"Output filename without extension (auto-generated from title and date if empty)"}},"required":["title","content"]}""")]
-    public async Task<object> GenerateReport(ServiceConfig config, ServiceRequest request)
+    [Parameters(typeof(GenerateReportArgs))]
+    public async Task<object> GenerateReport(ServiceConfig config, GenerateReportArgs request)
     {
         if (string.IsNullOrWhiteSpace(request.Title))
             throw new ArgumentException("Missing required parameter: title");
@@ -141,8 +141,8 @@ public class ReportGeneratorCommand : CommandBase<ServiceRequest, ServiceConfig>
 
     [Display(Name = "list_reports")]
     [Description("List previously generated reports with timestamps and file paths.")]
-    [Parameters("""{"type":"object","properties":{},"required":[]}""")]
-    public async Task<object> ListReports(ServiceConfig config, ServiceRequest request)
+    [Parameters(typeof(EmptyArgs))]
+    public async Task<object> ListReports(ServiceConfig config, EmptyArgs request)
     {
         if (_fileStorage != null)
         {
@@ -185,8 +185,8 @@ public class ReportGeneratorCommand : CommandBase<ServiceRequest, ServiceConfig>
 
     [Display(Name = "get_report")]
     [Description("Read the content of a previously generated report by its report ID.")]
-    [Parameters("""{"type":"object","properties":{"reportId":{"type":"string","description":"The report ID returned from generate_report or list_reports"}},"required":["reportId"]}""")]
-    public async Task<object> GetReport(ServiceConfig config, ServiceRequest request)
+    [Parameters(typeof(GetReportArgs))]
+    public async Task<object> GetReport(ServiceConfig config, GetReportArgs request)
     {
         if (string.IsNullOrWhiteSpace(request.ReportId))
             throw new ArgumentException("Missing required parameter: reportId");

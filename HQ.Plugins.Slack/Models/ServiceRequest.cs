@@ -1,28 +1,16 @@
-using System.Text.Json.Serialization;
 using HQ.Models.Interfaces;
 
 namespace HQ.Plugins.Slack.Models;
 
+/// <summary>
+/// Framework request envelope (the <c>T</c> in <c>CommandBase&lt;T, ServiceConfig&gt;</c>). Carries
+/// only the orchestrator-supplied routing fields; per-tool LLM arguments now live on each tool's
+/// dedicated args type (see <c>ToolArgs.cs</c>) and are bound by <c>ProcessRequest</c>.
+/// </summary>
 public class ServiceRequest : IPluginServiceRequest
 {
     public string Method { get; set; }
     public string ToolCallId { get; set; }
     public string RequestingService { get; set; }
     public string ConfirmationId { get; set; }
-    public string ChannelId { get; set; }
-
-    [JsonPropertyName("messageText")]
-    public string MessageText { get; set; }
-
-    /// <summary>
-    /// Alias for MessageText — some LLMs use "message" instead of "messageText".
-    /// </summary>
-    [JsonPropertyName("message")]
-    public string Message { set => MessageText ??= value; get => null; }
-
-    public string FileContent { get; set; }
-    public string FileName { get; set; }
-    public string FileType { get; set; }
-    public string FileId { get; set; }
-    public string UserIds { get; set; }
 }

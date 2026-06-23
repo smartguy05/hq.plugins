@@ -14,9 +14,9 @@ public class GoogleAnalyticsService
 
     public GoogleAnalyticsService(LogDelegate logger) => _logger = logger;
 
-    private static string Property(ServiceConfig config, ServiceRequest r)
+    private static string Property(ServiceConfig config, string propertyId)
     {
-        var id = string.IsNullOrWhiteSpace(r.PropertyId) ? config.DefaultPropertyId : r.PropertyId;
+        var id = string.IsNullOrWhiteSpace(propertyId) ? config.DefaultPropertyId : propertyId;
         if (string.IsNullOrWhiteSpace(id))
             throw new InvalidOperationException("propertyId is required (or set DefaultPropertyId in the plugin config).");
         return id;
@@ -24,54 +24,54 @@ public class GoogleAnalyticsService
 
     [Display(Name = GoogleAnalyticsMethods.RunReport)]
     [Description("Run a GA4 report over a date range. Dimensions/metrics are comma-separated, e.g. dimensions='date,country', metrics='activeUsers,sessions'.")]
-    [Parameters("""{"type":"object","properties":{"propertyId":{"type":"string","description":"GA4 property ID (numeric)"},"dimensions":{"type":"string","description":"Comma-separated dimension names"},"metrics":{"type":"string","description":"Comma-separated metric names"},"startDate":{"type":"string","description":"YYYY-MM-DD, or '7daysAgo'/'today'"},"endDate":{"type":"string","description":"YYYY-MM-DD, or 'today'"},"limit":{"type":"integer","description":"Max rows (default 100)"}},"required":["metrics"]}""")]
-    public Task<object> RunReport(ServiceConfig config, ServiceRequest r) =>
+    [Parameters(typeof(RunReportArgs))]
+    public Task<object> RunReport(ServiceConfig config, RunReportArgs request) =>
         Guard(async () =>
         {
             using var client = new GaClient(config);
             var body = new
             {
-                dimensions = GaClient.NameList(r.Dimensions),
-                metrics = GaClient.NameList(r.Metrics),
+                dimensions = GaClient.NameList(request.Dimensions),
+                metrics = GaClient.NameList(request.Metrics),
                 dateRanges = new[]
                 {
                     new
                     {
-                        startDate = string.IsNullOrWhiteSpace(r.StartDate) ? "28daysAgo" : r.StartDate,
-                        endDate = string.IsNullOrWhiteSpace(r.EndDate) ? "today" : r.EndDate
+                        startDate = string.IsNullOrWhiteSpace(request.StartDate) ? "28daysAgo" : request.StartDate,
+                        endDate = string.IsNullOrWhiteSpace(request.EndDate) ? "today" : request.EndDate
                     }
                 },
-                limit = r.Limit ?? 100
+                limit = request.Limit ?? 100
             };
-            var doc = await client.PostAsync($"/properties/{Property(config, r)}:runReport", body);
+            var doc = await client.PostAsync($"/properties/{Property(config, request.PropertyId)}:runReport", body);
             return new { Success = true, Report = doc };
         });
 
     [Display(Name = GoogleAnalyticsMethods.RunRealtimeReport)]
     [Description("Run a GA4 realtime report (last 30 minutes). Dimensions/metrics are comma-separated.")]
-    [Parameters("""{"type":"object","properties":{"propertyId":{"type":"string"},"dimensions":{"type":"string","description":"Comma-separated dimension names, e.g. 'country'"},"metrics":{"type":"string","description":"Comma-separated metric names, e.g. 'activeUsers'"},"limit":{"type":"integer","description":"Max rows (default 100)"}},"required":["metrics"]}""")]
-    public Task<object> RunRealtimeReport(ServiceConfig config, ServiceRequest r) =>
+    [Parameters(typeof(RunRealtimeReportArgs))]
+    public Task<object> RunRealtimeReport(ServiceConfig config, RunRealtimeReportArgs request) =>
         Guard(async () =>
         {
             using var client = new GaClient(config);
             var body = new
             {
-                dimensions = GaClient.NameList(r.Dimensions),
-                metrics = GaClient.NameList(r.Metrics),
-                limit = r.Limit ?? 100
+                dimensions = GaClient.NameList(request.Dimensions),
+                metrics = GaClient.NameList(request.Metrics),
+                limit = request.Limit ?? 100
             };
-            var doc = await client.PostAsync($"/properties/{Property(config, r)}:runRealtimeReport", body);
+            var doc = await client.PostAsync($"/properties/{Property(config, request.PropertyId)}:runRealtimeReport", body);
             return new { Success = true, Report = doc };
         });
 
     [Display(Name = GoogleAnalyticsMethods.GetMetadata)]
     [Description("List the dimensions and metrics available for a GA4 property.")]
-    [Parameters("""{"type":"object","properties":{"propertyId":{"type":"string"}},"required":[]}""")]
-    public Task<object> GetMetadata(ServiceConfig config, ServiceRequest r) =>
+    [Parameters(typeof(GetMetadataArgs))]
+    public Task<object> GetMetadata(ServiceConfig config, GetMetadataArgs request) =>
         Guard(async () =>
         {
             using var client = new GaClient(config);
-            var doc = await client.GetAsync($"/properties/{Property(config, r)}/metadata");
+            var doc = await client.GetAsync($"/properties/{Property(config, request.PropertyId)}/metadata");
             return new { Success = true, Metadata = doc };
         });
 

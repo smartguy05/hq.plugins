@@ -27,42 +27,42 @@ public class WeatherService
             _ => "metric"
         };
 
-    private string Units(ServiceConfig config, ServiceRequest r) =>
-        NormalizeUnits(!string.IsNullOrWhiteSpace(r.Units) ? r.Units : config.DefaultUnits);
+    private string Units(ServiceConfig config, string units) =>
+        NormalizeUnits(!string.IsNullOrWhiteSpace(units) ? units : config.DefaultUnits);
 
-    private async Task<(double Lat, double Lon, string Label)> Resolve(WeatherClient client, ServiceRequest r)
+    private async Task<(double Lat, double Lon, string Label)> Resolve(WeatherClient client, string city, double? lat, double? lon)
     {
-        if (r.Lat.HasValue && r.Lon.HasValue)
-            return (r.Lat.Value, r.Lon.Value, $"{r.Lat.Value},{r.Lon.Value}");
-        if (string.IsNullOrWhiteSpace(r.City))
+        if (lat.HasValue && lon.HasValue)
+            return (lat.Value, lon.Value, $"{lat.Value},{lon.Value}");
+        if (string.IsNullOrWhiteSpace(city))
             throw new InvalidOperationException("Provide either a city/place name or explicit lat and lon.");
-        var hit = await client.GeocodeAsync(r.City)
-                  ?? throw new InvalidOperationException($"Could not geocode location '{r.City}'.");
+        var hit = await client.GeocodeAsync(city)
+                  ?? throw new InvalidOperationException($"Could not geocode location '{city}'.");
         return hit;
     }
 
     [Display(Name = WeatherMethods.GetCurrentWeather)]
     [Description("Get current weather conditions for a place name or coordinates.")]
-    [Parameters("""{"type":"object","properties":{"city":{"type":"string","description":"Place name to geocode, e.g. 'Austin, TX'"},"lat":{"type":"number","description":"Latitude (use with lon instead of city)"},"lon":{"type":"number","description":"Longitude"},"units":{"type":"string","description":"metric | imperial | standard"}},"required":[]}""")]
-    public Task<object> GetCurrentWeather(ServiceConfig config, ServiceRequest r) =>
+    [Parameters(typeof(GetCurrentWeatherArgs))]
+    public Task<object> GetCurrentWeather(ServiceConfig config, GetCurrentWeatherArgs r) =>
         Guard(async () =>
         {
             using var client = new WeatherClient(config.ApiKey);
-            var (lat, lon, label) = await Resolve(client, r);
-            var units = Units(config, r);
+            var (lat, lon, label) = await Resolve(client, r.City, r.Lat, r.Lon);
+            var units = Units(config, r.Units);
             var doc = await client.OneCallAsync(lat, lon, units, "minutely,hourly,daily,alerts");
             return new { Success = true, Location = label, Units = units, Current = Prop(doc, "current") };
         });
 
     [Display(Name = WeatherMethods.GetForecast)]
     [Description("Get a multi-day daily forecast for a place name or coordinates.")]
-    [Parameters("""{"type":"object","properties":{"city":{"type":"string","description":"Place name to geocode"},"lat":{"type":"number"},"lon":{"type":"number"},"units":{"type":"string","description":"metric | imperial | standard"},"days":{"type":"integer","description":"Number of forecast days, 1-8 (default 5)"}},"required":[]}""")]
-    public Task<object> GetForecast(ServiceConfig config, ServiceRequest r) =>
+    [Parameters(typeof(GetForecastArgs))]
+    public Task<object> GetForecast(ServiceConfig config, GetForecastArgs r) =>
         Guard(async () =>
         {
             using var client = new WeatherClient(config.ApiKey);
-            var (lat, lon, label) = await Resolve(client, r);
-            var units = Units(config, r);
+            var (lat, lon, label) = await Resolve(client, r.City, r.Lat, r.Lon);
+            var units = Units(config, r.Units);
             var doc = await client.OneCallAsync(lat, lon, units, "minutely,hourly,alerts");
             var days = Math.Clamp(r.Days ?? 5, 1, 8);
             object daily = doc.TryGetProperty("daily", out var d) && d.ValueKind == JsonValueKind.Array
@@ -73,13 +73,13 @@ public class WeatherService
 
     [Display(Name = WeatherMethods.GetWeatherAlerts)]
     [Description("Get active government weather alerts for a place name or coordinates.")]
-    [Parameters("""{"type":"object","properties":{"city":{"type":"string","description":"Place name to geocode"},"lat":{"type":"number"},"lon":{"type":"number"}},"required":[]}""")]
-    public Task<object> GetWeatherAlerts(ServiceConfig config, ServiceRequest r) =>
+    [Parameters(typeof(GetWeatherAlertsArgs))]
+    public Task<object> GetWeatherAlerts(ServiceConfig config, GetWeatherAlertsArgs r) =>
         Guard(async () =>
         {
             using var client = new WeatherClient(config.ApiKey);
-            var (lat, lon, label) = await Resolve(client, r);
-            var doc = await client.OneCallAsync(lat, lon, Units(config, r), "minutely,hourly,daily,current");
+            var (lat, lon, label) = await Resolve(client, r.City, r.Lat, r.Lon);
+            var doc = await client.OneCallAsync(lat, lon, Units(config, null), "minutely,hourly,daily,current");
             object alerts = doc.TryGetProperty("alerts", out var a) && a.ValueKind == JsonValueKind.Array
                 ? a.EnumerateArray().ToArray()
                 : Array.Empty<object>();

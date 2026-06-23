@@ -67,7 +67,7 @@ public class LinkedInCommand :
             LastConfig = config;
             var browser = GetBrowser(config, Logger);
             var service = new LinkedInService(browser, config, NotificationService, RateLimiter, Logger);
-            return await service.ProcessRequest(serviceRequest, config, NotificationService);
+            return await service.ProcessRequest(RawServiceRequest, config, NotificationService);
         }
         catch (Exception ex)
         {

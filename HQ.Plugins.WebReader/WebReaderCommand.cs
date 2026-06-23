@@ -49,13 +49,13 @@ public class WebReaderCommand : CommandBase<ServiceRequest, ServiceConfig>
 
     protected override async Task<object> DoWork(ServiceRequest serviceRequest, ServiceConfig config, IEnumerable<ToolCall> availableToolCalls)
     {
-        return await this.ProcessRequest(serviceRequest, config, NotificationService);
+        return await this.ProcessRequest(RawServiceRequest, config, NotificationService);
     }
 
     [Display(Name = "read_page")]
     [Description("Fetches a web page, strips navigation/ads/sidebars/footers, and returns the main content as clean markdown. Use this to read articles, docs, and pages efficiently instead of raw HTML.")]
-    [Parameters("""{"type":"object","properties":{"url":{"type":"string","description":"The URL of the page to read"},"maxLength":{"type":"integer","description":"Optional cap on the number of markdown characters returned. Defaults to the configured maximum."}},"required":["url"]}""")]
-    public async Task<object> ReadPage(ServiceConfig config, ServiceRequest serviceRequest)
+    [Parameters(typeof(ReadPageArgs))]
+    public async Task<object> ReadPage(ServiceConfig config, ReadPageArgs serviceRequest)
     {
         if (string.IsNullOrWhiteSpace(serviceRequest.Url))
             return new { Success = false, Message = "A 'url' is required." };
@@ -85,8 +85,8 @@ public class WebReaderCommand : CommandBase<ServiceRequest, ServiceConfig>
 
     [Display(Name = "extract_links")]
     [Description("Returns the links on a page as a markdown list of [text](absolute-url), optionally filtered by a substring. Useful for navigating from a page to related content.")]
-    [Parameters("""{"type":"object","properties":{"url":{"type":"string","description":"The URL of the page to extract links from"},"filter":{"type":"string","description":"Optional substring; only links whose text or URL contains it are returned (case-insensitive)."}},"required":["url"]}""")]
-    public async Task<object> ExtractLinks(ServiceConfig config, ServiceRequest serviceRequest)
+    [Parameters(typeof(ExtractLinksArgs))]
+    public async Task<object> ExtractLinks(ServiceConfig config, ExtractLinksArgs serviceRequest)
     {
         if (string.IsNullOrWhiteSpace(serviceRequest.Url))
             return new { Success = false, Message = "A 'url' is required." };
@@ -108,8 +108,8 @@ public class WebReaderCommand : CommandBase<ServiceRequest, ServiceConfig>
 
     [Display(Name = "search_page")]
     [Description("Fetches a page and returns only the markdown sections containing the query (with surrounding context). Use this to find specific information on a large page without reading the whole thing.")]
-    [Parameters("""{"type":"object","properties":{"url":{"type":"string","description":"The URL of the page to search"},"query":{"type":"string","description":"Text to find within the page (case-insensitive)"},"contextChars":{"type":"integer","description":"Characters of context to include around each match. Defaults to 200."}},"required":["url","query"]}""")]
-    public async Task<object> SearchPage(ServiceConfig config, ServiceRequest serviceRequest)
+    [Parameters(typeof(SearchPageArgs))]
+    public async Task<object> SearchPage(ServiceConfig config, SearchPageArgs serviceRequest)
     {
         if (string.IsNullOrWhiteSpace(serviceRequest.Url))
             return new { Success = false, Message = "A 'url' is required." };

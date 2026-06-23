@@ -22,7 +22,7 @@ public class SupportChannelKbCommand : CommandBase<ServiceRequest,ServiceConfig>
         try
         {
             var service = new SupportChannelKbService(config);
-            return await service.ProcessRequest(serviceRequest, config, NotificationService);
+            return await service.ProcessRequest(RawServiceRequest, config, NotificationService);
         }
         catch (Exception ex)
         {

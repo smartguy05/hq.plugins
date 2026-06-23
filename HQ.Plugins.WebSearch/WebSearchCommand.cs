@@ -24,13 +24,13 @@ public class WebSearchCommand: CommandBase<ServiceRequest, ServiceConfig>
 
     protected override async Task<object> DoWork(ServiceRequest serviceRequest, ServiceConfig config, IEnumerable<ToolCall> availableToolCalls)
     {
-        return await this.ProcessRequest(serviceRequest, config, NotificationService);
+        return await this.ProcessRequest(RawServiceRequest, config, NotificationService);
     }
 
     [Display(Name = "web_search")]
     [Description("Searches the web for information using the configured search engine and returns results.")]
-    [Parameters("""{"type":"object","properties":{"query":{"type":"string","description":"The search query to look up on the web"},"maxResults":{"type":"integer","description":"Maximum number of results to return. Defaults to 5."}},"required":["query"]}""")]
-    public async Task<object> WebSearch(ServiceConfig config, ServiceRequest serviceRequest)
+    [Parameters(typeof(WebSearchArgs))]
+    public async Task<object> WebSearch(ServiceConfig config, WebSearchArgs request)
     {
         if (string.IsNullOrWhiteSpace(config.WebSearchUrl))
         {
@@ -48,7 +48,7 @@ public class WebSearchCommand: CommandBase<ServiceRequest, ServiceConfig>
 
         var url = config.WebSearchUrl;
         url += url.Contains('?') ? "&" : "?";
-        url += $"q={Uri.EscapeDataString(serviceRequest.Query)}&limit={serviceRequest.MaxResults}";
+        url += $"q={Uri.EscapeDataString(request.Query)}&limit={request.MaxResults ?? 5}";
 
         var response = await httpClient.GetAsync(url);
 

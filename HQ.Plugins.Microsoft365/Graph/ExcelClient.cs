@@ -25,29 +25,29 @@ public class ExcelClient
         _defaultDriveId = config.DefaultDriveId;
     }
 
-    private string DriveId(ServiceRequest r)
+    private string DriveId(string requestDriveId)
     {
-        var id = string.IsNullOrWhiteSpace(r.DriveId) ? _defaultDriveId : r.DriveId;
+        var id = string.IsNullOrWhiteSpace(requestDriveId) ? _defaultDriveId : requestDriveId;
         if (string.IsNullOrWhiteSpace(id))
             throw new InvalidOperationException("driveId is required (or set DefaultDriveId in the plugin config).");
         return id;
     }
 
-    private string ItemBase(ServiceRequest r)
+    private string ItemBase(string driveId, string itemId)
     {
-        if (string.IsNullOrWhiteSpace(r.ItemId)) throw new InvalidOperationException("itemId is required for Excel operations.");
-        return $"{Base}/drives/{DriveId(r)}/items/{r.ItemId}/workbook";
+        if (string.IsNullOrWhiteSpace(itemId)) throw new InvalidOperationException("itemId is required for Excel operations.");
+        return $"{Base}/drives/{DriveId(driveId)}/items/{itemId}/workbook";
     }
 
-    private static string WorksheetSegment(ServiceRequest r)
+    private static string WorksheetSegment(string worksheet, string worksheetName)
     {
-        var ws = r.Worksheet ?? r.WorksheetName;
+        var ws = worksheet ?? worksheetName;
         return string.IsNullOrWhiteSpace(ws) ? "worksheets" : $"worksheets/{Uri.EscapeDataString(ws)}";
     }
 
-    public async Task<object> ListWorksheets(ServiceRequest r)
+    public async Task<object> ListWorksheets(ExcelListWorksheetsArgs r)
     {
-        var json = await SendAsync(HttpMethod.Get, $"{ItemBase(r)}/worksheets", null);
+        var json = await SendAsync(HttpMethod.Get, $"{ItemBase(r.DriveId, r.ItemId)}/worksheets", null);
         var sheets = json.RootElement.GetProperty("value").EnumerateArray().Select(w => new
         {
             Id = w.GetProperty("id").GetString(),
@@ -58,39 +58,39 @@ public class ExcelClient
         return new { Success = true, Worksheets = sheets };
     }
 
-    public async Task<object> GetRange(ServiceRequest r)
+    public async Task<object> GetRange(ExcelGetRangeArgs r)
     {
         if (string.IsNullOrWhiteSpace(r.Range)) return new { Success = false, Error = "range (A1 address) is required" };
         if (string.IsNullOrWhiteSpace(r.Worksheet) && string.IsNullOrWhiteSpace(r.WorksheetName))
             return new { Success = false, Error = "worksheet is required" };
 
-        var url = $"{ItemBase(r)}/{WorksheetSegment(r)}/range(address='{Uri.EscapeDataString(r.Range)}')";
+        var url = $"{ItemBase(r.DriveId, r.ItemId)}/{WorksheetSegment(r.Worksheet, r.WorksheetName)}/range(address='{Uri.EscapeDataString(r.Range)}')";
         var json = await SendAsync(HttpMethod.Get, url, null);
         var values = json.RootElement.GetProperty("values");
         return new { Success = true, Range = r.Range, Values = JsonSerializer.Deserialize<object>(values.GetRawText()) };
     }
 
-    public async Task<object> UpdateRange(ServiceRequest r)
+    public async Task<object> UpdateRange(ExcelUpdateRangeArgs r)
     {
         if (string.IsNullOrWhiteSpace(r.Range)) return new { Success = false, Error = "range (A1 address) is required" };
         if (r.Values is null) return new { Success = false, Error = "values (2D array) is required" };
         if (string.IsNullOrWhiteSpace(r.Worksheet) && string.IsNullOrWhiteSpace(r.WorksheetName))
             return new { Success = false, Error = "worksheet is required" };
 
-        var url = $"{ItemBase(r)}/{WorksheetSegment(r)}/range(address='{Uri.EscapeDataString(r.Range)}')";
+        var url = $"{ItemBase(r.DriveId, r.ItemId)}/{WorksheetSegment(r.Worksheet, r.WorksheetName)}/range(address='{Uri.EscapeDataString(r.Range)}')";
         var body = JsonSerializer.Serialize(new { values = r.Values });
         await SendAsync(HttpMethod.Patch, url, body);
         return new { Success = true, Range = r.Range, UpdatedRows = r.Values.Count };
     }
 
-    public async Task<object> AppendRow(ServiceRequest r)
+    public async Task<object> AppendRow(ExcelAppendRowArgs r)
     {
         if (r.Values is null || r.Values.Count == 0) return new { Success = false, Error = "values (2D array) is required" };
         if (string.IsNullOrWhiteSpace(r.Worksheet) && string.IsNullOrWhiteSpace(r.WorksheetName))
             return new { Success = false, Error = "worksheet is required" };
 
         // Find the first empty row below the used range.
-        var usedUrl = $"{ItemBase(r)}/{WorksheetSegment(r)}/usedRange(valuesOnly=true)?$select=address";
+        var usedUrl = $"{ItemBase(r.DriveId, r.ItemId)}/{WorksheetSegment(r.Worksheet, r.WorksheetName)}/usedRange(valuesOnly=true)?$select=address";
         string usedAddress = "";
         try
         {
@@ -106,18 +106,18 @@ public class ExcelClient
         var cols = r.Values.Max(row => row.Count);
         var target = A1Helper.BuildRangeAddress(startRow, r.Values.Count, cols);
 
-        var url = $"{ItemBase(r)}/{WorksheetSegment(r)}/range(address='{target}')";
+        var url = $"{ItemBase(r.DriveId, r.ItemId)}/{WorksheetSegment(r.Worksheet, r.WorksheetName)}/range(address='{target}')";
         var body = JsonSerializer.Serialize(new { values = r.Values });
         await SendAsync(HttpMethod.Patch, url, body);
         return new { Success = true, Range = target, AppendedRows = r.Values.Count };
     }
 
-    public async Task<object> AddWorksheet(ServiceRequest r)
+    public async Task<object> AddWorksheet(ExcelAddWorksheetArgs r)
     {
         if (string.IsNullOrWhiteSpace(r.Name) && string.IsNullOrWhiteSpace(r.WorksheetName))
             return new { Success = false, Error = "name is required" };
         var name = r.Name ?? r.WorksheetName;
-        var url = $"{ItemBase(r)}/worksheets/add";
+        var url = $"{ItemBase(r.DriveId, r.ItemId)}/worksheets/add";
         var json = await SendAsync(HttpMethod.Post, url, JsonSerializer.Serialize(new { name }));
         return new
         {

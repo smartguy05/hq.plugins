@@ -29,25 +29,25 @@ public class TelegramCommand: CommandBase<ServiceRequest, ServiceConfig>, INotif
 
     protected override async Task<object> DoWork(ServiceRequest serviceRequest, ServiceConfig config, IEnumerable<ToolCall> availableToolCalls)
     {
-        return await this.ProcessRequest(serviceRequest, config, NotificationService);
+        return await this.ProcessRequest(RawServiceRequest, config, NotificationService);
     }
 
     [Display(Name = "send_telegram_message")]
     [Description("Sends a message via Telegram to a specified chat. If no chat ID is provided, uses the configured notification chat ID.")]
-    [Parameters("""{"type":"object","properties":{"messageText":{"type":"string","description":"The message text to send"},"chatId":{"type":"string","description":"The Telegram chat ID to send the message to. Optional, defaults to configured notification chat."}},"required":["messageText"]}""")]
-    public async Task<object> SendTelegramMessage(ServiceConfig config, ServiceRequest serviceRequest)
+    [Parameters(typeof(SendTelegramMessageArgs))]
+    public async Task<object> SendTelegramMessage(ServiceConfig config, SendTelegramMessageArgs request)
     {
         if (string.IsNullOrEmpty(config.BotToken))
             throw new ArgumentException("Bot token is required");
 
-        if (string.IsNullOrWhiteSpace(serviceRequest.ChatId))
+        if (string.IsNullOrWhiteSpace(request.ChatId))
         {
-            serviceRequest.ChatId = config.NotificationChatId;
+            request.ChatId = config.NotificationChatId;
         }
 
         _service = GetTelegramService(config, NotificationService, Log);
 
-        return await _service.SendMessage(serviceRequest.MessageText, serviceRequest.ChatId);
+        return await _service.SendMessage(request.MessageText, request.ChatId);
     }
 
     public override async Task<object> Initialize(string configString, LogDelegate log, INotificationService notificationService)
