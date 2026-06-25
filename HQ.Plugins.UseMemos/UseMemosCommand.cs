@@ -28,13 +28,13 @@ public class UseMemosCommand: CommandBase<ServiceRequest,ServiceConfig>
 
     protected override async Task<object> DoWork(ServiceRequest serviceRequest, ServiceConfig config, IEnumerable<ToolCall> enumerableToolCalls)
     {
-        return await this.ProcessRequest(serviceRequest, config, NotificationService);
+        return await this.ProcessRequest(RawServiceRequest, config, NotificationService);
     }
 
     [Display(Name = "read_memos")]
     [Description("Reads memos or resources from the UseMemos server. Can retrieve all memos or a specific one by UID.")]
-    [Parameters("""{"type":"object","properties":{"dataType":{"type":"string","description":"The type of data to read: 'memos' or 'resources'. Defaults to 'memos'."},"uid":{"type":"string","description":"Optional UID to retrieve a specific memo"}},"required":[]}""")]
-    public async Task<object> ReadMemos(ServiceConfig config, ServiceRequest serviceRequest)
+    [Parameters(typeof(ReadMemosArgs))]
+    public async Task<object> ReadMemos(ServiceConfig config, ReadMemosArgs serviceRequest)
     {
         ValidateDataType(serviceRequest.DataType);
         using var httpClient = new HttpClient();
@@ -61,8 +61,8 @@ public class UseMemosCommand: CommandBase<ServiceRequest,ServiceConfig>
 
     [Display(Name = "add_memo")]
     [Description("Creates a new memo on the UseMemos server. Requires user confirmation before saving.")]
-    [Parameters("""{"type":"object","properties":{"content":{"type":"string","description":"The text content of the memo to create"},"visibility":{"type":"string","description":"Visibility level: 'PUBLIC', 'PROTECTED', or 'PRIVATE'. Defaults to 'PRIVATE'."}},"required":["content"]}""")]
-    public async Task<object> AddMemo(ServiceConfig config, ServiceRequest serviceRequest)
+    [Parameters(typeof(AddMemoArgs))]
+    public async Task<object> AddMemo(ServiceConfig config, AddMemoArgs serviceRequest)
     {
         if (string.IsNullOrWhiteSpace(serviceRequest.ConfirmationId))
         {
@@ -140,8 +140,8 @@ public class UseMemosCommand: CommandBase<ServiceRequest,ServiceConfig>
 
     [Display(Name = "update_memo")]
     [Description("Updates an existing memo on the UseMemos server by its UID.")]
-    [Parameters("""{"type":"object","properties":{"uid":{"type":"string","description":"The UID of the memo to update"},"content":{"type":"string","description":"The new content for the memo"},"visibility":{"type":"string","description":"Updated visibility level: 'PUBLIC', 'PROTECTED', or 'PRIVATE'"}},"required":["uid"]}""")]
-    public async Task<object> UpdateMemo(ServiceConfig config, ServiceRequest serviceRequest)
+    [Parameters(typeof(UpdateMemoArgs))]
+    public async Task<object> UpdateMemo(ServiceConfig config, UpdateMemoArgs serviceRequest)
     {
         if (string.IsNullOrWhiteSpace(serviceRequest.Uid))
         {

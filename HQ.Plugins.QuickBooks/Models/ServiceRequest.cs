@@ -20,40 +20,15 @@ public class StringOrNumberConverter : JsonConverter<string>
         => writer.WriteStringValue(value);
 }
 
+/// <summary>
+/// Framework request envelope (the <c>T</c> in <c>CommandBase&lt;T, ServiceConfig&gt;</c>). Carries
+/// only the orchestrator-supplied routing fields; per-tool LLM arguments now live on each tool's
+/// dedicated args type (see <c>ToolArgs.cs</c>) and are bound by <c>ProcessRequest</c>.
+/// </summary>
 public record ServiceRequest : IPluginServiceRequest
 {
     public string Method { get; set; }
     public string ToolCallId { get; set; }
     public string RequestingService { get; set; }
     public string ConfirmationId { get; set; }
-
-    // Entity IDs (QBO IDs are strings, but LLMs may send numbers)
-    [JsonConverter(typeof(StringOrNumberConverter))] public string CustomerId { get; set; }
-    [JsonConverter(typeof(StringOrNumberConverter))] public string InvoiceId { get; set; }
-    [JsonConverter(typeof(StringOrNumberConverter))] public string PurchaseId { get; set; }
-    [JsonConverter(typeof(StringOrNumberConverter))] public string VendorId { get; set; }
-    [JsonConverter(typeof(StringOrNumberConverter))] public string ItemId { get; set; }
-    [JsonConverter(typeof(StringOrNumberConverter))] public string ExpenseAccountId { get; set; }
-    [JsonConverter(typeof(StringOrNumberConverter))] public string PaymentAccountId { get; set; }
-
-    // Customer / vendor fields
-    public string DisplayName { get; set; }
-    public string Email { get; set; }
-    public string CompanyName { get; set; }
-
-    // Money
-    public decimal? Amount { get; set; }
-    public string Description { get; set; }
-    public string PaymentType { get; set; }   // Cash | Check | CreditCard
-
-    // Send invoice
-    public string SendTo { get; set; }         // override recipient email
-
-    // Reports
-    public string ReportName { get; set; }     // ProfitAndLoss | BalanceSheet | AgedReceivables
-    public string StartDate { get; set; }      // YYYY-MM-DD
-    public string EndDate { get; set; }
-
-    // Paging
-    public int? Limit { get; set; }
 }

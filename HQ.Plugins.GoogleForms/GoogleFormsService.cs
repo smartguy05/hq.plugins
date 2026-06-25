@@ -44,8 +44,8 @@ public class GoogleFormsService
 
     [Display(Name = GoogleFormsMethods.CreateForm)]
     [Description("Create a new Google Form with a title and optional description.")]
-    [Parameters("""{"type":"object","properties":{"title":{"type":"string"},"description":{"type":"string"}},"required":["title"]}""")]
-    public Task<object> CreateForm(ServiceConfig config, ServiceRequest r) =>
+    [Parameters(typeof(CreateFormArgs))]
+    public Task<object> CreateForm(ServiceConfig config, CreateFormArgs r) =>
         Guard(async () =>
         {
             var service = BuildService(config);
@@ -81,8 +81,8 @@ public class GoogleFormsService
 
     [Display(Name = GoogleFormsMethods.GetForm)]
     [Description("Get a form's title, description and items.")]
-    [Parameters("""{"type":"object","properties":{"formId":{"type":"string"}},"required":["formId"]}""")]
-    public Task<object> GetForm(ServiceConfig config, ServiceRequest r) =>
+    [Parameters(typeof(GetFormArgs))]
+    public Task<object> GetForm(ServiceConfig config, GetFormArgs r) =>
         Guard(async () =>
         {
             var service = BuildService(config);
@@ -92,8 +92,8 @@ public class GoogleFormsService
 
     [Display(Name = GoogleFormsMethods.AddQuestions)]
     [Description("Append one or more questions to a form. Question types: TEXT, PARAGRAPH, RADIO, CHECKBOX, DROPDOWN (choice types need options).")]
-    [Parameters("""{"type":"object","properties":{"formId":{"type":"string"},"questions":{"type":"array","items":{"type":"object","properties":{"title":{"type":"string"},"type":{"type":"string","description":"TEXT | PARAGRAPH | RADIO | CHECKBOX | DROPDOWN"},"options":{"type":"array","items":{"type":"string"}},"required":{"type":"boolean"}},"required":["title","type"]}}},"required":["formId","questions"]}""")]
-    public Task<object> AddQuestions(ServiceConfig config, ServiceRequest r) =>
+    [Parameters(typeof(AddQuestionsArgs))]
+    public Task<object> AddQuestions(ServiceConfig config, AddQuestionsArgs r) =>
         Guard(async () =>
         {
             if (r.Questions is null || r.Questions.Count == 0) return new { Success = false, Error = "questions are required" };
@@ -109,8 +109,8 @@ public class GoogleFormsService
 
     [Display(Name = GoogleFormsMethods.ListResponses)]
     [Description("List the responses submitted to a form.")]
-    [Parameters("""{"type":"object","properties":{"formId":{"type":"string"}},"required":["formId"]}""")]
-    public Task<object> ListResponses(ServiceConfig config, ServiceRequest r) =>
+    [Parameters(typeof(ListResponsesArgs))]
+    public Task<object> ListResponses(ServiceConfig config, ListResponsesArgs r) =>
         Guard(async () =>
         {
             var service = BuildService(config);
@@ -120,8 +120,8 @@ public class GoogleFormsService
 
     [Display(Name = GoogleFormsMethods.GetResponse)]
     [Description("Get a single form response by ID.")]
-    [Parameters("""{"type":"object","properties":{"formId":{"type":"string"},"responseId":{"type":"string"}},"required":["formId","responseId"]}""")]
-    public Task<object> GetResponse(ServiceConfig config, ServiceRequest r) =>
+    [Parameters(typeof(GetResponseArgs))]
+    public Task<object> GetResponse(ServiceConfig config, GetResponseArgs r) =>
         Guard(async () =>
         {
             var service = BuildService(config);

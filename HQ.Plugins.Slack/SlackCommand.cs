@@ -58,50 +58,50 @@ public class SlackCommand : CommandBase<ServiceRequest, ServiceConfig>, INotific
     protected override async Task<object> DoWork(ServiceRequest serviceRequest, ServiceConfig config, IEnumerable<ToolCall> availableToolCalls)
     {
         await Log(LogLevel.Info, $"Slack DoWork called with method: {serviceRequest.Method}");
-        var result = await this.ProcessRequest(serviceRequest, config, NotificationService);
+        var result = await this.ProcessRequest(RawServiceRequest, config, NotificationService);
         await Log(LogLevel.Info, $"Slack DoWork completed for method: {serviceRequest.Method}");
         return result;
     }
 
     [Display(Name = "send_slack_message")]
     [Description("Sends a message via Slack to a specified channel or DM. If no channel ID is provided, uses the configured notification channel.")]
-    [Parameters("""{"type":"object","properties":{"channelId":{"type":"string","description":"The Slack channel or DM ID to send the message to. Optional, defaults to configured notification channel."},"messageText":{"type":"string","description":"The message text to send"},"fileContent":{"type":"string","description":"Optional base64-encoded file content to attach"},"fileName":{"type":"string","description":"Optional filename for the attachment"},"fileType":{"type":"string","description":"Optional MIME type for the attachment"}},"required":["messageText"]}""")]
-    public async Task<object> SendSlackMessage(ServiceConfig config, ServiceRequest serviceRequest)
+    [Parameters(typeof(SendSlackMessageArgs))]
+    public async Task<object> SendSlackMessage(ServiceConfig config, SendSlackMessageArgs args)
     {
-        await Log(LogLevel.Info, $"SendSlackMessage called - ChannelId: {serviceRequest.ChannelId}, MessageText length: {serviceRequest.MessageText?.Length ?? 0}");
+        await Log(LogLevel.Info, $"SendSlackMessage called - ChannelId: {args.ChannelId}, MessageText length: {args.MessageText?.Length ?? 0}");
         if (string.IsNullOrEmpty(config.BotToken))
             throw new ArgumentException("Bot token is required");
 
-        if (string.IsNullOrWhiteSpace(serviceRequest.ChannelId))
+        if (string.IsNullOrWhiteSpace(args.ChannelId))
         {
-            serviceRequest.ChannelId = config.NotificationChannelId;
+            args.ChannelId = config.NotificationChannelId;
         }
 
         var service = GetSlackService(config, NotificationService, Log);
 
-        if (!string.IsNullOrWhiteSpace(serviceRequest.FileContent) && !string.IsNullOrWhiteSpace(serviceRequest.FileName))
+        if (!string.IsNullOrWhiteSpace(args.FileContent) && !string.IsNullOrWhiteSpace(args.FileName))
         {
             var uploadResult = await service.UploadFile(
-                serviceRequest.FileContent,
-                serviceRequest.FileName,
-                serviceRequest.FileType,
-                serviceRequest.ChannelId);
+                args.FileContent,
+                args.FileName,
+                args.FileType,
+                args.ChannelId);
 
-            if (!string.IsNullOrWhiteSpace(serviceRequest.MessageText))
+            if (!string.IsNullOrWhiteSpace(args.MessageText))
             {
-                await service.SendMessage(serviceRequest.MessageText, serviceRequest.ChannelId);
+                await service.SendMessage(args.MessageText, args.ChannelId);
             }
 
             return uploadResult;
         }
 
-        return await service.SendMessage(serviceRequest.MessageText, serviceRequest.ChannelId);
+        return await service.SendMessage(args.MessageText, args.ChannelId);
     }
 
     [Display(Name = "upload_slack_file")]
     [Description("Uploads a file to a Slack channel.")]
-    [Parameters("""{"type":"object","properties":{"channelId":{"type":"string","description":"The Slack channel ID to upload the file to"},"fileContent":{"type":"string","description":"Base64-encoded file content"},"fileName":{"type":"string","description":"The filename"},"fileType":{"type":"string","description":"Optional MIME type for the file"}},"required":["channelId","fileContent","fileName"]}""")]
-    public async Task<object> UploadSlackFile(ServiceConfig config, ServiceRequest serviceRequest)
+    [Parameters(typeof(UploadSlackFileArgs))]
+    public async Task<object> UploadSlackFile(ServiceConfig config, UploadSlackFileArgs args)
     {
         if (string.IsNullOrEmpty(config.BotToken))
             throw new ArgumentException("Bot token is required");
@@ -109,42 +109,42 @@ public class SlackCommand : CommandBase<ServiceRequest, ServiceConfig>, INotific
         var service = GetSlackService(config, NotificationService, Log);
 
         return await service.UploadFile(
-            serviceRequest.FileContent,
-            serviceRequest.FileName,
-            serviceRequest.FileType,
-            serviceRequest.ChannelId);
+            args.FileContent,
+            args.FileName,
+            args.FileType,
+            args.ChannelId);
     }
 
     [Display(Name = "download_slack_file")]
     [Description("Downloads a file from Slack by its file ID and returns the content as base64.")]
-    [Parameters("""{"type":"object","properties":{"fileId":{"type":"string","description":"The Slack file ID (starts with F)"}},"required":["fileId"]}""")]
-    public async Task<object> DownloadSlackFile(ServiceConfig config, ServiceRequest serviceRequest)
+    [Parameters(typeof(DownloadSlackFileArgs))]
+    public async Task<object> DownloadSlackFile(ServiceConfig config, DownloadSlackFileArgs args)
     {
         if (string.IsNullOrEmpty(config.BotToken))
             throw new ArgumentException("Bot token is required");
 
         var service = GetSlackService(config, NotificationService, Log);
 
-        return await service.DownloadFile(serviceRequest.FileId);
+        return await service.DownloadFile(args.FileId);
     }
 
     [Display(Name = "open_slack_dm")]
     [Description("Opens or resumes a direct message conversation with one or more Slack users. Returns the DM channel ID that can be used with send_slack_message. For a single user, opens a 1:1 DM. For multiple users, opens a group DM.")]
-    [Parameters("""{"type":"object","properties":{"userIds":{"type":"string","description":"Comma-separated Slack user IDs to open a DM with"}},"required":["userIds"]}""")]
-    public async Task<object> OpenSlackDm(ServiceConfig config, ServiceRequest serviceRequest)
+    [Parameters(typeof(OpenSlackDmArgs))]
+    public async Task<object> OpenSlackDm(ServiceConfig config, OpenSlackDmArgs args)
     {
         if (string.IsNullOrEmpty(config.BotToken))
             throw new ArgumentException("Bot token is required");
 
         var service = GetSlackService(config, NotificationService, Log);
 
-        return await service.OpenConversation(serviceRequest.UserIds);
+        return await service.OpenConversation(args.UserIds);
     }
 
     [Display(Name = "list_slack_users")]
     [Description("Lists workspace users with their IDs, names, and display names. Use this to find user IDs for opening DMs.")]
-    [Parameters("""{"type":"object","properties":{}}""")]
-    public async Task<object> ListSlackUsers(ServiceConfig config, ServiceRequest serviceRequest)
+    [Parameters(typeof(EmptyArgs))]
+    public async Task<object> ListSlackUsers(ServiceConfig config)
     {
         if (string.IsNullOrEmpty(config.BotToken))
             throw new ArgumentException("Bot token is required");
@@ -156,8 +156,8 @@ public class SlackCommand : CommandBase<ServiceRequest, ServiceConfig>, INotific
 
     [Display(Name = "list_slack_channels")]
     [Description("Lists Slack channels the bot has access to.")]
-    [Parameters("""{"type":"object","properties":{}}""")]
-    public async Task<object> ListSlackChannels(ServiceConfig config, ServiceRequest serviceRequest)
+    [Parameters(typeof(EmptyArgs))]
+    public async Task<object> ListSlackChannels(ServiceConfig config)
     {
         if (string.IsNullOrEmpty(config.BotToken))
             throw new ArgumentException("Bot token is required");

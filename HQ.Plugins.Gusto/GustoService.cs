@@ -18,10 +18,10 @@ public class GustoService
 
     public GustoService(LogDelegate logger) => _logger = logger;
 
-    /// <summary>Returns the request's company id, or resolves the first accessible company via /v1/me.</summary>
-    private static async Task<string> CompanyId(GustoClient client, ServiceRequest r)
+    /// <summary>Returns the supplied company id, or resolves the first accessible company via /v1/me.</summary>
+    private static async Task<string> CompanyId(GustoClient client, string companyId)
     {
-        if (!string.IsNullOrWhiteSpace(r.CompanyId)) return r.CompanyId;
+        if (!string.IsNullOrWhiteSpace(companyId)) return companyId;
         var me = await client.GetAsync("/v1/me");
         if (me.TryGetProperty("roles", out var roles)
             && roles.TryGetProperty("payroll_admin", out var admin)
@@ -36,89 +36,89 @@ public class GustoService
 
     [Display(Name = GustoMethods.GetCompany)]
     [Description("Get company details. Omit companyId to use the first company on the account.")]
-    [Parameters("""{"type":"object","properties":{"companyId":{"type":"string"}},"required":[]}""")]
-    public Task<object> GetCompany(ServiceConfig config, ServiceRequest r) =>
+    [Parameters(typeof(GetCompanyArgs))]
+    public Task<object> GetCompany(ServiceConfig config, GetCompanyArgs request) =>
         Guard(async () =>
         {
             using var client = new GustoClient(config);
-            var doc = await client.GetAsync($"/v1/companies/{await CompanyId(client, r)}");
+            var doc = await client.GetAsync($"/v1/companies/{await CompanyId(client, request.CompanyId)}");
             return new { Success = true, Company = doc };
         });
 
     [Display(Name = GustoMethods.ListEmployees)]
     [Description("List employees for the company.")]
-    [Parameters("""{"type":"object","properties":{"companyId":{"type":"string"}},"required":[]}""")]
-    public Task<object> ListEmployees(ServiceConfig config, ServiceRequest r) =>
+    [Parameters(typeof(ListEmployeesArgs))]
+    public Task<object> ListEmployees(ServiceConfig config, ListEmployeesArgs request) =>
         Guard(async () =>
         {
             using var client = new GustoClient(config);
-            var doc = await client.GetAsync($"/v1/companies/{await CompanyId(client, r)}/employees");
+            var doc = await client.GetAsync($"/v1/companies/{await CompanyId(client, request.CompanyId)}/employees");
             return new { Success = true, Employees = doc };
         });
 
     [Display(Name = GustoMethods.GetEmployee)]
     [Description("Get a single employee by ID.")]
-    [Parameters("""{"type":"object","properties":{"employeeId":{"type":"string"}},"required":["employeeId"]}""")]
-    public Task<object> GetEmployee(ServiceConfig config, ServiceRequest r) =>
+    [Parameters(typeof(GetEmployeeArgs))]
+    public Task<object> GetEmployee(ServiceConfig config, GetEmployeeArgs request) =>
         Guard(async () =>
         {
             using var client = new GustoClient(config);
-            var doc = await client.GetAsync($"/v1/employees/{r.EmployeeId}");
+            var doc = await client.GetAsync($"/v1/employees/{request.EmployeeId}");
             return new { Success = true, Employee = doc };
         });
 
     [Display(Name = GustoMethods.ListPayrolls)]
     [Description("List payrolls for the company.")]
-    [Parameters("""{"type":"object","properties":{"companyId":{"type":"string"}},"required":[]}""")]
-    public Task<object> ListPayrolls(ServiceConfig config, ServiceRequest r) =>
+    [Parameters(typeof(ListPayrollsArgs))]
+    public Task<object> ListPayrolls(ServiceConfig config, ListPayrollsArgs request) =>
         Guard(async () =>
         {
             using var client = new GustoClient(config);
-            var doc = await client.GetAsync($"/v1/companies/{await CompanyId(client, r)}/payrolls");
+            var doc = await client.GetAsync($"/v1/companies/{await CompanyId(client, request.CompanyId)}/payrolls");
             return new { Success = true, Payrolls = doc };
         });
 
     [Display(Name = GustoMethods.GetPayroll)]
     [Description("Get a single payroll by ID for the company.")]
-    [Parameters("""{"type":"object","properties":{"companyId":{"type":"string"},"payrollId":{"type":"string"}},"required":["payrollId"]}""")]
-    public Task<object> GetPayroll(ServiceConfig config, ServiceRequest r) =>
+    [Parameters(typeof(GetPayrollArgs))]
+    public Task<object> GetPayroll(ServiceConfig config, GetPayrollArgs request) =>
         Guard(async () =>
         {
             using var client = new GustoClient(config);
-            var doc = await client.GetAsync($"/v1/companies/{await CompanyId(client, r)}/payrolls/{r.PayrollId}");
+            var doc = await client.GetAsync($"/v1/companies/{await CompanyId(client, request.CompanyId)}/payrolls/{request.PayrollId}");
             return new { Success = true, Payroll = doc };
         });
 
     [Display(Name = GustoMethods.ListTimeOffRequests)]
     [Description("List time-off requests for the company.")]
-    [Parameters("""{"type":"object","properties":{"companyId":{"type":"string"}},"required":[]}""")]
-    public Task<object> ListTimeOffRequests(ServiceConfig config, ServiceRequest r) =>
+    [Parameters(typeof(ListTimeOffRequestsArgs))]
+    public Task<object> ListTimeOffRequests(ServiceConfig config, ListTimeOffRequestsArgs request) =>
         Guard(async () =>
         {
             using var client = new GustoClient(config);
-            var doc = await client.GetAsync($"/v1/companies/{await CompanyId(client, r)}/time_off_requests");
+            var doc = await client.GetAsync($"/v1/companies/{await CompanyId(client, request.CompanyId)}/time_off_requests");
             return new { Success = true, TimeOffRequests = doc };
         });
 
     [Display(Name = GustoMethods.ListLocations)]
     [Description("List the company's work locations.")]
-    [Parameters("""{"type":"object","properties":{"companyId":{"type":"string"}},"required":[]}""")]
-    public Task<object> ListLocations(ServiceConfig config, ServiceRequest r) =>
+    [Parameters(typeof(ListLocationsArgs))]
+    public Task<object> ListLocations(ServiceConfig config, ListLocationsArgs request) =>
         Guard(async () =>
         {
             using var client = new GustoClient(config);
-            var doc = await client.GetAsync($"/v1/companies/{await CompanyId(client, r)}/locations");
+            var doc = await client.GetAsync($"/v1/companies/{await CompanyId(client, request.CompanyId)}/locations");
             return new { Success = true, Locations = doc };
         });
 
     [Display(Name = GustoMethods.ListPaySchedules)]
     [Description("List the company's pay schedules.")]
-    [Parameters("""{"type":"object","properties":{"companyId":{"type":"string"}},"required":[]}""")]
-    public Task<object> ListPaySchedules(ServiceConfig config, ServiceRequest r) =>
+    [Parameters(typeof(ListPaySchedulesArgs))]
+    public Task<object> ListPaySchedules(ServiceConfig config, ListPaySchedulesArgs request) =>
         Guard(async () =>
         {
             using var client = new GustoClient(config);
-            var doc = await client.GetAsync($"/v1/companies/{await CompanyId(client, r)}/pay_schedules");
+            var doc = await client.GetAsync($"/v1/companies/{await CompanyId(client, request.CompanyId)}/pay_schedules");
             return new { Success = true, PaySchedules = doc };
         });
 

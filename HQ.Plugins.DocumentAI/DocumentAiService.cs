@@ -47,8 +47,8 @@ public class DocumentAiService
 
     [Display(Name = DocumentAiMethods.ExtractText)]
     [Description("Extract all text (OCR) from an image or PDF. Provide base64 content or an image URI.")]
-    [Parameters("""{"type":"object","properties":{"content":{"type":"string","description":"Base64-encoded image/PDF bytes"},"imageUri":{"type":"string","description":"Public or GCS image URI (alternative to content)"}},"required":[]}""")]
-    public Task<object> ExtractText(ServiceConfig config, ServiceRequest r) =>
+    [Parameters(typeof(ExtractTextArgs))]
+    public Task<object> ExtractText(ServiceConfig config, ExtractTextArgs r) =>
         Guard(async () =>
         {
             if (string.IsNullOrWhiteSpace(r.Content) && string.IsNullOrWhiteSpace(r.ImageUri))
@@ -76,20 +76,20 @@ public class DocumentAiService
 
     [Display(Name = DocumentAiMethods.ExtractReceipt)]
     [Description("Extract structured fields from a receipt (merchant, total, line items, date) using the configured receipt processor.")]
-    [Parameters("""{"type":"object","properties":{"content":{"type":"string","description":"Base64-encoded receipt image/PDF bytes"},"mimeType":{"type":"string","description":"e.g. image/jpeg, image/png, application/pdf"}},"required":["content"]}""")]
-    public Task<object> ExtractReceipt(ServiceConfig config, ServiceRequest r) =>
-        ProcessDocument(config, r, config.ReceiptProcessorId, "receipt");
+    [Parameters(typeof(ExtractReceiptArgs))]
+    public Task<object> ExtractReceipt(ServiceConfig config, ExtractReceiptArgs r) =>
+        ProcessDocument(config, r.Content, r.MimeType, config.ReceiptProcessorId, "receipt");
 
     [Display(Name = DocumentAiMethods.ExtractDocumentFields)]
     [Description("Extract text and form fields from a general document using the configured document processor.")]
-    [Parameters("""{"type":"object","properties":{"content":{"type":"string","description":"Base64-encoded document bytes"},"mimeType":{"type":"string","description":"e.g. application/pdf, image/jpeg"}},"required":["content"]}""")]
-    public Task<object> ExtractDocumentFields(ServiceConfig config, ServiceRequest r) =>
-        ProcessDocument(config, r, config.DocumentProcessorId, "document");
+    [Parameters(typeof(ExtractDocumentFieldsArgs))]
+    public Task<object> ExtractDocumentFields(ServiceConfig config, ExtractDocumentFieldsArgs r) =>
+        ProcessDocument(config, r.Content, r.MimeType, config.DocumentProcessorId, "document");
 
-    private Task<object> ProcessDocument(ServiceConfig config, ServiceRequest r, string processorId, string kind) =>
+    private Task<object> ProcessDocument(ServiceConfig config, string content, string mimeType, string processorId, string kind) =>
         Guard(async () =>
         {
-            if (string.IsNullOrWhiteSpace(r.Content)) return new { Success = false, Error = "content (base64) is required." };
+            if (string.IsNullOrWhiteSpace(content)) return new { Success = false, Error = "content (base64) is required." };
             if (string.IsNullOrWhiteSpace(processorId)) return new { Success = false, Error = $"No {kind} processor id configured." };
             if (string.IsNullOrWhiteSpace(config.ProjectId)) return new { Success = false, Error = "ProjectId is not configured." };
 
@@ -99,8 +99,8 @@ public class DocumentAiService
             {
                 ["rawDocument"] = new JsonObject
                 {
-                    ["content"] = r.Content,
-                    ["mimeType"] = string.IsNullOrWhiteSpace(r.MimeType) ? "application/pdf" : r.MimeType
+                    ["content"] = content,
+                    ["mimeType"] = string.IsNullOrWhiteSpace(mimeType) ? "application/pdf" : mimeType
                 }
             };
             var resp = await client.PostAsync(url, body);

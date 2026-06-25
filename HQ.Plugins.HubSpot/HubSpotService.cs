@@ -24,8 +24,8 @@ public class HubSpotService
 
     [Display(Name = "create_contact")]
     [Description("Create a new CRM contact (recruiter, partner, lead). Provide at least an email or name.")]
-    [Parameters("""{"type":"object","properties":{"email":{"type":"string","description":"Contact email address"},"firstName":{"type":"string","description":"First name"},"lastName":{"type":"string","description":"Last name"},"company":{"type":"string","description":"Company name"},"jobTitle":{"type":"string","description":"Job title"},"phone":{"type":"string","description":"Phone number"},"linkedInUrl":{"type":"string","description":"LinkedIn profile URL"},"lifecycleStage":{"type":"string","description":"Lifecycle stage: subscriber, lead, opportunity, customer"}},"required":["email"]}""")]
-    public async Task<object> CreateContact(ServiceConfig config, ServiceRequest request)
+    [Parameters(typeof(CreateContactArgs))]
+    public async Task<object> CreateContact(ServiceConfig config, CreateContactArgs request)
     {
         if (string.IsNullOrWhiteSpace(request.Email))
             throw new ArgumentException("Missing required parameter: email");
@@ -62,8 +62,8 @@ public class HubSpotService
 
     [Display(Name = "update_contact")]
     [Description("Update properties on an existing CRM contact by contact ID.")]
-    [Parameters("""{"type":"object","properties":{"contactId":{"type":"string","description":"The HubSpot contact ID"},"email":{"type":"string","description":"Updated email address"},"firstName":{"type":"string","description":"Updated first name"},"lastName":{"type":"string","description":"Updated last name"},"company":{"type":"string","description":"Updated company name"},"jobTitle":{"type":"string","description":"Updated job title"},"phone":{"type":"string","description":"Updated phone number"},"linkedInUrl":{"type":"string","description":"Updated LinkedIn profile URL"},"lifecycleStage":{"type":"string","description":"Updated lifecycle stage: subscriber, lead, opportunity, customer"}},"required":["contactId"]}""")]
-    public async Task<object> UpdateContact(ServiceConfig config, ServiceRequest request)
+    [Parameters(typeof(UpdateContactArgs))]
+    public async Task<object> UpdateContact(ServiceConfig config, UpdateContactArgs request)
     {
         if (string.IsNullOrWhiteSpace(request.ContactId))
             throw new ArgumentException("Missing required parameter: contactId");
@@ -89,8 +89,8 @@ public class HubSpotService
 
     [Display(Name = "search_contacts")]
     [Description("Search CRM contacts by name, email, company, or custom query string.")]
-    [Parameters("""{"type":"object","properties":{"query":{"type":"string","description":"Search query (searches across name, email, phone, company)"},"maxResults":{"type":"integer","description":"Maximum results to return (default 10, max 100)"},"properties":{"type":"string","description":"Comma-separated property names to return (default: firstname,lastname,email,company,jobtitle,lifecyclestage)"}},"required":["query"]}""")]
-    public async Task<object> SearchContacts(ServiceConfig config, ServiceRequest request)
+    [Parameters(typeof(SearchContactsArgs))]
+    public async Task<object> SearchContacts(ServiceConfig config, SearchContactsArgs request)
     {
         if (string.IsNullOrWhiteSpace(request.Query))
             throw new ArgumentException("Missing required parameter: query");
@@ -135,8 +135,8 @@ public class HubSpotService
 
     [Display(Name = "get_contact")]
     [Description("Get full details of a CRM contact by their contact ID.")]
-    [Parameters("""{"type":"object","properties":{"contactId":{"type":"string","description":"The HubSpot contact ID"},"properties":{"type":"string","description":"Comma-separated property names to return (default: all standard properties)"}},"required":["contactId"]}""")]
-    public async Task<object> GetContact(ServiceConfig config, ServiceRequest request)
+    [Parameters(typeof(GetContactArgs))]
+    public async Task<object> GetContact(ServiceConfig config, GetContactArgs request)
     {
         if (string.IsNullOrWhiteSpace(request.ContactId))
             throw new ArgumentException("Missing required parameter: contactId");
@@ -168,8 +168,8 @@ public class HubSpotService
 
     [Display(Name = "create_deal")]
     [Description("Create a deal (contract opportunity) in the CRM pipeline. Associate with a contact by providing contactId.")]
-    [Parameters("""{"type":"object","properties":{"dealName":{"type":"string","description":"Name of the deal/opportunity"},"dealStage":{"type":"string","description":"Deal stage: appointmentscheduled, qualifiedtobuy, presentationscheduled, decisionmakerboughtin, contractsent, closedwon, closedlost"},"amount":{"type":"number","description":"Deal value in dollars"},"closeDate":{"type":"string","description":"Expected close date (YYYY-MM-DD)"},"pipeline":{"type":"string","description":"Pipeline name (default: 'default')"},"contactId":{"type":"string","description":"Contact ID to associate with this deal"}},"required":["dealName"]}""")]
-    public async Task<object> CreateDeal(ServiceConfig config, ServiceRequest request)
+    [Parameters(typeof(CreateDealArgs))]
+    public async Task<object> CreateDeal(ServiceConfig config, CreateDealArgs request)
     {
         if (string.IsNullOrWhiteSpace(request.DealName))
             throw new ArgumentException("Missing required parameter: dealName");
@@ -217,8 +217,8 @@ public class HubSpotService
 
     [Display(Name = "update_deal")]
     [Description("Update an existing deal's stage, amount, close date, or other properties.")]
-    [Parameters("""{"type":"object","properties":{"dealId":{"type":"string","description":"The HubSpot deal ID"},"dealName":{"type":"string","description":"Updated deal name"},"dealStage":{"type":"string","description":"Updated deal stage"},"amount":{"type":"number","description":"Updated deal value"},"closeDate":{"type":"string","description":"Updated close date (YYYY-MM-DD)"},"pipeline":{"type":"string","description":"Updated pipeline name"}},"required":["dealId"]}""")]
-    public async Task<object> UpdateDeal(ServiceConfig config, ServiceRequest request)
+    [Parameters(typeof(UpdateDealArgs))]
+    public async Task<object> UpdateDeal(ServiceConfig config, UpdateDealArgs request)
     {
         if (string.IsNullOrWhiteSpace(request.DealId))
             throw new ArgumentException("Missing required parameter: dealId");
@@ -241,8 +241,8 @@ public class HubSpotService
 
     [Display(Name = "search_deals")]
     [Description("Search and filter deals in the CRM pipeline by name, stage, or amount.")]
-    [Parameters("""{"type":"object","properties":{"query":{"type":"string","description":"Search query for deal names"},"dealStage":{"type":"string","description":"Filter by deal stage"},"pipeline":{"type":"string","description":"Filter by pipeline name"},"maxResults":{"type":"integer","description":"Maximum results to return (default 10, max 100)"}},"required":[]}""")]
-    public async Task<object> SearchDeals(ServiceConfig config, ServiceRequest request)
+    [Parameters(typeof(SearchDealsArgs))]
+    public async Task<object> SearchDeals(ServiceConfig config, SearchDealsArgs request)
     {
         var maxResults = Math.Min(request.MaxResults ?? 10, 100);
         var props = new[] { "dealname", "dealstage", "amount", "closedate", "pipeline", "createdate" };
@@ -303,8 +303,8 @@ public class HubSpotService
 
     [Display(Name = "create_company")]
     [Description("Create a company record in the CRM.")]
-    [Parameters("""{"type":"object","properties":{"companyName":{"type":"string","description":"Company name"},"domain":{"type":"string","description":"Company website domain (e.g. example.com)"},"industry":{"type":"string","description":"Industry vertical"}},"required":["companyName"]}""")]
-    public async Task<object> CreateCompany(ServiceConfig config, ServiceRequest request)
+    [Parameters(typeof(CreateCompanyArgs))]
+    public async Task<object> CreateCompany(ServiceConfig config, CreateCompanyArgs request)
     {
         if (string.IsNullOrWhiteSpace(request.CompanyName))
             throw new ArgumentException("Missing required parameter: companyName");
@@ -331,8 +331,8 @@ public class HubSpotService
 
     [Display(Name = "search_companies")]
     [Description("Search companies in the CRM by name, domain, or industry.")]
-    [Parameters("""{"type":"object","properties":{"query":{"type":"string","description":"Search query for company names"},"domain":{"type":"string","description":"Filter by domain"},"industry":{"type":"string","description":"Filter by industry"},"maxResults":{"type":"integer","description":"Maximum results to return (default 10, max 100)"}},"required":["query"]}""")]
-    public async Task<object> SearchCompanies(ServiceConfig config, ServiceRequest request)
+    [Parameters(typeof(SearchCompaniesArgs))]
+    public async Task<object> SearchCompanies(ServiceConfig config, SearchCompaniesArgs request)
     {
         if (string.IsNullOrWhiteSpace(request.Query))
             throw new ArgumentException("Missing required parameter: query");
@@ -375,8 +375,8 @@ public class HubSpotService
 
     [Display(Name = "add_note")]
     [Description("Add a note/activity to a contact, deal, or company in the CRM.")]
-    [Parameters("""{"type":"object","properties":{"notes":{"type":"string","description":"The note content/body text"},"objectType":{"type":"string","description":"Object type to attach the note to: contacts, deals, or companies"},"objectId":{"type":"string","description":"The ID of the contact, deal, or company to attach the note to"}},"required":["notes","objectType","objectId"]}""")]
-    public async Task<object> AddNote(ServiceConfig config, ServiceRequest request)
+    [Parameters(typeof(AddNoteArgs))]
+    public async Task<object> AddNote(ServiceConfig config, AddNoteArgs request)
     {
         if (string.IsNullOrWhiteSpace(request.Notes))
             throw new ArgumentException("Missing required parameter: notes");

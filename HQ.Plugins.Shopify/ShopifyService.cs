@@ -26,8 +26,8 @@ public class ShopifyService
 
     [Display(Name = ShopifyMethods.ListProducts)]
     [Description("List products in the store.")]
-    [Parameters("""{"type":"object","properties":{"limit":{"type":"integer","description":"Max results (default 50)"}},"required":[]}""")]
-    public Task<object> ListProducts(ServiceConfig config, ServiceRequest r) =>
+    [Parameters(typeof(ListProductsArgs))]
+    public Task<object> ListProducts(ServiceConfig config, ListProductsArgs r) =>
         Guard(async () =>
         {
             using var client = Client(config);
@@ -37,8 +37,8 @@ public class ShopifyService
 
     [Display(Name = ShopifyMethods.GetProduct)]
     [Description("Get a single product by ID.")]
-    [Parameters("""{"type":"object","properties":{"productId":{"type":"string"}},"required":["productId"]}""")]
-    public Task<object> GetProduct(ServiceConfig config, ServiceRequest r) =>
+    [Parameters(typeof(GetProductArgs))]
+    public Task<object> GetProduct(ServiceConfig config, GetProductArgs r) =>
         Guard(async () =>
         {
             using var client = Client(config);
@@ -48,8 +48,8 @@ public class ShopifyService
 
     [Display(Name = ShopifyMethods.CreateProduct)]
     [Description("Create a new product with a single default variant price.")]
-    [Parameters("""{"type":"object","properties":{"title":{"type":"string"},"bodyHtml":{"type":"string","description":"Product description (HTML)"},"vendor":{"type":"string"},"productType":{"type":"string"},"price":{"type":"number","description":"Variant price"}},"required":["title"]}""")]
-    public Task<object> CreateProduct(ServiceConfig config, ServiceRequest r) =>
+    [Parameters(typeof(CreateProductArgs))]
+    public Task<object> CreateProduct(ServiceConfig config, CreateProductArgs r) =>
         Guard(() => Confirm(config, r, "Create this product?", r.Title, async () =>
         {
             using var client = Client(config);
@@ -64,8 +64,8 @@ public class ShopifyService
 
     [Display(Name = ShopifyMethods.UpdateInventory)]
     [Description("Set the available inventory for an inventory item at a location.")]
-    [Parameters("""{"type":"object","properties":{"inventoryItemId":{"type":"string"},"locationId":{"type":"string"},"available":{"type":"integer","description":"New available quantity"}},"required":["inventoryItemId","locationId","available"]}""")]
-    public Task<object> UpdateInventory(ServiceConfig config, ServiceRequest r) =>
+    [Parameters(typeof(UpdateInventoryArgs))]
+    public Task<object> UpdateInventory(ServiceConfig config, UpdateInventoryArgs r) =>
         Guard(() => Confirm(config, r, "Update inventory level?", $"Item {r.InventoryItemId} @ {r.LocationId} → {r.Available}", async () =>
         {
             using var client = Client(config);
@@ -80,8 +80,8 @@ public class ShopifyService
 
     [Display(Name = ShopifyMethods.ListOrders)]
     [Description("List orders (any status).")]
-    [Parameters("""{"type":"object","properties":{"limit":{"type":"integer","description":"Max results (default 50)"}},"required":[]}""")]
-    public Task<object> ListOrders(ServiceConfig config, ServiceRequest r) =>
+    [Parameters(typeof(ListOrdersArgs))]
+    public Task<object> ListOrders(ServiceConfig config, ListOrdersArgs r) =>
         Guard(async () =>
         {
             using var client = Client(config);
@@ -91,8 +91,8 @@ public class ShopifyService
 
     [Display(Name = ShopifyMethods.GetOrder)]
     [Description("Get a single order by ID.")]
-    [Parameters("""{"type":"object","properties":{"orderId":{"type":"string"}},"required":["orderId"]}""")]
-    public Task<object> GetOrder(ServiceConfig config, ServiceRequest r) =>
+    [Parameters(typeof(GetOrderArgs))]
+    public Task<object> GetOrder(ServiceConfig config, GetOrderArgs r) =>
         Guard(async () =>
         {
             using var client = Client(config);
@@ -102,8 +102,8 @@ public class ShopifyService
 
     [Display(Name = ShopifyMethods.FulfillOrder)]
     [Description("Fulfill all unfulfilled line items of an order, optionally notifying the customer.")]
-    [Parameters("""{"type":"object","properties":{"orderId":{"type":"string"}},"required":["orderId"]}""")]
-    public Task<object> FulfillOrder(ServiceConfig config, ServiceRequest r) =>
+    [Parameters(typeof(FulfillOrderArgs))]
+    public Task<object> FulfillOrder(ServiceConfig config, FulfillOrderArgs r) =>
         Guard(() => Confirm(config, r, "Fulfill this order?", $"Order {r.OrderId}", async () =>
         {
             using var client = Client(config);
@@ -124,8 +124,8 @@ public class ShopifyService
 
     [Display(Name = ShopifyMethods.ListCustomers)]
     [Description("List customers.")]
-    [Parameters("""{"type":"object","properties":{"limit":{"type":"integer","description":"Max results (default 50)"}},"required":[]}""")]
-    public Task<object> ListCustomers(ServiceConfig config, ServiceRequest r) =>
+    [Parameters(typeof(ListCustomersArgs))]
+    public Task<object> ListCustomers(ServiceConfig config, ListCustomersArgs r) =>
         Guard(async () =>
         {
             using var client = Client(config);
@@ -135,8 +135,8 @@ public class ShopifyService
 
     [Display(Name = ShopifyMethods.SearchCustomers)]
     [Description("Search customers by name, email or other fields.")]
-    [Parameters("""{"type":"object","properties":{"query":{"type":"string","description":"Search query, e.g. 'email:jane@acme.com' or a name"}},"required":["query"]}""")]
-    public Task<object> SearchCustomers(ServiceConfig config, ServiceRequest r) =>
+    [Parameters(typeof(SearchCustomersArgs))]
+    public Task<object> SearchCustomers(ServiceConfig config, SearchCustomersArgs r) =>
         Guard(async () =>
         {
             using var client = Client(config);
@@ -146,8 +146,8 @@ public class ShopifyService
 
     [Display(Name = ShopifyMethods.CreateDraftOrder)]
     [Description("Create a draft order with a single custom line item, optionally tied to a customer email.")]
-    [Parameters("""{"type":"object","properties":{"title":{"type":"string","description":"Line item title"},"price":{"type":"number"},"email":{"type":"string","description":"Customer email (optional)"}},"required":["title","price"]}""")]
-    public Task<object> CreateDraftOrder(ServiceConfig config, ServiceRequest r) =>
+    [Parameters(typeof(CreateDraftOrderArgs))]
+    public Task<object> CreateDraftOrder(ServiceConfig config, CreateDraftOrderArgs r) =>
         Guard(() => Confirm(config, r, "Create this draft order?", $"{r.Title} @ {r.Price}", async () =>
         {
             using var client = Client(config);
@@ -168,7 +168,7 @@ public class ShopifyService
     private static object Prop(JsonElement doc, string name) =>
         doc.ValueKind == JsonValueKind.Object && doc.TryGetProperty(name, out var el) ? el : doc;
 
-    private async Task<object> Confirm(ServiceConfig config, ServiceRequest request, string message, string content, Func<Task<object>> execute)
+    private async Task<object> Confirm(ServiceConfig config, IPluginServiceRequest request, string message, string content, Func<Task<object>> execute)
     {
         if (config.RequiresConfirmation && _notificationService != null)
         {

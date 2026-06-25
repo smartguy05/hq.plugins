@@ -25,13 +25,13 @@ public class HomeAssistantAssistCommand : CommandBase<ServiceRequest, ServiceCon
 
     protected override async Task<object> DoWork(ServiceRequest serviceRequest, ServiceConfig config, IEnumerable<ToolCall> availableToolCalls)
     {
-        return await this.ProcessRequest(serviceRequest, config, NotificationService);
+        return await this.ProcessRequest(RawServiceRequest, config, NotificationService);
     }
 
     [Display(Name = "home_assistant_command")]
     [Description("Sends a natural language command to Home Assistant to control smart home devices")]
-    [Parameters("""{"type":"object","properties":{"query":{"type":"string","description":"The natural language command to send to Home Assistant"}},"required":["query"]}""")]
-    public async Task<object> HomeAssistantCommand(ServiceConfig config, ServiceRequest serviceRequest)
+    [Parameters(typeof(HomeAssistantCommandArgs))]
+    public async Task<object> HomeAssistantCommand(ServiceConfig config, HomeAssistantCommandArgs serviceRequest)
     {
         using var httpClient = new HttpClient();
         httpClient.DefaultRequestHeaders.Accept.Add(

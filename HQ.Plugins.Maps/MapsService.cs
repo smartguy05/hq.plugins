@@ -29,8 +29,8 @@ public class MapsService
 
     [Display(Name = MapsMethods.GetDirections)]
     [Description("Get turn-by-turn directions between an origin and destination.")]
-    [Parameters("""{"type":"object","properties":{"origin":{"type":"string","description":"Start address or 'lat,lng'"},"destination":{"type":"string","description":"End address or 'lat,lng'"},"mode":{"type":"string","description":"driving | walking | bicycling | transit"}},"required":["origin","destination"]}""")]
-    public Task<object> GetDirections(ServiceConfig config, ServiceRequest r) =>
+    [Parameters(typeof(GetDirectionsArgs))]
+    public Task<object> GetDirections(ServiceConfig config, GetDirectionsArgs r) =>
         Guard(async () =>
         {
             using var client = new MapsClient(config.ApiKey);
@@ -40,8 +40,8 @@ public class MapsService
 
     [Display(Name = MapsMethods.GetTravelTime)]
     [Description("Get travel distance and duration between one or more origins and destinations.")]
-    [Parameters("""{"type":"object","properties":{"origins":{"type":"string","description":"One or more origins, '|'-separated (address or 'lat,lng')"},"destinations":{"type":"string","description":"One or more destinations, '|'-separated"},"mode":{"type":"string","description":"driving | walking | bicycling | transit"}},"required":["origins","destinations"]}""")]
-    public Task<object> GetTravelTime(ServiceConfig config, ServiceRequest r) =>
+    [Parameters(typeof(GetTravelTimeArgs))]
+    public Task<object> GetTravelTime(ServiceConfig config, GetTravelTimeArgs r) =>
         Guard(async () =>
         {
             using var client = new MapsClient(config.ApiKey);
@@ -51,8 +51,8 @@ public class MapsService
 
     [Display(Name = MapsMethods.SearchPlaces)]
     [Description("Search for places (businesses, landmarks, addresses) by free-text query, optionally biased to a location.")]
-    [Parameters("""{"type":"object","properties":{"query":{"type":"string","description":"Free-text query, e.g. 'coffee near downtown Austin'"},"location":{"type":"string","description":"Optional 'lat,lng' bias"},"radius":{"type":"integer","description":"Optional bias radius in meters"}},"required":["query"]}""")]
-    public Task<object> SearchPlaces(ServiceConfig config, ServiceRequest r) =>
+    [Parameters(typeof(SearchPlacesArgs))]
+    public Task<object> SearchPlaces(ServiceConfig config, SearchPlacesArgs r) =>
         Guard(async () =>
         {
             using var client = new MapsClient(config.ApiKey);
@@ -65,8 +65,8 @@ public class MapsService
 
     [Display(Name = MapsMethods.GetPlaceDetails)]
     [Description("Get details for a place by its place_id (from search_places).")]
-    [Parameters("""{"type":"object","properties":{"placeId":{"type":"string","description":"Google place_id"}},"required":["placeId"]}""")]
-    public Task<object> GetPlaceDetails(ServiceConfig config, ServiceRequest r) =>
+    [Parameters(typeof(GetPlaceDetailsArgs))]
+    public Task<object> GetPlaceDetails(ServiceConfig config, GetPlaceDetailsArgs r) =>
         Guard(async () =>
         {
             using var client = new MapsClient(config.ApiKey);
@@ -76,8 +76,8 @@ public class MapsService
 
     [Display(Name = MapsMethods.GeocodeAddress)]
     [Description("Convert an address into coordinates (and a normalized address).")]
-    [Parameters("""{"type":"object","properties":{"address":{"type":"string","description":"Street address or place name"}},"required":["address"]}""")]
-    public Task<object> GeocodeAddress(ServiceConfig config, ServiceRequest r) =>
+    [Parameters(typeof(GeocodeAddressArgs))]
+    public Task<object> GeocodeAddress(ServiceConfig config, GeocodeAddressArgs r) =>
         Guard(async () =>
         {
             using var client = new MapsClient(config.ApiKey);

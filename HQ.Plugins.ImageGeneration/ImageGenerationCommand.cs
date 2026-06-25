@@ -27,34 +27,34 @@ public class ImageGenerationCommand : CommandBase<ServiceRequest, ServiceConfig>
 
     protected override async Task<object> DoWork(ServiceRequest serviceRequest, ServiceConfig config, IEnumerable<ToolCall> availableToolCalls)
     {
-        return await this.ProcessRequest(serviceRequest, config, NotificationService);
+        return await this.ProcessRequest(RawServiceRequest, config, NotificationService);
     }
 
     [Display(Name = "generate_image")]
     [Description("Generates an image from a text prompt using Google Gemini image generation.")]
-    [Parameters("""{"type":"object","properties":{"prompt":{"type":"string","description":"Text prompt describing the image to generate"},"aspectRatio":{"type":"string","description":"Aspect ratio of the generated image, e.g. 1:1, 16:9, 9:16, 4:3, 3:4. Defaults to 1:1."},"resolution":{"type":"string","description":"Resolution of the generated image: 512px, 1K, 2K, 4K. Defaults to 1K."},"outputFileName":{"type":"string","description":"Optional filename for the saved image (without extension). A .png extension will be added automatically."}},"required":["prompt"]}""")]
-    public async Task<object> GenerateImage(ServiceConfig config, ServiceRequest serviceRequest)
+    [Parameters(typeof(GenerateImageArgs))]
+    public async Task<object> GenerateImage(ServiceConfig config, GenerateImageArgs request)
     {
-        return await CallGeminiImageApi(config, serviceRequest, null);
+        return await CallGeminiImageApi(config, request.Prompt, request.AspectRatio, request.Resolution, request.OutputFileName, null);
     }
 
     [Display(Name = "describe_image")]
     [Description("Analyzes an image and returns a detailed text description of its contents.")]
-    [Parameters("""{"type":"object","properties":{"referenceImage":{"type":"string","description":"Base64-encoded image to describe"},"prompt":{"type":"string","description":"Optional prompt to guide the description, e.g. 'describe the colors' or 'what text is visible'. Defaults to a general description."}},"required":["referenceImage"]}""")]
-    public async Task<object> DescribeImage(ServiceConfig config, ServiceRequest serviceRequest)
+    [Parameters(typeof(DescribeImageArgs))]
+    public async Task<object> DescribeImage(ServiceConfig config, DescribeImageArgs request)
     {
-        return await CallGeminiDescribeApi(config, serviceRequest);
+        return await CallGeminiDescribeApi(config, request.ReferenceImage, request.Prompt);
     }
 
     [Display(Name = "edit_image")]
     [Description("Edits or transforms an existing image based on a text prompt using Google Gemini image generation.")]
-    [Parameters("""{"type":"object","properties":{"prompt":{"type":"string","description":"Text prompt describing how to edit or transform the image"},"referenceImage":{"type":"string","description":"Base64-encoded reference image to edit"},"aspectRatio":{"type":"string","description":"Aspect ratio of the generated image, e.g. 1:1, 16:9, 9:16, 4:3, 3:4. Defaults to 1:1."},"resolution":{"type":"string","description":"Resolution of the generated image: 512px, 1K, 2K, 4K. Defaults to 1K."},"outputFileName":{"type":"string","description":"Optional filename for the saved image (without extension). A .png extension will be added automatically."}},"required":["prompt","referenceImage"]}""")]
-    public async Task<object> EditImage(ServiceConfig config, ServiceRequest serviceRequest)
+    [Parameters(typeof(EditImageArgs))]
+    public async Task<object> EditImage(ServiceConfig config, EditImageArgs request)
     {
-        return await CallGeminiImageApi(config, serviceRequest, serviceRequest.ReferenceImage);
+        return await CallGeminiImageApi(config, request.Prompt, request.AspectRatio, request.Resolution, request.OutputFileName, request.ReferenceImage);
     }
 
-    private async Task<object> CallGeminiDescribeApi(ServiceConfig config, ServiceRequest serviceRequest)
+    private async Task<object> CallGeminiDescribeApi(ServiceConfig config, string referenceImage, string promptInput)
     {
         if (string.IsNullOrWhiteSpace(config.ApiKey))
         {
@@ -62,7 +62,7 @@ public class ImageGenerationCommand : CommandBase<ServiceRequest, ServiceConfig>
             return new { Success = false, Message = "API key is not configured" };
         }
 
-        if (string.IsNullOrWhiteSpace(serviceRequest.ReferenceImage))
+        if (string.IsNullOrWhiteSpace(referenceImage))
         {
             return new { Success = false, Message = "Reference image is required" };
         }
@@ -70,9 +70,9 @@ public class ImageGenerationCommand : CommandBase<ServiceRequest, ServiceConfig>
         var model = string.IsNullOrWhiteSpace(config.Model) ? "gemini-3.1-flash-image-preview" : config.Model;
         var url = $"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent";
 
-        var prompt = string.IsNullOrWhiteSpace(serviceRequest.Prompt)
+        var prompt = string.IsNullOrWhiteSpace(promptInput)
             ? "Describe this image in detail."
-            : serviceRequest.Prompt;
+            : promptInput;
 
         var requestBody = new
         {
@@ -87,7 +87,7 @@ public class ImageGenerationCommand : CommandBase<ServiceRequest, ServiceConfig>
                             inline_data = new
                             {
                                 mime_type = "image/png",
-                                data = serviceRequest.ReferenceImage
+                                data = referenceImage
                             }
                         },
                         new { text = prompt }
@@ -153,7 +153,7 @@ public class ImageGenerationCommand : CommandBase<ServiceRequest, ServiceConfig>
         }
     }
 
-    private async Task<object> CallGeminiImageApi(ServiceConfig config, ServiceRequest serviceRequest, string referenceImageBase64)
+    private async Task<object> CallGeminiImageApi(ServiceConfig config, string promptInput, string aspectRatio, string resolution, string outputFileName, string referenceImageBase64)
     {
         if (string.IsNullOrWhiteSpace(config.ApiKey))
         {
@@ -161,7 +161,7 @@ public class ImageGenerationCommand : CommandBase<ServiceRequest, ServiceConfig>
             return new { Success = false, Message = "API key is not configured" };
         }
 
-        if (string.IsNullOrWhiteSpace(serviceRequest.Prompt))
+        if (string.IsNullOrWhiteSpace(promptInput))
         {
             return new { Success = false, Message = "Prompt is required" };
         }
@@ -184,7 +184,7 @@ public class ImageGenerationCommand : CommandBase<ServiceRequest, ServiceConfig>
             });
         }
 
-        parts.Add(new { text = serviceRequest.Prompt });
+        parts.Add(new { text = promptInput });
 
         var requestBody = new
         {
@@ -195,8 +195,8 @@ public class ImageGenerationCommand : CommandBase<ServiceRequest, ServiceConfig>
             generationConfig = new
             {
                 responseModalities = new[] { "IMAGE" },
-                aspectRatio = serviceRequest.AspectRatio ?? "1:1",
-                resolution = serviceRequest.Resolution ?? "1K"
+                aspectRatio = aspectRatio ?? "1:1",
+                resolution = resolution ?? "1K"
             }
         };
 
@@ -236,7 +236,7 @@ public class ImageGenerationCommand : CommandBase<ServiceRequest, ServiceConfig>
                     var mimeType = inlineData.GetProperty("mimeType").GetString() ?? "image/png";
                     var base64Data = inlineData.GetProperty("data").GetString();
 
-                    var filePath = SaveImage(config, serviceRequest, base64Data, mimeType);
+                    var filePath = SaveImage(config, outputFileName, base64Data, mimeType);
 
                     await Log(LogLevel.Info, $"Image generated and saved to {filePath}");
 
@@ -260,7 +260,7 @@ public class ImageGenerationCommand : CommandBase<ServiceRequest, ServiceConfig>
         }
     }
 
-    private static string SaveImage(ServiceConfig config, ServiceRequest serviceRequest, string base64Data, string mimeType)
+    private static string SaveImage(ServiceConfig config, string outputFileName, string base64Data, string mimeType)
     {
         var extension = mimeType switch
         {
@@ -269,8 +269,8 @@ public class ImageGenerationCommand : CommandBase<ServiceRequest, ServiceConfig>
             _ => ".png"
         };
 
-        var fileName = !string.IsNullOrWhiteSpace(serviceRequest.OutputFileName)
-            ? serviceRequest.OutputFileName + extension
+        var fileName = !string.IsNullOrWhiteSpace(outputFileName)
+            ? outputFileName + extension
             : $"generated_{DateTime.UtcNow:yyyyMMdd_HHmmss}{extension}";
 
         var directory = !string.IsNullOrWhiteSpace(config.OutputDirectory)

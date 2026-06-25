@@ -13,7 +13,7 @@ public class DriveClient
 
     public DriveClient(ServiceConfig config) => _drive = GoogleClientFactory.CreateDrive(config);
 
-    public async Task<object> ListFiles(ServiceRequest r)
+    public async Task<object> ListFiles(DriveListFilesArgs r)
     {
         var list = _drive.Files.List();
         var clauses = new List<string> { "trashed = false" };
@@ -33,7 +33,7 @@ public class DriveClient
         };
     }
 
-    public async Task<object> SearchFiles(ServiceRequest r)
+    public async Task<object> SearchFiles(DriveSearchFilesArgs r)
     {
         if (string.IsNullOrWhiteSpace(r.Query))
             return new { Success = false, Error = "query is required" };
@@ -53,7 +53,7 @@ public class DriveClient
         };
     }
 
-    public async Task<object> GetFile(ServiceRequest r)
+    public async Task<object> GetFile(DriveGetFileArgs r)
     {
         if (string.IsNullOrWhiteSpace(r.FileId)) return new { Success = false, Error = "fileId is required" };
         var get = _drive.Files.Get(r.FileId);
@@ -62,7 +62,7 @@ public class DriveClient
         return new { Success = true, File = MapFile(file) };
     }
 
-    public async Task<object> DownloadFile(ServiceRequest r)
+    public async Task<object> DownloadFile(DriveDownloadFileArgs r)
     {
         if (string.IsNullOrWhiteSpace(r.FileId)) return new { Success = false, Error = "fileId is required" };
 
@@ -97,7 +97,7 @@ public class DriveClient
         };
     }
 
-    public async Task<object> UploadFile(ServiceRequest r)
+    public async Task<object> UploadFile(DriveUploadFileArgs r)
     {
         if (string.IsNullOrWhiteSpace(r.Name)) return new { Success = false, Error = "name is required" };
         if (string.IsNullOrWhiteSpace(r.Content)) return new { Success = false, Error = "content (base64) is required" };
@@ -118,7 +118,7 @@ public class DriveClient
         return new { Success = true, File = MapFile(upload.ResponseBody) };
     }
 
-    public async Task<object> CreateFolder(ServiceRequest r)
+    public async Task<object> CreateFolder(DriveCreateFolderArgs r)
     {
         if (string.IsNullOrWhiteSpace(r.Name)) return new { Success = false, Error = "name is required" };
         var metadata = new DriveFile { Name = r.Name, MimeType = "application/vnd.google-apps.folder" };
@@ -130,7 +130,7 @@ public class DriveClient
         return new { Success = true, File = MapFile(folder) };
     }
 
-    public async Task<object> MoveFile(ServiceRequest r)
+    public async Task<object> MoveFile(DriveMoveFileArgs r)
     {
         if (string.IsNullOrWhiteSpace(r.FileId)) return new { Success = false, Error = "fileId is required" };
         if (string.IsNullOrWhiteSpace(r.FolderId)) return new { Success = false, Error = "folderId (destination) is required" };
@@ -147,7 +147,7 @@ public class DriveClient
         return new { Success = true, File = MapFile(file) };
     }
 
-    public async Task<object> CopyFile(ServiceRequest r)
+    public async Task<object> CopyFile(DriveCopyFileArgs r)
     {
         if (string.IsNullOrWhiteSpace(r.FileId)) return new { Success = false, Error = "fileId is required" };
         var metadata = new DriveFile();
@@ -160,7 +160,7 @@ public class DriveClient
         return new { Success = true, File = MapFile(file) };
     }
 
-    public async Task<object> DeleteFile(ServiceRequest r)
+    public async Task<object> DeleteFile(DriveDeleteFileArgs r)
     {
         if (string.IsNullOrWhiteSpace(r.FileId)) return new { Success = false, Error = "fileId is required" };
 
@@ -174,7 +174,7 @@ public class DriveClient
         return new { Success = true, FileId = r.FileId, Trashed = true };
     }
 
-    public async Task<object> ShareFile(ServiceRequest r)
+    public async Task<object> ShareFile(DriveShareFileArgs r)
     {
         if (string.IsNullOrWhiteSpace(r.FileId)) return new { Success = false, Error = "fileId is required" };
 

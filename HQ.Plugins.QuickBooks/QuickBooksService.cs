@@ -30,20 +30,21 @@ public class QuickBooksService
 
     [Display(Name = QuickBooksMethods.ListCustomers)]
     [Description("List customers.")]
-    [Parameters("""{"type":"object","properties":{"limit":{"type":"integer","description":"Max results (default 50)"}},"required":[]}""")]
-    public Task<object> ListCustomers(ServiceConfig config, ServiceRequest r) =>
-        Guard(() => Query(config, "Customer", r.Limit ?? 50));
+    [Parameters(typeof(ListCustomersArgs))]
+    public Task<object> ListCustomers(ServiceConfig config, ListCustomersArgs request) =>
+        Guard(() => Query(config, "Customer", request.Limit ?? 50));
 
     [Display(Name = QuickBooksMethods.CreateCustomer)]
     [Description("Create a new customer.")]
-    [Parameters("""{"type":"object","properties":{"displayName":{"type":"string","description":"Customer display name (required, must be unique)"},"email":{"type":"string"},"companyName":{"type":"string"}},"required":["displayName"]}""")]
-    public Task<object> CreateCustomer(ServiceConfig config, ServiceRequest r) =>
-        Guard(() => Confirm(config, r, "Create this customer?", r.DisplayName, async () =>
+    [Parameters(typeof(CreateCustomerArgs))]
+    [SupportsConfirmation]
+    public Task<object> CreateCustomer(ServiceConfig config, CreateCustomerArgs request) =>
+        Guard(() => Confirm(config, request, "Create this customer?", request.DisplayName, async () =>
         {
             using var client = new QuickBooksClient(config);
-            var body = new Dictionary<string, object> { ["DisplayName"] = r.DisplayName };
-            if (!string.IsNullOrWhiteSpace(r.CompanyName)) body["CompanyName"] = r.CompanyName;
-            if (!string.IsNullOrWhiteSpace(r.Email)) body["PrimaryEmailAddr"] = new { Address = r.Email };
+            var body = new Dictionary<string, object> { ["DisplayName"] = request.DisplayName };
+            if (!string.IsNullOrWhiteSpace(request.CompanyName)) body["CompanyName"] = request.CompanyName;
+            if (!string.IsNullOrWhiteSpace(request.Email)) body["PrimaryEmailAddr"] = new { Address = request.Email };
             var doc = await client.PostAsync("/customer", body);
             return new { Success = true, Customer = Prop(doc, "Customer") };
         }));
@@ -52,22 +53,23 @@ public class QuickBooksService
 
     [Display(Name = QuickBooksMethods.CreateInvoice)]
     [Description("Create an invoice for a customer with a single line item. itemId defaults to '1' (the sandbox 'Services' item) — use list-able items in production.")]
-    [Parameters("""{"type":"object","properties":{"customerId":{"type":"string","description":"Customer ID"},"amount":{"type":"number","description":"Line amount"},"itemId":{"type":"string","description":"Sales item ID (default '1')"},"description":{"type":"string"}},"required":["customerId","amount"]}""")]
-    public Task<object> CreateInvoice(ServiceConfig config, ServiceRequest r) =>
-        Guard(() => Confirm(config, r, "Create this invoice?", $"Customer {r.CustomerId}, amount {r.Amount}", async () =>
+    [Parameters(typeof(CreateInvoiceArgs))]
+    [SupportsConfirmation]
+    public Task<object> CreateInvoice(ServiceConfig config, CreateInvoiceArgs request) =>
+        Guard(() => Confirm(config, request, "Create this invoice?", $"Customer {request.CustomerId}, amount {request.Amount}", async () =>
         {
             using var client = new QuickBooksClient(config);
             var body = new
             {
-                CustomerRef = new { value = r.CustomerId },
+                CustomerRef = new { value = request.CustomerId },
                 Line = new[]
                 {
                     new
                     {
-                        Amount = r.Amount,
+                        Amount = request.Amount,
                         DetailType = "SalesItemLineDetail",
-                        Description = r.Description,
-                        SalesItemLineDetail = new { ItemRef = new { value = string.IsNullOrWhiteSpace(r.ItemId) ? "1" : r.ItemId } }
+                        Description = request.Description,
+                        SalesItemLineDetail = new { ItemRef = new { value = string.IsNullOrWhiteSpace(request.ItemId) ? "1" : request.ItemId } }
                     }
                 }
             };
@@ -77,78 +79,81 @@ public class QuickBooksService
 
     [Display(Name = QuickBooksMethods.SendInvoice)]
     [Description("Email an existing invoice to the customer.")]
-    [Parameters("""{"type":"object","properties":{"invoiceId":{"type":"string"},"sendTo":{"type":"string","description":"Override recipient email (optional)"}},"required":["invoiceId"]}""")]
-    public Task<object> SendInvoice(ServiceConfig config, ServiceRequest r) =>
-        Guard(() => Confirm(config, r, "Email this invoice?", $"Invoice {r.InvoiceId}", async () =>
+    [Parameters(typeof(SendInvoiceArgs))]
+    [SupportsConfirmation]
+    public Task<object> SendInvoice(ServiceConfig config, SendInvoiceArgs request) =>
+        Guard(() => Confirm(config, request, "Email this invoice?", $"Invoice {request.InvoiceId}", async () =>
         {
             using var client = new QuickBooksClient(config);
-            var path = string.IsNullOrWhiteSpace(r.SendTo)
-                ? $"/invoice/{r.InvoiceId}/send"
-                : $"/invoice/{r.InvoiceId}/send?sendTo={Uri.EscapeDataString(r.SendTo)}";
+            var path = string.IsNullOrWhiteSpace(request.SendTo)
+                ? $"/invoice/{request.InvoiceId}/send"
+                : $"/invoice/{request.InvoiceId}/send?sendTo={Uri.EscapeDataString(request.SendTo)}";
             var doc = await client.PostAsync(path, new { });
             return new { Success = true, Invoice = Prop(doc, "Invoice") };
         }));
 
     [Display(Name = QuickBooksMethods.ListInvoices)]
     [Description("List invoices.")]
-    [Parameters("""{"type":"object","properties":{"limit":{"type":"integer","description":"Max results (default 50)"}},"required":[]}""")]
-    public Task<object> ListInvoices(ServiceConfig config, ServiceRequest r) =>
-        Guard(() => Query(config, "Invoice", r.Limit ?? 50));
+    [Parameters(typeof(ListInvoicesArgs))]
+    public Task<object> ListInvoices(ServiceConfig config, ListInvoicesArgs request) =>
+        Guard(() => Query(config, "Invoice", request.Limit ?? 50));
 
     // ───────────────────────────── Expenses / bills ─────────────────────────────
 
     [Display(Name = QuickBooksMethods.ListExpenses)]
     [Description("List expenses (purchases).")]
-    [Parameters("""{"type":"object","properties":{"limit":{"type":"integer","description":"Max results (default 50)"}},"required":[]}""")]
-    public Task<object> ListExpenses(ServiceConfig config, ServiceRequest r) =>
-        Guard(() => Query(config, "Purchase", r.Limit ?? 50));
+    [Parameters(typeof(ListExpensesArgs))]
+    public Task<object> ListExpenses(ServiceConfig config, ListExpensesArgs request) =>
+        Guard(() => Query(config, "Purchase", request.Limit ?? 50));
 
     [Display(Name = QuickBooksMethods.CreateExpense)]
     [Description("Record an expense (purchase) paid from an account against an expense category account.")]
-    [Parameters("""{"type":"object","properties":{"paymentAccountId":{"type":"string","description":"Account the money was paid FROM (bank/credit card)"},"expenseAccountId":{"type":"string","description":"Expense category account ID"},"amount":{"type":"number"},"paymentType":{"type":"string","description":"Cash | Check | CreditCard"},"vendorId":{"type":"string","description":"Vendor/payee ID (optional)"},"description":{"type":"string"}},"required":["paymentAccountId","expenseAccountId","amount"]}""")]
-    public Task<object> CreateExpense(ServiceConfig config, ServiceRequest r) =>
-        Guard(() => Confirm(config, r, "Record this expense?", $"{r.Amount} from account {r.PaymentAccountId}", async () =>
+    [Parameters(typeof(CreateExpenseArgs))]
+    [SupportsConfirmation]
+    public Task<object> CreateExpense(ServiceConfig config, CreateExpenseArgs request) =>
+        Guard(() => Confirm(config, request, "Record this expense?", $"{request.Amount} from account {request.PaymentAccountId}", async () =>
         {
             using var client = new QuickBooksClient(config);
             var body = new Dictionary<string, object>
             {
-                ["AccountRef"] = new { value = r.PaymentAccountId },
-                ["PaymentType"] = string.IsNullOrWhiteSpace(r.PaymentType) ? "Cash" : r.PaymentType,
+                ["AccountRef"] = new { value = request.PaymentAccountId },
+                ["PaymentType"] = string.IsNullOrWhiteSpace(request.PaymentType) ? "Cash" : request.PaymentType,
                 ["Line"] = new[]
                 {
                     new
                     {
-                        Amount = r.Amount,
+                        Amount = request.Amount,
                         DetailType = "AccountBasedExpenseLineDetail",
-                        Description = r.Description,
-                        AccountBasedExpenseLineDetail = new { AccountRef = new { value = r.ExpenseAccountId } }
+                        Description = request.Description,
+                        AccountBasedExpenseLineDetail = new { AccountRef = new { value = request.ExpenseAccountId } }
                     }
                 }
             };
-            if (!string.IsNullOrWhiteSpace(r.VendorId))
-                body["EntityRef"] = new { value = r.VendorId, type = "Vendor" };
+            if (!string.IsNullOrWhiteSpace(request.VendorId))
+                body["EntityRef"] = new { value = request.VendorId, type = "Vendor" };
             var doc = await client.PostAsync("/purchase", body);
             return new { Success = true, Purchase = Prop(doc, "Purchase") };
         }));
 
     [Display(Name = QuickBooksMethods.CreateBill)]
     [Description("Create a bill (accounts payable) owed to a vendor.")]
-    [Parameters("""{"type":"object","properties":{"vendorId":{"type":"string"},"expenseAccountId":{"type":"string","description":"Expense category account ID"},"amount":{"type":"number"},"description":{"type":"string"}},"required":["vendorId","expenseAccountId","amount"]}""")]
-    public Task<object> CreateBill(ServiceConfig config, ServiceRequest r) =>
-        Guard(() => Confirm(config, r, "Create this bill?", $"Vendor {r.VendorId}, amount {r.Amount}", async () =>
+    [Parameters(typeof(CreateBillArgs))]
+    [SupportsConfirmation]
+    public Task<object> CreateBill(ServiceConfig config, CreateBillArgs request) =>
+        Guard(() => Confirm(config, request, "Create this bill?", $"Vendor {request.VendorId}, amount {request.Amount}", async () =>
         {
             using var client = new QuickBooksClient(config);
             var body = new
             {
-                VendorRef = new { value = r.VendorId },
+                VendorRef = new { value = request.VendorId },
                 Line = new[]
                 {
                     new
                     {
-                        Amount = r.Amount,
+                        Amount = request.Amount,
                         DetailType = "AccountBasedExpenseLineDetail",
-                        Description = r.Description,
-                        AccountBasedExpenseLineDetail = new { AccountRef = new { value = r.ExpenseAccountId } }
+                        Description = request.Description,
+                        AccountBasedExpenseLineDetail = new { AccountRef = new { value = request.ExpenseAccountId } }
                     }
                 }
             };
@@ -160,27 +165,27 @@ public class QuickBooksService
 
     [Display(Name = QuickBooksMethods.ListAccounts)]
     [Description("List accounts from the chart of accounts.")]
-    [Parameters("""{"type":"object","properties":{"limit":{"type":"integer","description":"Max results (default 100)"}},"required":[]}""")]
-    public Task<object> ListAccounts(ServiceConfig config, ServiceRequest r) =>
-        Guard(() => Query(config, "Account", r.Limit ?? 100));
+    [Parameters(typeof(ListAccountsArgs))]
+    public Task<object> ListAccounts(ServiceConfig config, ListAccountsArgs request) =>
+        Guard(() => Query(config, "Account", request.Limit ?? 100));
 
     [Display(Name = QuickBooksMethods.ListVendors)]
     [Description("List vendors.")]
-    [Parameters("""{"type":"object","properties":{"limit":{"type":"integer","description":"Max results (default 50)"}},"required":[]}""")]
-    public Task<object> ListVendors(ServiceConfig config, ServiceRequest r) =>
-        Guard(() => Query(config, "Vendor", r.Limit ?? 50));
+    [Parameters(typeof(ListVendorsArgs))]
+    public Task<object> ListVendors(ServiceConfig config, ListVendorsArgs request) =>
+        Guard(() => Query(config, "Vendor", request.Limit ?? 50));
 
     [Display(Name = QuickBooksMethods.RunReport)]
     [Description("Run a financial report. reportName e.g. ProfitAndLoss, BalanceSheet, AgedReceivables.")]
-    [Parameters("""{"type":"object","properties":{"reportName":{"type":"string","description":"ProfitAndLoss | BalanceSheet | AgedReceivables | etc."},"startDate":{"type":"string","description":"YYYY-MM-DD"},"endDate":{"type":"string","description":"YYYY-MM-DD"}},"required":["reportName"]}""")]
-    public Task<object> RunReport(ServiceConfig config, ServiceRequest r) =>
+    [Parameters(typeof(RunReportArgs))]
+    public Task<object> RunReport(ServiceConfig config, RunReportArgs request) =>
         Guard(async () =>
         {
             using var client = new QuickBooksClient(config);
-            var path = $"/reports/{Uri.EscapeDataString(r.ReportName)}";
+            var path = $"/reports/{Uri.EscapeDataString(request.ReportName)}";
             var qs = new List<string>();
-            if (!string.IsNullOrWhiteSpace(r.StartDate)) qs.Add($"start_date={r.StartDate}");
-            if (!string.IsNullOrWhiteSpace(r.EndDate)) qs.Add($"end_date={r.EndDate}");
+            if (!string.IsNullOrWhiteSpace(request.StartDate)) qs.Add($"start_date={request.StartDate}");
+            if (!string.IsNullOrWhiteSpace(request.EndDate)) qs.Add($"end_date={request.EndDate}");
             if (qs.Count > 0) path += "?" + string.Join("&", qs);
             var doc = await client.GetAsync(path);
             return new { Success = true, Report = doc };
@@ -201,7 +206,7 @@ public class QuickBooksService
     private static object Prop(JsonElement doc, string name) =>
         doc.ValueKind == JsonValueKind.Object && doc.TryGetProperty(name, out var el) ? el : doc;
 
-    private async Task<object> Confirm(ServiceConfig config, ServiceRequest request, string message, string content, Func<Task<object>> execute)
+    private async Task<object> Confirm(ServiceConfig config, IPluginServiceRequest request, string message, string content, Func<Task<object>> execute)
     {
         if (config.RequiresConfirmation && _notificationService != null)
         {

@@ -22,115 +22,88 @@ public static class TasksTools
 {
     public static List<ToolCall> GetToolDefinitions()
         => ServiceExtensions.GetServiceToolCalls<TasksToolImpl>();
-
-    public static async Task<object> InvokeAsync(ServiceRequest request, ServiceConfig config)
-    {
-        var impl = new TasksToolImpl();
-        return await impl.Dispatch(request, config);
-    }
 }
 
 public class TasksToolImpl
 {
     [Display(Name = "list_projects")]
     [Description("List all projects for the caller's organisation.")]
-    [Parameters("""{"type":"object","properties":{"organizationId":{"type":"string","description":"Organisation GUID"}},"required":["organizationId"]}""")]
-    public Task<object> ListProjects(ServiceConfig config, ServiceRequest request)
-        => WithService(svc => svc.ListProjectsAsync(RequireOrg(request)));
+    [Parameters(typeof(ListProjectsArgs))]
+    public Task<object> ListProjects(ServiceConfig config, ListProjectsArgs request)
+        => WithService(svc => svc.ListProjectsAsync(RequireOrg(request.OrganizationId)));
 
     [Display(Name = "create_project")]
     [Description("Create a new project.")]
-    [Parameters("""{"type":"object","properties":{"organizationId":{"type":"string"},"name":{"type":"string"},"description":{"type":"string"},"color":{"type":"string"}},"required":["organizationId","name"]}""")]
-    public Task<object> CreateProject(ServiceConfig config, ServiceRequest request)
-        => WithService(svc => svc.CreateProjectAsync(RequireOrg(request), request.Name, request.Description, request.Color));
+    [Parameters(typeof(CreateProjectArgs))]
+    public Task<object> CreateProject(ServiceConfig config, CreateProjectArgs request)
+        => WithService(svc => svc.CreateProjectAsync(RequireOrg(request.OrganizationId), request.Name, request.Description, request.Color));
 
     [Display(Name = "update_project")]
     [Description("Update an existing project's name, description, color, or archive state.")]
-    [Parameters("""{"type":"object","properties":{"organizationId":{"type":"string"},"projectId":{"type":"string"},"name":{"type":"string"},"description":{"type":"string"},"color":{"type":"string"}},"required":["organizationId","projectId"]}""")]
-    public Task<object> UpdateProject(ServiceConfig config, ServiceRequest request)
-        => WithService(svc => svc.UpdateProjectAsync(RequireOrg(request), request.ProjectId ?? Guid.Empty,
+    [Parameters(typeof(UpdateProjectArgs))]
+    public Task<object> UpdateProject(ServiceConfig config, UpdateProjectArgs request)
+        => WithService(svc => svc.UpdateProjectAsync(RequireOrg(request.OrganizationId), request.ProjectId ?? Guid.Empty,
             request.Name, request.Description, request.Color, archive: null));
 
     [Display(Name = "delete_project")]
     [Description("Delete a project along with all of its tasks and comments.")]
-    [Parameters("""{"type":"object","properties":{"organizationId":{"type":"string"},"projectId":{"type":"string"}},"required":["organizationId","projectId"]}""")]
-    public Task<object> DeleteProject(ServiceConfig config, ServiceRequest request)
-        => WithService(svc => svc.DeleteProjectAsync(RequireOrg(request), request.ProjectId ?? Guid.Empty));
+    [Parameters(typeof(DeleteProjectArgs))]
+    public Task<object> DeleteProject(ServiceConfig config, DeleteProjectArgs request)
+        => WithService(svc => svc.DeleteProjectAsync(RequireOrg(request.OrganizationId), request.ProjectId ?? Guid.Empty));
 
     [Display(Name = "list_tasks")]
     [Description("List tasks. With a projectId, returns that project's tasks. Without one, returns the calling agent's own (project-less) tasks. Optionally filter by status or assignee.")]
-    [Parameters("""{"type":"object","properties":{"organizationId":{"type":"string"},"projectId":{"type":"string"},"status":{"type":"string","enum":["todo","doing","done","blocked"]},"assignee":{"type":"string"}},"required":["organizationId"]}""")]
-    public Task<object> ListTasks(ServiceConfig config, ServiceRequest request)
-        => WithService(svc => svc.ListTasksAsync(RequireOrg(request), request.ProjectId,
+    [Parameters(typeof(ListTasksArgs))]
+    public Task<object> ListTasks(ServiceConfig config, ListTasksArgs request)
+        => WithService(svc => svc.ListTasksAsync(RequireOrg(request.OrganizationId), request.ProjectId,
             request.ProjectId.HasValue ? null : RequireAgent(config), request.Status, request.Assignee));
 
     [Display(Name = "create_task")]
     [Description("Create a task. Supply a projectId to file it under a (shared) project; omit it and the task is private to the calling agent.")]
-    [Parameters("""{"type":"object","properties":{"organizationId":{"type":"string"},"projectId":{"type":"string"},"title":{"type":"string"},"description":{"type":"string"},"assignee":{"type":"string"},"due":{"type":"string","format":"date-time"}},"required":["organizationId","title"]}""")]
-    public Task<object> CreateTask(ServiceConfig config, ServiceRequest request)
-        => WithService(svc => svc.CreateTaskAsync(RequireOrg(request), request.ProjectId,
+    [Parameters(typeof(CreateTaskArgs))]
+    public Task<object> CreateTask(ServiceConfig config, CreateTaskArgs request)
+        => WithService(svc => svc.CreateTaskAsync(RequireOrg(request.OrganizationId), request.ProjectId,
             request.ProjectId.HasValue ? null : RequireAgent(config), config.AgentName,
             request.Title, request.Description, request.Assignee, request.Due));
 
     [Display(Name = "update_task")]
     [Description("Update a task's title, description, status, assignee, or due date.")]
-    [Parameters("""{"type":"object","properties":{"organizationId":{"type":"string"},"taskId":{"type":"string"},"title":{"type":"string"},"description":{"type":"string"},"status":{"type":"string","enum":["todo","doing","done","blocked"]},"assignee":{"type":"string"},"due":{"type":"string","format":"date-time"}},"required":["organizationId","taskId"]}""")]
-    public Task<object> UpdateTask(ServiceConfig config, ServiceRequest request)
-        => WithService(svc => svc.UpdateTaskAsync(RequireOrg(request), request.TaskId ?? Guid.Empty, request.Title,
+    [Parameters(typeof(UpdateTaskArgs))]
+    public Task<object> UpdateTask(ServiceConfig config, UpdateTaskArgs request)
+        => WithService(svc => svc.UpdateTaskAsync(RequireOrg(request.OrganizationId), request.TaskId ?? Guid.Empty, request.Title,
             request.Description, request.Status, request.Assignee, request.Due, request.SortOrder, config.AgentId));
 
     [Display(Name = "complete_task")]
     [Description("Mark a task as done (shorthand for update_task with status='done').")]
-    [Parameters("""{"type":"object","properties":{"organizationId":{"type":"string"},"taskId":{"type":"string"}},"required":["organizationId","taskId"]}""")]
-    public Task<object> CompleteTask(ServiceConfig config, ServiceRequest request)
-        => WithService(svc => svc.UpdateTaskAsync(RequireOrg(request), request.TaskId ?? Guid.Empty,
+    [Parameters(typeof(CompleteTaskArgs))]
+    public Task<object> CompleteTask(ServiceConfig config, CompleteTaskArgs request)
+        => WithService(svc => svc.UpdateTaskAsync(RequireOrg(request.OrganizationId), request.TaskId ?? Guid.Empty,
             null, null, "done", null, null, null, config.AgentId));
 
     [Display(Name = "delete_task")]
     [Description("Delete a task and its comments.")]
-    [Parameters("""{"type":"object","properties":{"organizationId":{"type":"string"},"taskId":{"type":"string"}},"required":["organizationId","taskId"]}""")]
-    public Task<object> DeleteTask(ServiceConfig config, ServiceRequest request)
-        => WithService(svc => svc.DeleteTaskAsync(RequireOrg(request), request.TaskId ?? Guid.Empty, config.AgentId));
+    [Parameters(typeof(DeleteTaskArgs))]
+    public Task<object> DeleteTask(ServiceConfig config, DeleteTaskArgs request)
+        => WithService(svc => svc.DeleteTaskAsync(RequireOrg(request.OrganizationId), request.TaskId ?? Guid.Empty, config.AgentId));
 
     [Display(Name = "add_comment")]
     [Description("Add a comment to a task.")]
-    [Parameters("""{"type":"object","properties":{"organizationId":{"type":"string"},"taskId":{"type":"string"},"text":{"type":"string"},"author":{"type":"string"}},"required":["organizationId","taskId","text"]}""")]
-    public Task<object> AddComment(ServiceConfig config, ServiceRequest request)
-        => WithService(svc => svc.AddCommentAsync(RequireOrg(request), request.TaskId ?? Guid.Empty,
+    [Parameters(typeof(AddCommentArgs))]
+    public Task<object> AddComment(ServiceConfig config, AddCommentArgs request)
+        => WithService(svc => svc.AddCommentAsync(RequireOrg(request.OrganizationId), request.TaskId ?? Guid.Empty,
             request.Author ?? "agent", request.Text, config.AgentId));
 
     [Display(Name = "list_comments")]
     [Description("List comments on a task.")]
-    [Parameters("""{"type":"object","properties":{"organizationId":{"type":"string"},"taskId":{"type":"string"}},"required":["organizationId","taskId"]}""")]
-    public Task<object> ListComments(ServiceConfig config, ServiceRequest request)
-        => WithService(svc => svc.ListCommentsAsync(RequireOrg(request), request.TaskId ?? Guid.Empty, config.AgentId));
+    [Parameters(typeof(ListCommentsArgs))]
+    public Task<object> ListComments(ServiceConfig config, ListCommentsArgs request)
+        => WithService(svc => svc.ListCommentsAsync(RequireOrg(request.OrganizationId), request.TaskId ?? Guid.Empty, config.AgentId));
 
-    // Dispatcher used by TasksCommand.DoWork — matches ServiceRequest.Method
-    // (snake_case tool name) to the corresponding method above.
-    public async Task<object> Dispatch(ServiceRequest request, ServiceConfig config)
+    private static Guid RequireOrg(Guid? organizationId)
     {
-        return request.Method switch
-        {
-            "list_projects" => await ListProjects(config, request),
-            "create_project" => await CreateProject(config, request),
-            "update_project" => await UpdateProject(config, request),
-            "delete_project" => await DeleteProject(config, request),
-            "list_tasks" => await ListTasks(config, request),
-            "create_task" => await CreateTask(config, request),
-            "update_task" => await UpdateTask(config, request),
-            "complete_task" => await CompleteTask(config, request),
-            "delete_task" => await DeleteTask(config, request),
-            "add_comment" => await AddComment(config, request),
-            "list_comments" => await ListComments(config, request),
-            _ => new { Success = false, Message = $"Unknown method '{request.Method}'." }
-        };
-    }
-
-    private static Guid RequireOrg(ServiceRequest request)
-    {
-        if (!request.OrganizationId.HasValue || request.OrganizationId.Value == Guid.Empty)
+        if (!organizationId.HasValue || organizationId.Value == Guid.Empty)
             throw new InvalidOperationException("organizationId is required.");
-        return request.OrganizationId.Value;
+        return organizationId.Value;
     }
 
     // The agent owning this plugin config — used to scope project-less tasks. Populated by the host.

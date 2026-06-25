@@ -20,33 +20,15 @@ public class StringOrNumberConverter : JsonConverter<string>
         => writer.WriteStringValue(value);
 }
 
+/// <summary>
+/// Framework request envelope (the <c>T</c> in <c>CommandBase&lt;T, ServiceConfig&gt;</c>). Carries
+/// only the orchestrator-supplied routing fields; per-tool LLM arguments now live on each tool's
+/// dedicated args type (see <c>ToolArgs.cs</c>) and are bound by <c>ProcessRequest</c>.
+/// </summary>
 public record ServiceRequest : IPluginServiceRequest
 {
     public string Method { get; set; }
     public string ToolCallId { get; set; }
     public string RequestingService { get; set; }
     public string ConfirmationId { get; set; }
-
-    [JsonConverter(typeof(StringOrNumberConverter))] public string ProductId { get; set; }
-    [JsonConverter(typeof(StringOrNumberConverter))] public string OrderId { get; set; }
-    [JsonConverter(typeof(StringOrNumberConverter))] public string CustomerId { get; set; }
-    [JsonConverter(typeof(StringOrNumberConverter))] public string InventoryItemId { get; set; }
-    [JsonConverter(typeof(StringOrNumberConverter))] public string LocationId { get; set; }
-
-    // Product
-    public string Title { get; set; }
-    public string BodyHtml { get; set; }
-    public string Vendor { get; set; }
-    public string ProductType { get; set; }
-    public decimal? Price { get; set; }
-
-    // Inventory
-    public int? Available { get; set; }
-
-    // Customers / draft order
-    public string Query { get; set; }
-    public string Email { get; set; }
-
-    // Paging
-    public int? Limit { get; set; }
 }

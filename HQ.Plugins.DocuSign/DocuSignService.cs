@@ -47,9 +47,9 @@ public class DocuSignService
 
     [Display(Name = DocuSignMethods.SendEnvelope)]
     [Description("Send a document (base64 PDF) to a signer for signature.")]
-    [Parameters("""{"type":"object","properties":{"documentBase64":{"type":"string","description":"Base64-encoded PDF to sign"},"documentName":{"type":"string","description":"Document name"},"subject":{"type":"string","description":"Email subject"},"signerEmail":{"type":"string"},"signerName":{"type":"string"}},"required":["documentBase64","signerEmail","signerName"]}""")]
+    [Parameters(typeof(SendEnvelopeArgs))]
     [SupportsConfirmation]
-    public Task<object> SendEnvelope(ServiceConfig config, ServiceRequest r) =>
+    public Task<object> SendEnvelope(ServiceConfig config, SendEnvelopeArgs r) =>
         Guard(() => Confirm(config, r, "Send this document for signature?", $"To {r.SignerName} <{r.SignerEmail}>", async () =>
         {
             var api = BuildApi(config);
@@ -83,9 +83,9 @@ public class DocuSignService
 
     [Display(Name = DocuSignMethods.SendEnvelopeFromTemplate)]
     [Description("Send an envelope from an existing template, filling one recipient role.")]
-    [Parameters("""{"type":"object","properties":{"templateId":{"type":"string"},"roleName":{"type":"string","description":"Template role to fill"},"signerEmail":{"type":"string"},"signerName":{"type":"string"},"subject":{"type":"string"}},"required":["templateId","roleName","signerEmail","signerName"]}""")]
+    [Parameters(typeof(SendEnvelopeFromTemplateArgs))]
     [SupportsConfirmation]
-    public Task<object> SendEnvelopeFromTemplate(ServiceConfig config, ServiceRequest r) =>
+    public Task<object> SendEnvelopeFromTemplate(ServiceConfig config, SendEnvelopeFromTemplateArgs r) =>
         Guard(() => Confirm(config, r, "Send this template for signature?", $"Template {r.TemplateId} to {r.SignerEmail}", async () =>
         {
             var api = BuildApi(config);
@@ -102,8 +102,8 @@ public class DocuSignService
 
     [Display(Name = DocuSignMethods.GetEnvelopeStatus)]
     [Description("Get the current status of an envelope.")]
-    [Parameters("""{"type":"object","properties":{"envelopeId":{"type":"string"}},"required":["envelopeId"]}""")]
-    public Task<object> GetEnvelopeStatus(ServiceConfig config, ServiceRequest r) =>
+    [Parameters(typeof(GetEnvelopeStatusArgs))]
+    public Task<object> GetEnvelopeStatus(ServiceConfig config, GetEnvelopeStatusArgs r) =>
         Guard(async () =>
         {
             var api = BuildApi(config);
@@ -113,8 +113,8 @@ public class DocuSignService
 
     [Display(Name = DocuSignMethods.ListEnvelopes)]
     [Description("List envelopes changed since a date (default last 30 days), optionally filtered by status.")]
-    [Parameters("""{"type":"object","properties":{"fromDate":{"type":"string","description":"YYYY-MM-DD (default 30 days ago)"},"status":{"type":"string","description":"Filter: sent | delivered | completed | voided | declined"}},"required":[]}""")]
-    public Task<object> ListEnvelopes(ServiceConfig config, ServiceRequest r) =>
+    [Parameters(typeof(ListEnvelopesArgs))]
+    public Task<object> ListEnvelopes(ServiceConfig config, ListEnvelopesArgs r) =>
         Guard(async () =>
         {
             var api = BuildApi(config);
@@ -129,8 +129,8 @@ public class DocuSignService
 
     [Display(Name = DocuSignMethods.ListRecipients)]
     [Description("List the recipients of an envelope and their signing status.")]
-    [Parameters("""{"type":"object","properties":{"envelopeId":{"type":"string"}},"required":["envelopeId"]}""")]
-    public Task<object> ListRecipients(ServiceConfig config, ServiceRequest r) =>
+    [Parameters(typeof(ListRecipientsArgs))]
+    public Task<object> ListRecipients(ServiceConfig config, ListRecipientsArgs r) =>
         Guard(async () =>
         {
             var api = BuildApi(config);
@@ -140,8 +140,8 @@ public class DocuSignService
 
     [Display(Name = DocuSignMethods.DownloadCompletedDocument)]
     [Description("Download an envelope's document(s) as base64. documentId defaults to 'combined' (all docs + certificate).")]
-    [Parameters("""{"type":"object","properties":{"envelopeId":{"type":"string"},"documentId":{"type":"string","description":"Document ID, or 'combined' (default)"}},"required":["envelopeId"]}""")]
-    public Task<object> DownloadCompletedDocument(ServiceConfig config, ServiceRequest r) =>
+    [Parameters(typeof(DownloadCompletedDocumentArgs))]
+    public Task<object> DownloadCompletedDocument(ServiceConfig config, DownloadCompletedDocumentArgs r) =>
         Guard(async () =>
         {
             var api = BuildApi(config);
@@ -154,9 +154,9 @@ public class DocuSignService
 
     [Display(Name = DocuSignMethods.VoidEnvelope)]
     [Description("Void an in-progress envelope so it can no longer be signed.")]
-    [Parameters("""{"type":"object","properties":{"envelopeId":{"type":"string"},"reason":{"type":"string","description":"Reason shown to recipients"}},"required":["envelopeId"]}""")]
+    [Parameters(typeof(VoidEnvelopeArgs))]
     [SupportsConfirmation]
-    public Task<object> VoidEnvelope(ServiceConfig config, ServiceRequest r) =>
+    public Task<object> VoidEnvelope(ServiceConfig config, VoidEnvelopeArgs r) =>
         Guard(() => Confirm(config, r, "Void this envelope?", $"Envelope {r.EnvelopeId}", async () =>
         {
             var api = BuildApi(config);
@@ -167,7 +167,7 @@ public class DocuSignService
 
     // ───────────────────────────── Plumbing ─────────────────────────────
 
-    private async Task<object> Confirm(ServiceConfig config, ServiceRequest request, string message, string content, Func<Task<object>> execute)
+    private async Task<object> Confirm(ServiceConfig config, IPluginServiceRequest request, string message, string content, Func<Task<object>> execute)
     {
         if (config.RequiresConfirmation && _notificationService != null)
         {

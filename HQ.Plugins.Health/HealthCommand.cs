@@ -22,7 +22,7 @@ public class HealthCommand : CommandBase<ServiceRequest, ServiceConfig>
         try
         {
             var service = new HealthService(Logger);
-            return await service.ProcessRequest(serviceRequest, config, NotificationService);
+            return await service.ProcessRequest(RawServiceRequest, config, NotificationService);
         }
         catch (Exception e)
         {

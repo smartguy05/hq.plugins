@@ -31,13 +31,13 @@ public class PerplexityCommand : CommandBase<ServiceRequest, ServiceConfig>
 
     protected override async Task<object> DoWork(ServiceRequest serviceRequest, ServiceConfig config, IEnumerable<ToolCall> availableToolCalls)
     {
-        return await this.ProcessRequest(serviceRequest, config, NotificationService);
+        return await this.ProcessRequest(RawServiceRequest, config, NotificationService);
     }
 
     [Display(Name = "perplexity_search")]
     [Description("Search the web with Perplexity and return a synthesized, cited answer. Fast (seconds). Use for quick factual lookups and current information.")]
-    [Parameters("""{"type":"object","properties":{"query":{"type":"string","description":"The research question or search query."},"recency":{"type":"string","description":"Optional. Restrict sources by age: 'day', 'week', 'month', or 'year'."},"domainFilters":{"type":"array","items":{"type":"string"},"description":"Optional. Domains to include, or exclude by prefixing with '-' (e.g. 'wikipedia.org', '-pinterest.com'). Merged with configured defaults."},"model":{"type":"string","description":"Optional model override, e.g. 'sonar' or 'sonar-pro'. Defaults to the configured search model."}},"required":["query"]}""")]
-    public async Task<object> PerplexitySearch(ServiceConfig config, ServiceRequest serviceRequest)
+    [Parameters(typeof(PerplexitySearchArgs))]
+    public async Task<object> PerplexitySearch(ServiceConfig config, PerplexitySearchArgs serviceRequest)
     {
         if (string.IsNullOrWhiteSpace(config.PerplexityApiKey))
         {
@@ -61,7 +61,7 @@ public class PerplexityCommand : CommandBase<ServiceRequest, ServiceConfig>
                 model,
                 serviceRequest.Query,
                 serviceRequest.Recency,
-                MergeDomainFilters(config, serviceRequest),
+                MergeDomainFilters(config, serviceRequest.DomainFilters),
                 config.MaxTokens,
                 TimeSpan.FromMinutes(2));
 
@@ -76,8 +76,8 @@ public class PerplexityCommand : CommandBase<ServiceRequest, ServiceConfig>
 
     [Display(Name = "perplexity_deep_research")]
     [Description("Run an exhaustive multi-step Perplexity deep-research job (sonar-deep-research). Takes several minutes; the cited results are delivered back into this conversation when ready. Use for thorough research, not quick lookups.")]
-    [Parameters("""{"type":"object","properties":{"query":{"type":"string","description":"The research question. Be specific — this runs an exhaustive multi-step investigation."},"recency":{"type":"string","description":"Optional. Restrict sources by age: 'day', 'week', 'month', or 'year'."},"domainFilters":{"type":"array","items":{"type":"string"},"description":"Optional. Domains to include, or exclude by prefixing with '-'. Merged with configured defaults."}},"required":["query"]}""")]
-    public async Task<object> PerplexityDeepResearch(ServiceConfig config, ServiceRequest serviceRequest)
+    [Parameters(typeof(PerplexityDeepResearchArgs))]
+    public async Task<object> PerplexityDeepResearch(ServiceConfig config, PerplexityDeepResearchArgs serviceRequest)
     {
         if (string.IsNullOrWhiteSpace(config.PerplexityApiKey))
         {
@@ -90,7 +90,7 @@ public class PerplexityCommand : CommandBase<ServiceRequest, ServiceConfig>
             return new { Success = false, Error = "query is required" };
         }
 
-        var domainFilters = MergeDomainFilters(config, serviceRequest);
+        var domainFilters = MergeDomainFilters(config, serviceRequest.DomainFilters);
 
         // Without a conversation id we cannot deliver the result back later, so submit-and-poll inline
         // and return the answer in this turn instead.
@@ -200,11 +200,11 @@ public class PerplexityCommand : CommandBase<ServiceRequest, ServiceConfig>
         return sb.ToString();
     }
 
-    private static List<string> MergeDomainFilters(ServiceConfig config, ServiceRequest serviceRequest)
+    private static List<string> MergeDomainFilters(ServiceConfig config, List<string> requestDomainFilters)
     {
         var merged = new List<string>();
         if (config.DefaultDomainFilters is { Count: > 0 }) merged.AddRange(config.DefaultDomainFilters);
-        if (serviceRequest.DomainFilters is { Count: > 0 }) merged.AddRange(serviceRequest.DomainFilters);
+        if (requestDomainFilters is { Count: > 0 }) merged.AddRange(requestDomainFilters);
         return merged
             .Where(d => !string.IsNullOrWhiteSpace(d))
             .Distinct()

@@ -40,7 +40,7 @@ public class EmailCommand: CommandBase<ServiceRequest,ServiceConfig>, IHasFronte
         try
         {
             var emailService = new EmailService(NotificationService, _store, _vectorService, _syncEngine, Logger);
-            return await emailService.ProcessRequest(serviceRequest, config, NotificationService);
+            return await emailService.ProcessRequest(RawServiceRequest, config, NotificationService);
         }
         catch (Exception e)
         {

@@ -56,8 +56,8 @@ public class GoogleContactsService
 
     [Display(Name = GoogleContactsMethods.ListContacts)]
     [Description("List the contacts in your address book (names, emails, phone numbers, organizations).")]
-    [Parameters("""{"type":"object","properties":{"pageSize":{"type":"integer","description":"Max results (default 50, max 1000)"}},"required":[]}""")]
-    public Task<object> ListContacts(ServiceConfig config, ServiceRequest r) =>
+    [Parameters(typeof(ListContactsArgs))]
+    public Task<object> ListContacts(ServiceConfig config, ListContactsArgs r) =>
         Guard(async () =>
         {
             var service = BuildService(config);
@@ -70,8 +70,8 @@ public class GoogleContactsService
 
     [Display(Name = GoogleContactsMethods.SearchContacts)]
     [Description("Search your contacts by name, email or phone.")]
-    [Parameters("""{"type":"object","properties":{"query":{"type":"string"},"pageSize":{"type":"integer","description":"Max results (default 25, max 30)"}},"required":["query"]}""")]
-    public Task<object> SearchContacts(ServiceConfig config, ServiceRequest r) =>
+    [Parameters(typeof(SearchContactsArgs))]
+    public Task<object> SearchContacts(ServiceConfig config, SearchContactsArgs r) =>
         Guard(async () =>
         {
             var service = BuildService(config);
@@ -85,8 +85,8 @@ public class GoogleContactsService
 
     [Display(Name = GoogleContactsMethods.GetContact)]
     [Description("Get a single contact by resource name (e.g. 'people/c12345').")]
-    [Parameters("""{"type":"object","properties":{"resourceName":{"type":"string","description":"Contact resource name, e.g. people/c12345"}},"required":["resourceName"]}""")]
-    public Task<object> GetContact(ServiceConfig config, ServiceRequest r) =>
+    [Parameters(typeof(GetContactArgs))]
+    public Task<object> GetContact(ServiceConfig config, GetContactArgs r) =>
         Guard(async () =>
         {
             var service = BuildService(config);
@@ -98,8 +98,8 @@ public class GoogleContactsService
 
     [Display(Name = GoogleContactsMethods.CreateContact)]
     [Description("Create a new contact.")]
-    [Parameters("""{"type":"object","properties":{"givenName":{"type":"string"},"familyName":{"type":"string"},"email":{"type":"string"},"phone":{"type":"string"},"organization":{"type":"string"}},"required":[]}""")]
-    public Task<object> CreateContact(ServiceConfig config, ServiceRequest r) =>
+    [Parameters(typeof(CreateContactArgs))]
+    public Task<object> CreateContact(ServiceConfig config, CreateContactArgs r) =>
         Guard(async () =>
         {
             var service = BuildService(config);
@@ -110,8 +110,8 @@ public class GoogleContactsService
 
     [Display(Name = GoogleContactsMethods.UpdateContact)]
     [Description("Update fields on an existing contact. Only the provided fields are changed.")]
-    [Parameters("""{"type":"object","properties":{"resourceName":{"type":"string","description":"Contact resource name, e.g. people/c12345"},"givenName":{"type":"string"},"familyName":{"type":"string"},"email":{"type":"string"},"phone":{"type":"string"},"organization":{"type":"string"}},"required":["resourceName"]}""")]
-    public Task<object> UpdateContact(ServiceConfig config, ServiceRequest r) =>
+    [Parameters(typeof(UpdateContactArgs))]
+    public Task<object> UpdateContact(ServiceConfig config, UpdateContactArgs r) =>
         Guard(async () =>
         {
             var service = BuildService(config);

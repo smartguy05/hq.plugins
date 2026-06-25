@@ -8,5 +8,4 @@ public class ServiceRequest: IPluginServiceRequest
     public string ToolCallId { get; set; }
     public string RequestingService { get; set; }
     public string ConfirmationId { get; set; }
-    public string Query { get; set; }
 }

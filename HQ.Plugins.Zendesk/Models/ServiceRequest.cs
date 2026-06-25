@@ -20,29 +20,15 @@ public class StringOrNumberConverter : JsonConverter<string>
         => writer.WriteStringValue(value);
 }
 
+/// <summary>
+/// Framework request envelope (the <c>T</c> in <c>CommandBase&lt;T, ServiceConfig&gt;</c>). Carries
+/// only the orchestrator-supplied routing fields; per-tool LLM arguments now live on each tool's
+/// dedicated args type (see <c>ToolArgs.cs</c>) and are bound by <c>ProcessRequest</c>.
+/// </summary>
 public record ServiceRequest : IPluginServiceRequest
 {
     public string Method { get; set; }
     public string ToolCallId { get; set; }
     public string RequestingService { get; set; }
     public string ConfirmationId { get; set; }
-
-    // Identity
-    [JsonConverter(typeof(StringOrNumberConverter))] public string TicketId { get; set; }
-    [JsonConverter(typeof(StringOrNumberConverter))] public string UserId { get; set; }
-    [JsonConverter(typeof(StringOrNumberConverter))] public string MacroId { get; set; }
-    [JsonConverter(typeof(StringOrNumberConverter))] public string RequesterId { get; set; }
-    [JsonConverter(typeof(StringOrNumberConverter))] public string AssigneeId { get; set; }
-
-    // Ticket fields
-    public string Subject { get; set; }
-    public string Comment { get; set; }      // comment body
-    public bool? Public { get; set; }         // public (customer-facing) vs internal note
-    public string Status { get; set; }        // new | open | pending | hold | solved | closed
-    public string Priority { get; set; }      // low | normal | high | urgent
-    public string Tags { get; set; }          // comma-separated
-
-    // Search / paging
-    public string Query { get; set; }
-    public int? PageSize { get; set; }
 }

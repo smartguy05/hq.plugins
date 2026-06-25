@@ -27,8 +27,8 @@ public class MailchimpService
 
     [Display(Name = MailchimpMethods.ListAudiences)]
     [Description("List audiences (mailing lists) in the account.")]
-    [Parameters("""{"type":"object","properties":{"count":{"type":"integer","description":"Max results (default 25)"}},"required":[]}""")]
-    public Task<object> ListAudiences(ServiceConfig config, ServiceRequest r) =>
+    [Parameters(typeof(ListAudiencesArgs))]
+    public Task<object> ListAudiences(ServiceConfig config, ListAudiencesArgs r) =>
         Guard(async () =>
         {
             using var client = new MailchimpClient(config.ApiKey);
@@ -38,8 +38,8 @@ public class MailchimpService
 
     [Display(Name = MailchimpMethods.GetAudience)]
     [Description("Get a single audience (list) with member counts and stats.")]
-    [Parameters("""{"type":"object","properties":{"audienceId":{"type":"string","description":"The audience/list ID"}},"required":["audienceId"]}""")]
-    public Task<object> GetAudience(ServiceConfig config, ServiceRequest r) =>
+    [Parameters(typeof(GetAudienceArgs))]
+    public Task<object> GetAudience(ServiceConfig config, GetAudienceArgs r) =>
         Guard(async () =>
         {
             using var client = new MailchimpClient(config.ApiKey);
@@ -49,8 +49,8 @@ public class MailchimpService
 
     [Display(Name = MailchimpMethods.AddMember)]
     [Description("Add or update a subscriber in an audience.")]
-    [Parameters("""{"type":"object","properties":{"audienceId":{"type":"string"},"email":{"type":"string"},"status":{"type":"string","description":"subscribed | pending | unsubscribed (default subscribed)"},"firstName":{"type":"string"},"lastName":{"type":"string"}},"required":["audienceId","email"]}""")]
-    public Task<object> AddMember(ServiceConfig config, ServiceRequest r) =>
+    [Parameters(typeof(AddMemberArgs))]
+    public Task<object> AddMember(ServiceConfig config, AddMemberArgs r) =>
         Guard(async () =>
         {
             using var client = new MailchimpClient(config.ApiKey);
@@ -68,8 +68,8 @@ public class MailchimpService
 
     [Display(Name = MailchimpMethods.GetMember)]
     [Description("Get a subscriber by email address.")]
-    [Parameters("""{"type":"object","properties":{"audienceId":{"type":"string"},"email":{"type":"string"}},"required":["audienceId","email"]}""")]
-    public Task<object> GetMember(ServiceConfig config, ServiceRequest r) =>
+    [Parameters(typeof(GetMemberArgs))]
+    public Task<object> GetMember(ServiceConfig config, GetMemberArgs r) =>
         Guard(async () =>
         {
             using var client = new MailchimpClient(config.ApiKey);
@@ -79,8 +79,8 @@ public class MailchimpService
 
     [Display(Name = MailchimpMethods.UpdateMember)]
     [Description("Update a subscriber's status or name.")]
-    [Parameters("""{"type":"object","properties":{"audienceId":{"type":"string"},"email":{"type":"string"},"status":{"type":"string","description":"subscribed | unsubscribed | cleaned"},"firstName":{"type":"string"},"lastName":{"type":"string"}},"required":["audienceId","email"]}""")]
-    public Task<object> UpdateMember(ServiceConfig config, ServiceRequest r) =>
+    [Parameters(typeof(UpdateMemberArgs))]
+    public Task<object> UpdateMember(ServiceConfig config, UpdateMemberArgs r) =>
         Guard(async () =>
         {
             using var client = new MailchimpClient(config.ApiKey);
@@ -95,8 +95,8 @@ public class MailchimpService
 
     [Display(Name = MailchimpMethods.AddMemberTags)]
     [Description("Add tags to a subscriber.")]
-    [Parameters("""{"type":"object","properties":{"audienceId":{"type":"string"},"email":{"type":"string"},"tags":{"type":"string","description":"Comma-separated tag names"}},"required":["audienceId","email","tags"]}""")]
-    public Task<object> AddMemberTags(ServiceConfig config, ServiceRequest r) =>
+    [Parameters(typeof(AddMemberTagsArgs))]
+    public Task<object> AddMemberTags(ServiceConfig config, AddMemberTagsArgs r) =>
         Guard(async () =>
         {
             using var client = new MailchimpClient(config.ApiKey);
@@ -107,8 +107,8 @@ public class MailchimpService
 
     [Display(Name = MailchimpMethods.ListCampaigns)]
     [Description("List campaigns.")]
-    [Parameters("""{"type":"object","properties":{"count":{"type":"integer","description":"Max results (default 25)"}},"required":[]}""")]
-    public Task<object> ListCampaigns(ServiceConfig config, ServiceRequest r) =>
+    [Parameters(typeof(ListCampaignsArgs))]
+    public Task<object> ListCampaigns(ServiceConfig config, ListCampaignsArgs r) =>
         Guard(async () =>
         {
             using var client = new MailchimpClient(config.ApiKey);
@@ -118,8 +118,8 @@ public class MailchimpService
 
     [Display(Name = MailchimpMethods.CreateCampaign)]
     [Description("Create a regular email campaign targeting an audience. Returns a campaign ID to set content and send.")]
-    [Parameters("""{"type":"object","properties":{"audienceId":{"type":"string"},"subject":{"type":"string","description":"Subject line"},"fromName":{"type":"string"},"replyTo":{"type":"string","description":"Reply-to email"},"title":{"type":"string","description":"Internal campaign title"}},"required":["audienceId","subject","fromName","replyTo"]}""")]
-    public Task<object> CreateCampaign(ServiceConfig config, ServiceRequest r) =>
+    [Parameters(typeof(CreateCampaignArgs))]
+    public Task<object> CreateCampaign(ServiceConfig config, CreateCampaignArgs r) =>
         Guard(async () =>
         {
             using var client = new MailchimpClient(config.ApiKey);
@@ -141,8 +141,8 @@ public class MailchimpService
 
     [Display(Name = MailchimpMethods.SetCampaignContent)]
     [Description("Set the HTML content of a campaign.")]
-    [Parameters("""{"type":"object","properties":{"campaignId":{"type":"string"},"htmlContent":{"type":"string","description":"Full HTML body of the email"}},"required":["campaignId","htmlContent"]}""")]
-    public Task<object> SetCampaignContent(ServiceConfig config, ServiceRequest r) =>
+    [Parameters(typeof(SetCampaignContentArgs))]
+    public Task<object> SetCampaignContent(ServiceConfig config, SetCampaignContentArgs r) =>
         Guard(async () =>
         {
             using var client = new MailchimpClient(config.ApiKey);
@@ -152,9 +152,9 @@ public class MailchimpService
 
     [Display(Name = MailchimpMethods.SendCampaign)]
     [Description("Send a campaign to its audience. This emails real subscribers.")]
-    [Parameters("""{"type":"object","properties":{"campaignId":{"type":"string"}},"required":["campaignId"]}""")]
+    [Parameters(typeof(SendCampaignArgs))]
     [SupportsConfirmation]
-    public Task<object> SendCampaign(ServiceConfig config, ServiceRequest r) =>
+    public Task<object> SendCampaign(ServiceConfig config, SendCampaignArgs r) =>
         Guard(() => Confirm(config, r, "Send this campaign to its audience?", $"Campaign {r.CampaignId}", async () =>
         {
             using var client = new MailchimpClient(config.ApiKey);
@@ -167,7 +167,7 @@ public class MailchimpService
     private static object Prop(JsonElement doc, string name) =>
         doc.ValueKind == JsonValueKind.Object && doc.TryGetProperty(name, out var el) ? el : doc;
 
-    private async Task<object> Confirm(ServiceConfig config, ServiceRequest request, string message, string content, Func<Task<object>> execute)
+    private async Task<object> Confirm(ServiceConfig config, IPluginServiceRequest request, string message, string content, Func<Task<object>> execute)
     {
         if (config.RequiresConfirmation && _notificationService != null)
         {

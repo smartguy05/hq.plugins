@@ -44,7 +44,7 @@ public class HeadlessBrowserCommand : CommandBase<ServiceRequest, ServiceConfig>
         {
             _browserClient ??= new BrowserClient(config);
             var service = new HeadlessBrowserService(_browserClient, config, Logger);
-            return await service.ProcessRequest(serviceRequest, config, NotificationService);
+            return await service.ProcessRequest(RawServiceRequest, config, NotificationService);
         }
         catch (Exception e)
         {

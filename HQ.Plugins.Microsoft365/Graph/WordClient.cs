@@ -19,18 +19,18 @@ public class WordClient
         _defaultDriveId = config.DefaultDriveId;
     }
 
-    private string DriveId(ServiceRequest r)
+    private string DriveId(string requestDriveId)
     {
-        var id = string.IsNullOrWhiteSpace(r.DriveId) ? _defaultDriveId : r.DriveId;
+        var id = string.IsNullOrWhiteSpace(requestDriveId) ? _defaultDriveId : requestDriveId;
         if (string.IsNullOrWhiteSpace(id))
             throw new InvalidOperationException("driveId is required (or set DefaultDriveId in the plugin config).");
         return id;
     }
 
-    public async Task<object> Create(ServiceRequest r)
+    public async Task<object> Create(WordCreateArgs r)
     {
         if (string.IsNullOrWhiteSpace(r.Name)) return new { Success = false, Error = "name is required" };
-        var driveId = DriveId(r);
+        var driveId = DriveId(r.DriveId);
         var parentId = string.IsNullOrWhiteSpace(r.ItemId) ? "root" : r.ItemId;
 
         var fileName = r.Name.EndsWith(".docx", StringComparison.OrdinalIgnoreCase) ? r.Name : r.Name + ".docx";
@@ -41,11 +41,11 @@ public class WordClient
         return new { Success = true, ItemId = item?.Id, FileName = item?.Name, item?.WebUrl, MimeType = DocxMime };
     }
 
-    public async Task<object> Read(ServiceRequest r)
+    public async Task<object> Read(WordReadArgs r)
     {
         if (string.IsNullOrWhiteSpace(r.ItemId) && string.IsNullOrWhiteSpace(r.Path))
             return new { Success = false, Error = "itemId or path is required" };
-        var driveId = DriveId(r);
+        var driveId = DriveId(r.DriveId);
 
         string itemId = r.ItemId;
         if (string.IsNullOrWhiteSpace(itemId))

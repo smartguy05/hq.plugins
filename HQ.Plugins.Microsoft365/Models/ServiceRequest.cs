@@ -24,44 +24,15 @@ public class StringOrNumberConverter : JsonConverter<string>
         => writer.WriteStringValue(value);
 }
 
+/// <summary>
+/// Framework request envelope (the <c>T</c> in <c>CommandBase&lt;T, ServiceConfig&gt;</c>). Carries
+/// only the orchestrator-supplied routing fields; per-tool LLM arguments now live on each tool's
+/// dedicated args type (see <c>ToolArgs.cs</c>) and are bound by <c>ProcessRequest</c>.
+/// </summary>
 public record ServiceRequest : IPluginServiceRequest
 {
     public string Method { get; set; }
     public string ToolCallId { get; set; }
     public string RequestingService { get; set; }
     public string ConfirmationId { get; set; }
-
-    // ── Drive / item identity ──
-    // DriveId is optional per-request; falls back to ServiceConfig.DefaultDriveId.
-    public string DriveId { get; set; }
-
-    [JsonConverter(typeof(StringOrNumberConverter))]
-    public string ItemId { get; set; }
-
-    // Alternatively address an item by path relative to the drive root, e.g. "Reports/Q3.xlsx".
-    public string Path { get; set; }
-
-    public string Name { get; set; }
-    public string Content { get; set; }   // base64 for uploads
-    public string MimeType { get; set; }
-
-    // ── Listing / search ──
-    public string Query { get; set; }
-    public int? PageSize { get; set; }
-
-    // ── Move / copy ──
-    public string DestinationFolderId { get; set; }
-
-    // ── Share ──
-    public string LinkType { get; set; }   // view | edit
-    public string Scope { get; set; }      // anonymous | organization
-
-    // ── Word create ──
-    public string Text { get; set; }
-
-    // ── Excel ──
-    public string Worksheet { get; set; }
-    public string Range { get; set; }      // A1 address, e.g. "A1:C5"
-    public string WorksheetName { get; set; }
-    public List<List<JsonElement>> Values { get; set; }
 }

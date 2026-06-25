@@ -31,42 +31,42 @@ public class PlaidService
     public static string Date(string value, DateTime fallback) =>
         string.IsNullOrWhiteSpace(value) ? fallback.ToString("yyyy-MM-dd") : value.Trim();
 
-    private static string Token(ServiceConfig config, ServiceRequest r) =>
-        !string.IsNullOrWhiteSpace(r.AccessToken) ? r.AccessToken : config.AccessToken;
+    private static string Token(ServiceConfig config, string accessToken) =>
+        !string.IsNullOrWhiteSpace(accessToken) ? accessToken : config.AccessToken;
 
     [Display(Name = PlaidMethods.ListAccounts)]
     [Description("List the bank accounts linked to the connected item (names, types, masks).")]
-    [Parameters("""{"type":"object","properties":{"accessToken":{"type":"string","description":"Optional item access_token override"}},"required":[]}""")]
-    public Task<object> ListAccounts(ServiceConfig config, ServiceRequest r) =>
+    [Parameters(typeof(ListAccountsArgs))]
+    public Task<object> ListAccounts(ServiceConfig config, ListAccountsArgs r) =>
         Guard(async () =>
         {
             using var client = Client(config);
-            var doc = await client.PostAsync("/accounts/get", new JsonObject { ["access_token"] = Token(config, r) });
+            var doc = await client.PostAsync("/accounts/get", new JsonObject { ["access_token"] = Token(config, r.AccessToken) });
             return new { Success = true, Accounts = Prop(doc, "accounts"), Item = Prop(doc, "item") };
         });
 
     [Display(Name = PlaidMethods.GetBalances)]
     [Description("Get real-time balances for the connected item's accounts.")]
-    [Parameters("""{"type":"object","properties":{"accessToken":{"type":"string","description":"Optional item access_token override"}},"required":[]}""")]
-    public Task<object> GetBalances(ServiceConfig config, ServiceRequest r) =>
+    [Parameters(typeof(GetBalancesArgs))]
+    public Task<object> GetBalances(ServiceConfig config, GetBalancesArgs r) =>
         Guard(async () =>
         {
             using var client = Client(config);
-            var doc = await client.PostAsync("/accounts/balance/get", new JsonObject { ["access_token"] = Token(config, r) });
+            var doc = await client.PostAsync("/accounts/balance/get", new JsonObject { ["access_token"] = Token(config, r.AccessToken) });
             return new { Success = true, Accounts = Prop(doc, "accounts") };
         });
 
     [Display(Name = PlaidMethods.ListTransactions)]
     [Description("List transactions for the connected item over a date range (defaults to the last 30 days).")]
-    [Parameters("""{"type":"object","properties":{"startDate":{"type":"string","description":"YYYY-MM-DD (default 30 days ago)"},"endDate":{"type":"string","description":"YYYY-MM-DD (default today)"},"count":{"type":"integer","description":"Max results (default 100, max 500)"},"offset":{"type":"integer","description":"Pagination offset"},"accessToken":{"type":"string","description":"Optional item access_token override"}},"required":[]}""")]
-    public Task<object> ListTransactions(ServiceConfig config, ServiceRequest r) =>
+    [Parameters(typeof(ListTransactionsArgs))]
+    public Task<object> ListTransactions(ServiceConfig config, ListTransactionsArgs r) =>
         Guard(async () =>
         {
             using var client = Client(config);
             var now = DateTime.UtcNow;
             var body = new JsonObject
             {
-                ["access_token"] = Token(config, r),
+                ["access_token"] = Token(config, r.AccessToken),
                 ["start_date"] = Date(r.StartDate, now.AddDays(-30)),
                 ["end_date"] = Date(r.EndDate, now),
                 ["options"] = new JsonObject

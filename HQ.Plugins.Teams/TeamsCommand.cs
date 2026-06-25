@@ -33,26 +33,26 @@ public class TeamsCommand : CommandBase<ServiceRequest, ServiceConfig>, INotific
 
     protected override async Task<object> DoWork(ServiceRequest serviceRequest, ServiceConfig config, IEnumerable<ToolCall> availableToolCalls)
     {
-        return await this.ProcessRequest(serviceRequest, config, NotificationService);
+        return await this.ProcessRequest(RawServiceRequest, config, NotificationService);
     }
 
     [Display(Name = "send_teams_message")]
     [Description("Sends a message to a Microsoft Teams channel. If no team/channel ID is provided, uses the configured notification channel.")]
-    [Parameters("""{"type":"object","properties":{"messageText":{"type":"string","description":"The message text to send"},"teamId":{"type":"string","description":"The Teams team ID. Optional, defaults to configured notification team."},"channelId":{"type":"string","description":"The Teams channel ID. Optional, defaults to configured notification channel."}},"required":["messageText"]}""")]
-    public async Task<object> SendTeamsMessage(ServiceConfig config, ServiceRequest serviceRequest)
+    [Parameters(typeof(SendTeamsMessageArgs))]
+    public async Task<object> SendTeamsMessage(ServiceConfig config, SendTeamsMessageArgs request)
     {
         if (string.IsNullOrEmpty(config.ClientId))
             throw new ArgumentException("Azure AD ClientId is required");
 
         _service = GetTeamsService(config);
 
-        return await _service.SendMessage(serviceRequest.MessageText, serviceRequest.TeamId, serviceRequest.ChannelId);
+        return await _service.SendMessage(request.MessageText, request.TeamId, request.ChannelId);
     }
 
     [Display(Name = "list_teams")]
     [Description("Lists Microsoft Teams teams the app has access to.")]
-    [Parameters("""{"type":"object","properties":{}}""")]
-    public async Task<object> ListTeams(ServiceConfig config, ServiceRequest serviceRequest)
+    [Parameters(typeof(EmptyArgs))]
+    public async Task<object> ListTeams(ServiceConfig config, EmptyArgs request)
     {
         if (string.IsNullOrEmpty(config.ClientId))
             throw new ArgumentException("Azure AD ClientId is required");
@@ -64,21 +64,21 @@ public class TeamsCommand : CommandBase<ServiceRequest, ServiceConfig>, INotific
 
     [Display(Name = "list_teams_channels")]
     [Description("Lists channels in a Microsoft Teams team.")]
-    [Parameters("""{"type":"object","properties":{"teamId":{"type":"string","description":"The Teams team ID to list channels for"}},"required":["teamId"]}""")]
-    public async Task<object> ListTeamsChannels(ServiceConfig config, ServiceRequest serviceRequest)
+    [Parameters(typeof(ListTeamsChannelsArgs))]
+    public async Task<object> ListTeamsChannels(ServiceConfig config, ListTeamsChannelsArgs request)
     {
         if (string.IsNullOrEmpty(config.ClientId))
             throw new ArgumentException("Azure AD ClientId is required");
 
         _service = GetTeamsService(config);
 
-        return await _service.ListChannels(serviceRequest.TeamId);
+        return await _service.ListChannels(request.TeamId);
     }
 
     [Display(Name = "send_teams_file")]
     [Description("Uploads a file to a Microsoft Teams channel's SharePoint folder.")]
-    [Parameters("""{"type":"object","properties":{"teamId":{"type":"string","description":"The Teams team ID"},"channelId":{"type":"string","description":"The Teams channel ID"},"fileContent":{"type":"string","description":"Base64-encoded file content"},"fileName":{"type":"string","description":"The filename"},"fileType":{"type":"string","description":"Optional MIME type for the file"}},"required":["teamId","channelId","fileContent","fileName"]}""")]
-    public async Task<object> SendTeamsFile(ServiceConfig config, ServiceRequest serviceRequest)
+    [Parameters(typeof(SendTeamsFileArgs))]
+    public async Task<object> SendTeamsFile(ServiceConfig config, SendTeamsFileArgs request)
     {
         if (string.IsNullOrEmpty(config.ClientId))
             throw new ArgumentException("Azure AD ClientId is required");
@@ -86,24 +86,24 @@ public class TeamsCommand : CommandBase<ServiceRequest, ServiceConfig>, INotific
         _service = GetTeamsService(config);
 
         return await _service.UploadFile(
-            serviceRequest.FileContent,
-            serviceRequest.FileName,
-            serviceRequest.FileType,
-            serviceRequest.TeamId,
-            serviceRequest.ChannelId);
+            request.FileContent,
+            request.FileName,
+            request.FileType,
+            request.TeamId,
+            request.ChannelId);
     }
 
     [Display(Name = "download_teams_file")]
     [Description("Downloads a file from Teams/SharePoint by drive item ID and returns the content as base64.")]
-    [Parameters("""{"type":"object","properties":{"driveItemId":{"type":"string","description":"The drive item ID in format 'driveId/itemId'"}},"required":["driveItemId"]}""")]
-    public async Task<object> DownloadTeamsFile(ServiceConfig config, ServiceRequest serviceRequest)
+    [Parameters(typeof(DownloadTeamsFileArgs))]
+    public async Task<object> DownloadTeamsFile(ServiceConfig config, DownloadTeamsFileArgs request)
     {
         if (string.IsNullOrEmpty(config.ClientId))
             throw new ArgumentException("Azure AD ClientId is required");
 
         _service = GetTeamsService(config);
 
-        return await _service.DownloadFile(serviceRequest.DriveItemId);
+        return await _service.DownloadFile(request.DriveItemId);
     }
 
     public override async Task<object> Initialize(string configString, LogDelegate log, INotificationService notificationService)

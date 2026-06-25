@@ -50,10 +50,10 @@ public class EmailService
         return null;
     }
 
-    private static EmailParameters GetMailAccount(ServiceRequest request, ServiceConfig config)
+    private static EmailParameters GetMailAccount(string account, ServiceConfig config)
     {
         var mailAccount = config.EmailAccounts.FirstOrDefault(f =>
-            string.Equals(f.Name, request.Account, StringComparison.InvariantCultureIgnoreCase));
+            string.Equals(f.Name, account, StringComparison.InvariantCultureIgnoreCase));
         mailAccount ??= config.EmailAccounts.FirstOrDefault(f => f.Default);
         if (mailAccount is null)
         {
@@ -375,7 +375,7 @@ public class EmailService
         });
     }
 
-    private static SearchQuery BuildSearchQuery(ServiceRequest request)
+    private static SearchQuery BuildSearchQuery(GetEmailSummaryArgs request)
     {
         var queries = new List<SearchQuery>();
 
@@ -476,23 +476,8 @@ public class EmailService
 
     [Display(Name = "get_email")]
     [Description("Use this tool to get a specific email. Reads from local store first, falls back to IMAP.")]
-    [Parameters("""
-                {
-                  "type": "object",
-                  "properties": {
-                    "account": {
-                      "type": "string",
-                      "description": "The email account you want to access. This is optional, if not supplied the default account will be used."
-                    },
-                    "messageId": {
-                      "type": "string",
-                      "description": "The message Id of the email to retrieve"
-                    }
-                  },
-                  "required": ["messageId"]
-                }
-                """)]
-    public async Task<object> GetEmail(ServiceConfig config, ServiceRequest request)
+    [Parameters(typeof(GetEmailArgs))]
+    public async Task<object> GetEmail(ServiceConfig config, GetEmailArgs request)
     {
         if (string.IsNullOrWhiteSpace(request.MessageId))
             throw new Exception("MessageId is required");
@@ -500,7 +485,7 @@ public class EmailService
         // Try local store first
         if (_store != null)
         {
-            var account = GetMailAccount(request, config);
+            var account = GetMailAccount(request.Account, config);
             var local = await _store.GetByMessageIdAsync(request.MessageId, account.Name);
             if (local != null)
             {
@@ -528,7 +513,7 @@ public class EmailService
         }
 
         // Fallback to IMAP
-        var mailAccount = GetMailAccount(request, config);
+        var mailAccount = GetMailAccount(request.Account, config);
         using var client = await ConnectImapAsync(mailAccount);
         try
         {
@@ -570,21 +555,10 @@ public class EmailService
 
     [Display(Name = "get_drafts")]
     [Description("Use this tool to get a list of draft emails")]
-    [Parameters("""
-                {
-                  "type": "object",
-                  "properties": {
-                    "account": {
-                      "type": "string",
-                      "description": "The email account you want to access. This is optional, if not supplied the default account will be used."
-                    }
-                  },
-                  "required": []
-                }
-                """)]
-    public async Task<object> GetDrafts(ServiceConfig config, ServiceRequest request)
+    [Parameters(typeof(GetDraftsArgs))]
+    public async Task<object> GetDrafts(ServiceConfig config, GetDraftsArgs request)
     {
-        var account = GetMailAccount(request, config);
+        var account = GetMailAccount(request.Account, config);
         using var client = await ConnectImapAsync(account);
         try
         {
@@ -610,60 +584,13 @@ public class EmailService
 
     [Display(Name = "get_email_summary")]
     [Description("List emails matching filter criteria via IMAP. To find emails from a specific person, use the 'sender' parameter with their email address or name. To find emails about a topic, use 'subject'. All filters are AND-ed together. For full-text search including body content, use search_emails_local instead.")]
-    [Parameters("""
-                {
-                  "type": "object",
-                  "properties": {
-                    "account": {
-                      "type": "string",
-                      "description": "The email account to access. Optional — uses the default account if not specified."
-                    },
-                    "searchSubject": {
-                      "type": "string",
-                      "description": "Client-side partial match on subject line (case-insensitive). Applied after IMAP results are fetched. Use 'subject' for server-side IMAP filtering instead when possible."
-                    },
-                    "messageId": {
-                      "type": "string",
-                      "description": "The exact Message-Id header to retrieve a specific email."
-                    },
-                    "unreadOnly": {
-                      "type": "boolean",
-                      "description": "If true, only return unread/unseen emails. Default false."
-                    },
-                    "sender": {
-                      "type": "string",
-                      "description": "Filter by sender (From field). Use this to find emails FROM a specific person — pass their email address or name, e.g. 'john@example.com' or 'John'. This is the correct parameter for person-based searches."
-                    },
-                    "subject": {
-                      "type": "string",
-                      "description": "IMAP server-side subject search (partial match). Use this to find emails about a specific topic."
-                    },
-                    "to": {
-                      "type": "string",
-                      "description": "Filter by To address. Use this to find emails sent TO a specific person."
-                    },
-                    "emailsSentAfter": {
-                      "type": "string",
-                      "description": "ISO datetime string. Only return emails received after this date, e.g. '2025-01-15'."
-                    },
-                    "emailsSentBefore": {
-                      "type": "string",
-                      "description": "ISO datetime string. Only return emails received before this date, e.g. '2025-02-01'."
-                    },
-                    "maxReturnedEmails": {
-                      "type": "number",
-                      "description": "Maximum number of emails to return. Default 10."
-                    }
-                  },
-                  "required": []
-                }
-                """)]
-    public async Task<object> GetEmailSummary(ServiceConfig config, ServiceRequest request)
+    [Parameters(typeof(GetEmailSummaryArgs))]
+    public async Task<object> GetEmailSummary(ServiceConfig config, GetEmailSummaryArgs request)
     {
         // Try local store first
         if (_store != null)
         {
-            var account = GetMailAccount(request, config);
+            var account = GetMailAccount(request.Account, config);
             var totalCount = await _store.GetTotalEmailCountAsync(account.Name);
             if (totalCount > 0)
             {
@@ -695,7 +622,7 @@ public class EmailService
         }
 
         // Fallback to IMAP
-        var mailAccount = GetMailAccount(request, config);
+        var mailAccount = GetMailAccount(request.Account, config);
         using var client = await ConnectImapAsync(mailAccount);
         try
         {
@@ -762,28 +689,13 @@ public class EmailService
 
     [Display(Name = "get_attachments")]
     [Description("Use this tool to get the attachments of the supplied email message id.")]
-    [Parameters("""
-                {
-                  "type": "object",
-                  "properties": {
-                    "account": {
-                      "type": "string",
-                      "description": "The email account you want to access. This is optional, if not supplied the default account will be used."
-                    },
-                    "messageId": {
-                      "type": "string",
-                      "description": "The message Id of the email to get attachments for"
-                    }
-                  },
-                  "required": ["messageId"]
-                }
-                """)]
-    public async Task<object> GetAttachments(ServiceConfig config, ServiceRequest request)
+    [Parameters(typeof(GetAttachmentsArgs))]
+    public async Task<object> GetAttachments(ServiceConfig config, GetAttachmentsArgs request)
     {
         if (string.IsNullOrWhiteSpace(request.MessageId))
             throw new Exception("MessageId is required");
 
-        var account = GetMailAccount(request, config);
+        var account = GetMailAccount(request.Account, config);
         using var client = await ConnectImapAsync(account);
         try
         {
@@ -827,23 +739,8 @@ public class EmailService
 
     [Display(Name = "search_emails")]
     [Description("Semantic search across emails using natural language (powered by ChromaDB vector search). Best for vague or conceptual queries like 'emails about the project deadline'. For exact matches by sender, subject, or keyword, use search_emails_local or get_email_summary instead.")]
-    [Parameters("""
-                {
-                  "type": "object",
-                  "properties": {
-                    "query": {
-                      "type": "string",
-                      "description": "Natural language search query, e.g. 'emails about the project deadline' or 'messages from John about invoices'"
-                    },
-                    "maxResults": {
-                      "type": "number",
-                      "description": "Maximum number of results to return. Default 10."
-                    }
-                  },
-                  "required": ["query"]
-                }
-                """)]
-    public async Task<object> SearchEmails(ServiceConfig config, ServiceRequest request)
+    [Parameters(typeof(SearchEmailsArgs))]
+    public async Task<object> SearchEmails(ServiceConfig config, SearchEmailsArgs request)
     {
         if (string.IsNullOrWhiteSpace(request.Query))
             throw new Exception("Query is required for semantic search");
@@ -879,45 +776,14 @@ public class EmailService
 
     [Display(Name = "search_emails_local")]
     [Description("Search the local email database by keyword. Use the 'sender' parameter to find emails from a specific person or address (e.g. sender: 'john@example.com' or sender: 'John'). Use 'subject' for subject-line searches. Use 'searchText' only for broad body-text searches. Multiple parameters are AND-ed together.")]
-    [Parameters("""
-                {
-                  "type": "object",
-                  "properties": {
-                    "account": {
-                      "type": "string",
-                      "description": "The email account to search. Optional, searches all accounts if not specified."
-                    },
-                    "searchText": {
-                      "type": "string",
-                      "description": "General search text — matches across subject, sender (address and name), and body using OR logic. Use this for broad searches like a person's name or a keyword. Can be combined with other filters (folder, sender, subject) which are AND-ed."
-                    },
-                    "folder": {
-                      "type": "string",
-                      "description": "Limit search to a specific folder (e.g. 'INBOX', 'Sent'). Optional."
-                    },
-                    "sender": {
-                      "type": "string",
-                      "description": "Filter by sender email address or display name (partial match). Use this to find emails FROM a specific person, e.g. 'anthony@apetalo.us' or 'Anthony'. This is the correct parameter for person-based searches."
-                    },
-                    "subject": {
-                      "type": "string",
-                      "description": "Filter by subject line text (partial match). Overrides searchText for subject matching when both are provided."
-                    },
-                    "maxResults": {
-                      "type": "number",
-                      "description": "Maximum number of results to return. Default 20."
-                    }
-                  },
-                  "required": []
-                }
-                """)]
-    public async Task<object> SearchEmailsLocal(ServiceConfig config, ServiceRequest request)
+    [Parameters(typeof(SearchEmailsLocalArgs))]
+    public async Task<object> SearchEmailsLocal(ServiceConfig config, SearchEmailsLocalArgs request)
     {
         if (_store == null)
             return new { Success = false, Message = "Local email store is not configured. Set SqliteConnectionString in the plugin config." };
 
         var account = !string.IsNullOrWhiteSpace(request.Account)
-            ? GetMailAccount(request, config)
+            ? GetMailAccount(request.Account, config)
             : null;
 
         var maxResults = request.MaxResults ?? 20;
@@ -954,23 +820,8 @@ public class EmailService
                  "Accepts 'alice@example.com' or '@example.com' (trusts all senders from that domain). " +
                  "Use this only after you have verified the sender is legitimate. Senders on the " +
                  "whitelist have their email content passed to you without the untrusted-content wrapper.")]
-    [Parameters("""
-                {
-                  "type": "object",
-                  "properties": {
-                    "sender": {
-                      "type": "string",
-                      "description": "Email address or '@domain' wildcard to trust. Case-insensitive. Exact match for addresses; any sender from the domain for wildcards."
-                    },
-                    "reason": {
-                      "type": "string",
-                      "description": "Short explanation of why this sender is being trusted. Stored for audit."
-                    }
-                  },
-                  "required": ["sender", "reason"]
-                }
-                """)]
-    public async Task<object> AddTrustedSender(ServiceConfig config, ServiceRequest request)
+    [Parameters(typeof(AddTrustedSenderArgs))]
+    public async Task<object> AddTrustedSender(ServiceConfig config, AddTrustedSenderArgs request)
     {
         if (_store == null)
             return new { Success = false, Message = "Local email store is not configured. Set SqliteConnectionString in the plugin config." };
@@ -1001,19 +852,8 @@ public class EmailService
     [Display(Name = "remove_trusted_sender")]
     [Description("Remove an entry from the agent-managed trusted-sender whitelist. " +
                  "Operator-seeded entries (from the plugin configuration) cannot be removed.")]
-    [Parameters("""
-                {
-                  "type": "object",
-                  "properties": {
-                    "sender": {
-                      "type": "string",
-                      "description": "Email address or '@domain' wildcard to remove from the whitelist."
-                    }
-                  },
-                  "required": ["sender"]
-                }
-                """)]
-    public async Task<object> RemoveTrustedSender(ServiceConfig config, ServiceRequest request)
+    [Parameters(typeof(RemoveTrustedSenderArgs))]
+    public async Task<object> RemoveTrustedSender(ServiceConfig config, RemoveTrustedSenderArgs request)
     {
         if (_store == null)
             return new { Success = false, Message = "Local email store is not configured. Set SqliteConnectionString in the plugin config." };
@@ -1031,14 +871,8 @@ public class EmailService
 
     [Display(Name = "list_trusted_senders")]
     [Description("List all trusted email senders. Operator-seeded entries (immutable) are separated from agent-added entries (mutable).")]
-    [Parameters("""
-                {
-                  "type": "object",
-                  "properties": {},
-                  "required": []
-                }
-                """)]
-    public async Task<object> ListTrustedSenders(ServiceConfig config, ServiceRequest request)
+    [Parameters(typeof(EmptyArgs))]
+    public async Task<object> ListTrustedSenders(ServiceConfig config, EmptyArgs request)
     {
         var seed = (config.TrustedSenderSeed ?? Array.Empty<string>())
             .Select(s => s?.Trim().ToLowerInvariant())
@@ -1059,19 +893,8 @@ public class EmailService
 
     [Display(Name = "sync_emails")]
     [Description("Manually trigger email sync to download new emails to the local store. Returns sync status.")]
-    [Parameters("""
-                {
-                  "type": "object",
-                  "properties": {
-                    "account": {
-                      "type": "string",
-                      "description": "Specific account to sync. Optional, syncs all accounts if not specified."
-                    }
-                  },
-                  "required": []
-                }
-                """)]
-    public async Task<object> SyncEmails(ServiceConfig config, ServiceRequest request)
+    [Parameters(typeof(SyncEmailsArgs))]
+    public async Task<object> SyncEmails(ServiceConfig config, SyncEmailsArgs request)
     {
         if (_syncEngine == null)
             return new { Success = false, Message = "Email sync is not configured. Set SqliteConnectionString in the plugin config." };
@@ -1081,24 +904,13 @@ public class EmailService
 
     [Display(Name = "get_folders")]
     [Description("List synced email folders with message counts for the specified account.")]
-    [Parameters("""
-                {
-                  "type": "object",
-                  "properties": {
-                    "account": {
-                      "type": "string",
-                      "description": "The email account. Optional, uses default account."
-                    }
-                  },
-                  "required": []
-                }
-                """)]
-    public async Task<object> GetFolders(ServiceConfig config, ServiceRequest request)
+    [Parameters(typeof(GetFoldersArgs))]
+    public async Task<object> GetFolders(ServiceConfig config, GetFoldersArgs request)
     {
         if (_store == null)
             return new { Success = false, Message = "Local email store is not configured. Set SqliteConnectionString in the plugin config." };
 
-        var account = GetMailAccount(request, config);
+        var account = GetMailAccount(request.Account, config);
         var folders = await _store.GetFoldersAsync(account.Name);
 
         var result = folders.Select(f => new
@@ -1118,32 +930,13 @@ public class EmailService
 
     [Display(Name = "mark_as_read")]
     [Description("Use this tool to mark the specified email as read.")]
-    [Parameters("""
-                {
-                  "type": "object",
-                  "properties": {
-                    "account": {
-                      "type": "string",
-                      "description": "The email account you want to access. This is optional, if not supplied the default account will be used."
-                    },
-                    "messageId": {
-                      "type": "string",
-                      "description": "The message Id of the email message to update"
-                    },
-                    "markAsRead": {
-                      "type": "boolean",
-                      "description": "True the email with be marked as Read, False the email will be marked as Unread."
-                    }
-                  },
-                  "required": ["messageId","markAsRead"]
-                }
-                """)]
-    public async Task<object> MarkAsRead(ServiceConfig config, ServiceRequest request)
+    [Parameters(typeof(MarkAsReadArgs))]
+    public async Task<object> MarkAsRead(ServiceConfig config, MarkAsReadArgs request)
     {
         if (string.IsNullOrWhiteSpace(request.MessageId))
             throw new Exception("MessageId is required");
 
-        var account = GetMailAccount(request, config);
+        var account = GetMailAccount(request.Account, config);
         await SetSeenFlagAsync(account, request.Folder, request.MessageId, request.MarkAsRead == true, _store);
         var status = request.MarkAsRead == true ? "read" : "unread";
         return new { Success = true, Message = $"Email marked as {status}" };
@@ -1151,32 +944,13 @@ public class EmailService
 
     [Display(Name = "flag_email")]
     [Description("Use this tool to flag/unflag an email using the standard IMAP Flagged flag")]
-    [Parameters("""
-                {
-                  "type": "object",
-                  "properties": {
-                    "account": {
-                      "type": "string",
-                      "description": "The email account you want to access. This is optional, if not supplied the default account will be used."
-                    },
-                    "messageId": {
-                      "type": "string",
-                      "description": "The message Id of the email message to update"
-                    },
-                    "flag": {
-                      "type": "boolean",
-                      "description": "Set to true to flag the email, false to unflag"
-                    }
-                  },
-                  "required": ["messageId","flag"]
-                }
-                """)]
-    public async Task<object> FlagEmail(ServiceConfig config, ServiceRequest request)
+    [Parameters(typeof(FlagEmailArgs))]
+    public async Task<object> FlagEmail(ServiceConfig config, FlagEmailArgs request)
     {
         if (string.IsNullOrWhiteSpace(request.MessageId))
             throw new Exception("MessageId is required");
 
-        var account = GetMailAccount(request, config);
+        var account = GetMailAccount(request.Account, config);
         await SetFlaggedAsync(account, request.Folder, request.MessageId, request.Flag == true, _store);
         var status = request.Flag == true ? "flagged" : "unflagged";
         return new { Success = true, Message = $"Email {status}" };
@@ -1184,27 +958,8 @@ public class EmailService
 
     [Display(Name = "move_to_folder")]
     [Description("Use this tool to move the specified email to the specified email folder.")]
-    [Parameters("""
-                {
-                  "type": "object",
-                  "properties": {
-                    "account": {
-                      "type": "string",
-                      "description": "The email account you want to access. This is optional, if not supplied the default account will be used."
-                    },
-                    "messageId": {
-                      "type": "string",
-                      "description": "The message Id of the email message to move"
-                    },
-                    "folder": {
-                      "type": "string",
-                      "description": "The folder you wish to move the email to"
-                    }
-                  },
-                  "required": ["messageId","folder"]
-                }
-                """)]
-    public async Task<object> MoveToFolder(ServiceConfig config, ServiceRequest request)
+    [Parameters(typeof(MoveToFolderArgs))]
+    public async Task<object> MoveToFolder(ServiceConfig config, MoveToFolderArgs request)
     {
         if (string.IsNullOrWhiteSpace(request.MessageId))
             throw new Exception("MessageId is required");
@@ -1212,7 +967,7 @@ public class EmailService
         if (string.IsNullOrWhiteSpace(request.Folder))
             throw new Exception("Folder is required");
 
-        var account = GetMailAccount(request, config);
+        var account = GetMailAccount(request.Account, config);
         using var client = await ConnectImapAsync(account);
         try
         {
@@ -1243,40 +998,9 @@ public class EmailService
 
     [Display(Name = "send_email")]
     [Description("Use this tool to send emails from the user's already set up email account. Always format the email body using HTML for attractive styling, including appropriate use of paragraphs, headings, bold text, lists, and other HTML tags to improve readability and visual appeal. Use this tool when asked something like 'Send an email to mom telling her I will be late'")]
-    [Parameters("""
-                {
-                  "type": "object",
-                  "properties": {
-                    "account": {
-                      "type": "string",
-                      "description": "The email account you want to access. This is optional, if not supplied the default account will be used."
-                    },
-                    "subject": {
-                      "type": "string",
-                      "description": "The subject of the email to send."
-                    },
-                    "body": {
-                      "type": "string",
-                      "description": "The HTML formatted body of the email to send. This should be well-structured and styled using HTML tags like <p>, <h1>, <strong>, <ul>, <ol>, etc."
-                    },
-                    "recipientName": {
-                      "type": "string",
-                      "description": "The name of the person receiving the email."
-                    },
-                    "to": {
-                      "type": "string",
-                      "description": "The email address to send the email to."
-                    },
-                    "messageId": {
-                      "type": "string",
-                      "description": "The message Id of the draft email to send. Use this if you have already created an draft and want to send it."
-                    }
-                  },
-                  "required": []
-                }
-                """)]
+    [Parameters(typeof(SendEmailArgs))]
     [SupportsConfirmation]
-    public async Task<object> SendEmail(ServiceConfig config, ServiceRequest request)
+    public async Task<object> SendEmail(ServiceConfig config, SendEmailArgs request)
     {
         if (string.IsNullOrWhiteSpace(request.MessageId) && string.IsNullOrWhiteSpace(request.To))
             throw new Exception("Must supply existing draft email Id or a To address to send an email.");
@@ -1311,9 +1035,9 @@ public class EmailService
         return await ExecuteSendEmailAsync(config, request);
     }
 
-    private async Task<object> ExecuteSendEmailAsync(ServiceConfig config, ServiceRequest request)
+    private async Task<object> ExecuteSendEmailAsync(ServiceConfig config, SendEmailArgs request)
     {
-        var account = GetMailAccount(request, config);
+        var account = GetMailAccount(request.Account, config);
 
         MimeMessage message;
         if (!string.IsNullOrWhiteSpace(request.MessageId))
@@ -1362,24 +1086,9 @@ public class EmailService
 
     [Display(Name = "delete_email")]
     [Description("Use this tool to delete emails from the user's already set up email account, for example when asked something like 'delete that email', or 'delete my last email'")]
-    [Parameters("""
-                {
-                  "type": "object",
-                  "properties": {
-                    "account": {
-                      "type": "string",
-                      "description": "The email account you want to access. This is optional, if not supplied the default account will be used."
-                    },
-                    "messageId": {
-                      "type": "string",
-                      "description": "The message Id of the email message to delete"
-                    }
-                  },
-                  "required": ["messageId"]
-                }
-                """)]
+    [Parameters(typeof(DeleteEmailArgs))]
     [SupportsConfirmation]
-    public async Task<object> DeleteEmail(ServiceConfig config, ServiceRequest request)
+    public async Task<object> DeleteEmail(ServiceConfig config, DeleteEmailArgs request)
     {
         if (string.IsNullOrWhiteSpace(request.MessageId))
             throw new Exception("MessageId is required");
@@ -1416,9 +1125,9 @@ public class EmailService
         return await ExecuteDeleteEmailAsync(config, request);
     }
 
-    private async Task<object> ExecuteDeleteEmailAsync(ServiceConfig config, ServiceRequest request)
+    private async Task<object> ExecuteDeleteEmailAsync(ServiceConfig config, DeleteEmailArgs request)
     {
-        var account = GetMailAccount(request, config);
+        var account = GetMailAccount(request.Account, config);
         var deletedCount = await DeleteMessageAsync(account, request.Folder, request.MessageId, _store, _vectorService);
 
         var message = deletedCount > 0 ? "Email(s) Deleted!" : "Unable to delete email(s)!";
@@ -1433,37 +1142,10 @@ public class EmailService
 
     [Display(Name = "create_draft")]
     [Description("Use this tool to create a draft email using the supplied criteria.")]
-    [Parameters("""
-                {
-                  "type": "object",
-                  "properties": {
-                    "account": {
-                      "type": "string",
-                      "description": "The email account you want to access. This is optional, if not supplied the default account will be used."
-                    },
-                    "subject": {
-                      "type": "string",
-                      "description": "The subject of the email to send."
-                    },
-                    "body": {
-                      "type": "string",
-                      "description": "The HTML formatted body of the email to send. This should be well-structured and styled using HTML tags like <p>, <h1>, <strong>, <ul>, <ol>, etc."
-                    },
-                    "recipientName": {
-                      "type": "string",
-                      "description": "The name of the person receiving the email."
-                    },
-                    "to": {
-                      "type": "string",
-                      "description": "The email address to send the email to."
-                    }
-                  },
-                  "required": []
-                }
-                """)]
-    public async Task<object> CreateDraft(ServiceConfig config, ServiceRequest request)
+    [Parameters(typeof(CreateDraftArgs))]
+    public async Task<object> CreateDraft(ServiceConfig config, CreateDraftArgs request)
     {
-        var account = GetMailAccount(request, config);
+        var account = GetMailAccount(request.Account, config);
 
         var message = new MimeMessage
         {
@@ -1491,28 +1173,13 @@ public class EmailService
 
     [Display(Name = "delete_draft")]
     [Description("Use this tool to delete a saved draft email.")]
-    [Parameters("""
-                {
-                  "type": "object",
-                  "properties": {
-                    "account": {
-                      "type": "string",
-                      "description": "The email account you want to access. This is optional, if not supplied the default account will be used."
-                    },
-                    "messageId": {
-                      "type": "string",
-                      "description": "The message Id of the draft email to delete"
-                    }
-                  },
-                  "required": ["messageId"]
-                }
-                """)]
-    public async Task<object> DeleteDraft(ServiceConfig config, ServiceRequest request)
+    [Parameters(typeof(DeleteDraftArgs))]
+    public async Task<object> DeleteDraft(ServiceConfig config, DeleteDraftArgs request)
     {
         if (string.IsNullOrWhiteSpace(request.MessageId))
             throw new Exception("MessageId is required");
 
-        var account = GetMailAccount(request, config);
+        var account = GetMailAccount(request.Account, config);
         using var client = await ConnectImapAsync(account);
         try
         {
@@ -1536,38 +1203,13 @@ public class EmailService
 
     [Display(Name = "add_attachment_to_draft")]
     [Description("Use this tool to add attachments to a previously saved draft email.")]
-    [Parameters("""
-                {
-                  "type": "object",
-                  "properties": {
-                    "account": {
-                      "type": "string",
-                      "description": "The email account you want to access. This is optional, if not supplied the default account will be used."
-                    },
-                    "messageId": {
-                      "type": "string",
-                      "description": "The message Id of the email to add the attachment to"
-                    },
-                    "attachment": {
-                      "type": "object",
-                      "description": "The attachment to add to the draft email",
-                      "properties": {
-                        "fileName": { "type": "string", "description": "The name of the file (e.g. report.pdf)" },
-                        "contentType": { "type": "string", "description": "MIME type (e.g. application/pdf, text/plain). Defaults to application/octet-stream if not provided." },
-                        "data": { "type": "string", "description": "Base64-encoded file content" }
-                      },
-                      "required": ["fileName", "data"]
-                    }
-                  },
-                  "required": ["messageId"]
-                }
-                """)]
-    public async Task<object> AddAttachmentToDraft(ServiceConfig config, ServiceRequest request)
+    [Parameters(typeof(AddAttachmentToDraftArgs))]
+    public async Task<object> AddAttachmentToDraft(ServiceConfig config, AddAttachmentToDraftArgs request)
     {
         if (string.IsNullOrWhiteSpace(request.MessageId))
             throw new Exception("MessageId is required");
 
-        var account = GetMailAccount(request, config);
+        var account = GetMailAccount(request.Account, config);
         using var client = await ConnectImapAsync(account);
         try
         {
@@ -1580,17 +1222,15 @@ public class EmailService
 
             var originalMessage = await found.Value.folder.GetMessageAsync(found.Value.uid);
 
-            var attachmentJson = request.Attachment?.ToString();
-            if (string.IsNullOrWhiteSpace(attachmentJson))
+            var attachment = request.Attachment;
+            if (attachment is null)
                 return new { Success = false, Message = "Attachment data is required" };
 
-            var attachmentData = JsonSerializer.Deserialize<JsonElement>(attachmentJson);
-
-            // Support both camelCase and lowercase property names from LLM
-            string fileName = TryGetJsonProperty(attachmentData, "fileName", "filename", "name");
-            string contentType = TryGetJsonProperty(attachmentData, "contentType", "contenttype", "mimeType", "mime_type")
-                                 ?? "application/octet-stream";
-            string base64Content = TryGetJsonProperty(attachmentData, "data", "content", "base64");
+            string fileName = attachment.FileName;
+            string contentType = string.IsNullOrWhiteSpace(attachment.ContentType)
+                ? "application/octet-stream"
+                : attachment.ContentType;
+            string base64Content = attachment.Data;
 
             if (string.IsNullOrWhiteSpace(fileName))
                 return new { Success = false, Message = "Attachment fileName is required" };
@@ -1640,32 +1280,13 @@ public class EmailService
 
     [Display(Name = "remove_attachment_from_draft")]
     [Description("Use this tool to remove an attachment from a previously saved draft email.")]
-    [Parameters("""
-                {
-                  "type": "object",
-                  "properties": {
-                    "account": {
-                      "type": "string",
-                      "description": "The email account you want to access. This is optional, if not supplied the default account will be used."
-                    },
-                    "messageId": {
-                      "type": "string",
-                      "description": "The message Id of the email to remove the attachment from"
-                    },
-                    "attachment": {
-                      "type": "string",
-                      "description": "The id or filename of the attachment to remove from the draft email."
-                    }
-                  },
-                  "required": ["messageId"]
-                }
-                """)]
-    public async Task<object> RemoveAttachmentFromDraft(ServiceConfig config, ServiceRequest request)
+    [Parameters(typeof(RemoveAttachmentFromDraftArgs))]
+    public async Task<object> RemoveAttachmentFromDraft(ServiceConfig config, RemoveAttachmentFromDraftArgs request)
     {
         if (string.IsNullOrWhiteSpace(request.MessageId))
             throw new Exception("MessageId is required");
 
-        var account = GetMailAccount(request, config);
+        var account = GetMailAccount(request.Account, config);
         using var client = await ConnectImapAsync(account);
         try
         {

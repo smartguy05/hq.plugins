@@ -2,19 +2,15 @@ using HQ.Models.Interfaces;
 
 namespace HQ.Plugins.Ramp.Models;
 
+/// <summary>
+/// Framework request envelope (the <c>T</c> in <c>CommandBase&lt;T, ServiceConfig&gt;</c>). Carries
+/// only the orchestrator-supplied routing fields; per-tool LLM arguments now live on each tool's
+/// dedicated args type (see <c>ToolArgs.cs</c>) and are bound by <c>ProcessRequest</c>.
+/// </summary>
 public record ServiceRequest : IPluginServiceRequest
 {
     public string Method { get; set; }
     public string ToolCallId { get; set; }
     public string RequestingService { get; set; }
     public string ConfirmationId { get; set; }
-
-    public string TransactionId { get; set; }
-    public string CardId { get; set; }
-    public string UserId { get; set; }
-
-    // Paging / filters
-    public int? PageSize { get; set; }
-    public string FromDate { get; set; }   // ISO date for transaction filtering
-    public string ToDate { get; set; }
 }

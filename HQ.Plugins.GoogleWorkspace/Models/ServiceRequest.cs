@@ -25,50 +25,15 @@ public class StringOrNumberConverter : JsonConverter<string>
         => writer.WriteStringValue(value);
 }
 
+/// <summary>
+/// Framework request envelope (the <c>T</c> in <c>CommandBase&lt;T, ServiceConfig&gt;</c>). Carries
+/// only the orchestrator-supplied routing fields; per-tool LLM arguments now live on each tool's
+/// dedicated args type (see <c>ToolArgs.cs</c>) and are bound by <c>ProcessRequest</c>.
+/// </summary>
 public record ServiceRequest : IPluginServiceRequest
 {
     public string Method { get; set; }
     public string ToolCallId { get; set; }
     public string RequestingService { get; set; }
     public string ConfirmationId { get; set; }
-
-    // ── File / document identity ──
-    // FileId doubles as Drive fileId, Docs documentId, and Sheets spreadsheetId.
-    [JsonConverter(typeof(StringOrNumberConverter))]
-    public string FileId { get; set; }
-
-    [JsonConverter(typeof(StringOrNumberConverter))]
-    public string FolderId { get; set; }
-
-    public string Name { get; set; }
-    public string Title { get; set; }
-    public string MimeType { get; set; }
-
-    // Base64-encoded file bytes for uploads.
-    public string Content { get; set; }
-
-    // ── Drive listing / search ──
-    public string Query { get; set; }
-    public int? PageSize { get; set; }
-    public string OrderBy { get; set; }
-
-    // ── Drive delete / share ──
-    public bool? Permanent { get; set; }
-    public string Role { get; set; }        // reader | writer | commenter | owner
-    public string Type { get; set; }        // user | group | domain | anyone
-    public string EmailAddress { get; set; }
-
-    // ── Docs ──
-    public string Text { get; set; }
-    public string Find { get; set; }
-    public string Replace { get; set; }
-    public bool? MatchCase { get; set; }
-
-    // ── Sheets ──
-    public string Range { get; set; }
-    public string SheetTitle { get; set; }
-
-    // 2D array of cell values. Leaf cells arrive as JsonElement and are normalized
-    // to string/double/bool by SheetsClient before being sent to the Sheets API.
-    public List<List<JsonElement>> Values { get; set; }
 }

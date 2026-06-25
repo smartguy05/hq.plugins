@@ -25,8 +25,8 @@ public class HealthService
 
     [Display(Name = HealthMethods.ListUsers)]
     [Description("List the wearable accounts (Terra users) connected to this app.")]
-    [Parameters("""{"type":"object","properties":{},"required":[]}""")]
-    public Task<object> ListUsers(ServiceConfig config, ServiceRequest r) =>
+    [Parameters(typeof(EmptyArgs))]
+    public Task<object> ListUsers(ServiceConfig config, EmptyArgs request) =>
         Guard(async () =>
         {
             using var client = Client(config);
@@ -36,30 +36,34 @@ public class HealthService
 
     [Display(Name = HealthMethods.GetSleep)]
     [Description("Get sleep sessions (duration, stages, efficiency) for a connected user over a date range.")]
-    [Parameters("""{"type":"object","properties":{"userId":{"type":"string"},"startDate":{"type":"string","description":"YYYY-MM-DD (default 7 days ago)"},"endDate":{"type":"string","description":"YYYY-MM-DD (default today)"}},"required":["userId"]}""")]
-    public Task<object> GetSleep(ServiceConfig config, ServiceRequest r) => GetData(config, r, "sleep");
+    [Parameters(typeof(GetSleepArgs))]
+    public Task<object> GetSleep(ServiceConfig config, GetSleepArgs request) =>
+        GetData(config, request.UserId, request.StartDate, request.EndDate, "sleep");
 
     [Display(Name = HealthMethods.GetActivity)]
     [Description("Get workouts/activity sessions for a connected user over a date range.")]
-    [Parameters("""{"type":"object","properties":{"userId":{"type":"string"},"startDate":{"type":"string","description":"YYYY-MM-DD (default 7 days ago)"},"endDate":{"type":"string","description":"YYYY-MM-DD (default today)"}},"required":["userId"]}""")]
-    public Task<object> GetActivity(ServiceConfig config, ServiceRequest r) => GetData(config, r, "activity");
+    [Parameters(typeof(GetActivityArgs))]
+    public Task<object> GetActivity(ServiceConfig config, GetActivityArgs request) =>
+        GetData(config, request.UserId, request.StartDate, request.EndDate, "activity");
 
     [Display(Name = HealthMethods.GetDaily)]
     [Description("Get daily summaries (steps, calories, heart rate, stress) for a connected user over a date range.")]
-    [Parameters("""{"type":"object","properties":{"userId":{"type":"string"},"startDate":{"type":"string","description":"YYYY-MM-DD (default 7 days ago)"},"endDate":{"type":"string","description":"YYYY-MM-DD (default today)"}},"required":["userId"]}""")]
-    public Task<object> GetDaily(ServiceConfig config, ServiceRequest r) => GetData(config, r, "daily");
+    [Parameters(typeof(GetDailyArgs))]
+    public Task<object> GetDaily(ServiceConfig config, GetDailyArgs request) =>
+        GetData(config, request.UserId, request.StartDate, request.EndDate, "daily");
 
     [Display(Name = HealthMethods.GetBody)]
     [Description("Get body measurements (weight, body fat, glucose, blood pressure) for a connected user over a date range.")]
-    [Parameters("""{"type":"object","properties":{"userId":{"type":"string"},"startDate":{"type":"string","description":"YYYY-MM-DD (default 7 days ago)"},"endDate":{"type":"string","description":"YYYY-MM-DD (default today)"}},"required":["userId"]}""")]
-    public Task<object> GetBody(ServiceConfig config, ServiceRequest r) => GetData(config, r, "body");
+    [Parameters(typeof(GetBodyArgs))]
+    public Task<object> GetBody(ServiceConfig config, GetBodyArgs request) =>
+        GetData(config, request.UserId, request.StartDate, request.EndDate, "body");
 
-    private Task<object> GetData(ServiceConfig config, ServiceRequest r, string resource) =>
+    private Task<object> GetData(ServiceConfig config, string userId, string startDate, string endDate, string resource) =>
         Guard(async () =>
         {
             using var client = Client(config);
             var now = DateTime.UtcNow;
-            var path = DataPath(resource, r.UserId, Date(r.StartDate, now.AddDays(-7)), Date(r.EndDate, now));
+            var path = DataPath(resource, userId, Date(startDate, now.AddDays(-7)), Date(endDate, now));
             var doc = await client.GetAsync(path);
             return new { Success = true, Type = resource, Data = Prop(doc, "data") };
         });

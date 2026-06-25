@@ -12,7 +12,7 @@ public class SheetsClient
 
     public SheetsClient(ServiceConfig config) => _sheets = GoogleClientFactory.CreateSheets(config);
 
-    public async Task<object> Create(ServiceRequest r)
+    public async Task<object> Create(SheetsCreateArgs r)
     {
         var spreadsheet = new Spreadsheet
         {
@@ -28,7 +28,7 @@ public class SheetsClient
         };
     }
 
-    public async Task<object> GetValues(ServiceRequest r)
+    public async Task<object> GetValues(SheetsGetValuesArgs r)
     {
         if (string.IsNullOrWhiteSpace(r.FileId)) return new { Success = false, Error = "fileId (spreadsheetId) is required" };
         if (string.IsNullOrWhiteSpace(r.Range)) return new { Success = false, Error = "range (A1 notation) is required" };
@@ -37,7 +37,7 @@ public class SheetsClient
         return new { Success = true, response.Range, Values = response.Values ?? [] };
     }
 
-    public async Task<object> UpdateValues(ServiceRequest r)
+    public async Task<object> UpdateValues(SheetsUpdateValuesArgs r)
     {
         if (string.IsNullOrWhiteSpace(r.FileId)) return new { Success = false, Error = "fileId (spreadsheetId) is required" };
         if (string.IsNullOrWhiteSpace(r.Range)) return new { Success = false, Error = "range (A1 notation) is required" };
@@ -50,7 +50,7 @@ public class SheetsClient
         return new { Success = true, result.UpdatedRange, result.UpdatedRows, result.UpdatedCells };
     }
 
-    public async Task<object> AppendRow(ServiceRequest r)
+    public async Task<object> AppendRow(SheetsAppendRowArgs r)
     {
         if (string.IsNullOrWhiteSpace(r.FileId)) return new { Success = false, Error = "fileId (spreadsheetId) is required" };
         if (r.Values is null) return new { Success = false, Error = "values (2D array) is required" };
@@ -64,7 +64,7 @@ public class SheetsClient
         return new { Success = true, UpdatedRange = result.Updates?.UpdatedRange, UpdatedRows = result.Updates?.UpdatedRows };
     }
 
-    public async Task<object> ClearValues(ServiceRequest r)
+    public async Task<object> ClearValues(SheetsClearValuesArgs r)
     {
         if (string.IsNullOrWhiteSpace(r.FileId)) return new { Success = false, Error = "fileId (spreadsheetId) is required" };
         if (string.IsNullOrWhiteSpace(r.Range)) return new { Success = false, Error = "range (A1 notation) is required" };
@@ -73,7 +73,7 @@ public class SheetsClient
         return new { Success = true, result.ClearedRange };
     }
 
-    public async Task<object> ListSheets(ServiceRequest r)
+    public async Task<object> ListSheets(SheetsListSheetsArgs r)
     {
         if (string.IsNullOrWhiteSpace(r.FileId)) return new { Success = false, Error = "fileId (spreadsheetId) is required" };
         var ss = await _sheets.Spreadsheets.Get(r.FileId).ExecuteAsync();
