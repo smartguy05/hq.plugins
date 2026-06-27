@@ -55,7 +55,7 @@
     }
 
     async function refresh() {
-      const r = await fetch('login/status').then(r => r.json()).catch(() => null);
+      const r = await fetch('./login/status').then(r => r.json()).catch(() => null);
       if (!r || !r.active) { setStatus('Idle.'); return; }
       if (r.error) { setStatus('Error: ' + r.error, 'err'); stopPoll(); return; }
       if (r.authenticated) {
@@ -79,12 +79,12 @@
     startBtn.addEventListener('click', async () => {
       startBtn.disabled = true; cancelBtn.disabled = false;
       setStatus('Starting browser…');
-      await fetch('login/start', { method: 'POST' }).catch(() => {});
+      await fetch('./login/start', { method: 'POST' }).catch(() => {});
       startPoll();
     });
 
     cancelBtn.addEventListener('click', async () => {
-      await fetch('login/cancel', { method: 'POST' }).catch(() => {});
+      await fetch('./login/cancel', { method: 'POST' }).catch(() => {});
       viewer.hidden = true; viewer.src = '';
       startBtn.disabled = false; cancelBtn.disabled = true;
       stopPoll(); setStatus('Cancelled.');

@@ -70,6 +70,9 @@ public sealed class LinkedInLoginSession : IAsyncDisposable
     {
         try
         {
+            // Close the production browser first — the persistent profile dir can't be opened twice.
+            LinkedInCommand.InvalidateBrowser(Account);
+
             // Deterministic, collision-resistant display/port per account.
             var slot = (uint)Account.GetHashCode() % 200;
             Display = (int)(100 + slot);
@@ -79,7 +82,8 @@ public sealed class LinkedInLoginSession : IAsyncDisposable
             StartProcess("Xvfb", $"{displayStr} -screen 0 1280x800x24 -nolisten tcp");
             await Task.Delay(800);
 
-            _browser = new LinkedInBrowser(_config, _log, displayOverride: displayStr);
+            // Always headed — the user must see the browser window via noVNC.
+            _browser = new LinkedInBrowser(_config, _log, displayOverride: displayStr, forceHeaded: true);
             // Headed navigation to the login page primes the window the user will see.
             await _browser.VoyagerAsync("GET", "/voyager/api/me"); // forces context launch + nav to origin
 
@@ -114,6 +118,9 @@ public sealed class LinkedInLoginSession : IAsyncDisposable
                         Authenticated = true;
                         _log?.Invoke(LogLevel.Info, $"LinkedIn session authenticated for '{Account}'.");
                         await DisposeAsync(); // tear down VNC + flush profile to disk
+                        // Invalidate any stale production browser so the next tool call
+                        // opens a fresh context on the now-authenticated profile.
+                        LinkedInCommand.InvalidateBrowser(Account);
                         return;
                     }
                 }

@@ -84,6 +84,10 @@ public class LinkedInCommand :
     private static LinkedInBrowser GetBrowser(ServiceConfig config, LogDelegate log)
     {
         var account = LinkedInPaths.SanitizeAccount(config.AccountLabel);
+
+        if (LinkedInLoginSession.ActiveFor(config.AccountLabel) is not null)
+            throw new InvalidOperationException("LinkedIn login is in progress. Complete the interactive login first, then retry.");
+
         lock (BrowserLock)
         {
             if (_browser is not null && _browserAccount == account) return _browser;
@@ -91,6 +95,23 @@ public class LinkedInCommand :
             _browser = new LinkedInBrowser(config, log);
             _browserAccount = account;
             return _browser;
+        }
+    }
+
+    /// <summary>
+    /// Closes and nulls the cached production browser for an account. Called by the login
+    /// session before opening the same profile dir (to avoid the "already in use" error)
+    /// and again after login completes (so the next tool call gets a fresh authenticated context).
+    /// </summary>
+    internal static void InvalidateBrowser(string accountLabel)
+    {
+        var account = LinkedInPaths.SanitizeAccount(accountLabel);
+        lock (BrowserLock)
+        {
+            if (_browser is null || _browserAccount != account) return;
+            _browser.DisposeAsync().AsTask().GetAwaiter().GetResult();
+            _browser = null;
+            _browserAccount = null;
         }
     }
 

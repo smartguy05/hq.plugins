@@ -22,16 +22,18 @@ public sealed class LinkedInBrowser : ILinkedInBrowser
     private readonly LogDelegate _log;
     private readonly SemaphoreSlim _gate = new(1, 1);
     private readonly string _displayOverride;
+    private readonly bool _forceHeaded;
 
     private IPlaywright _playwright;
     private IBrowserContext _context;
     private IPage _page;
 
-    public LinkedInBrowser(ServiceConfig config, LogDelegate log = null, string displayOverride = null)
+    public LinkedInBrowser(ServiceConfig config, LogDelegate log = null, string displayOverride = null, bool forceHeaded = false)
     {
         _config = config;
         _log = log;
         _displayOverride = displayOverride;
+        _forceHeaded = forceHeaded;
     }
 
     /// <summary>
@@ -69,7 +71,8 @@ public sealed class LinkedInBrowser : ILinkedInBrowser
         Directory.CreateDirectory(profileDir);
 
         _playwright = await Playwright.CreateAsync();
-        var options = BuildContextOptions(_config, _config.Headless, _displayOverride);
+        var headless = _forceHeaded ? false : _config.Headless;
+        var options = BuildContextOptions(_config, headless, _displayOverride);
         _context = await _playwright.Chromium.LaunchPersistentContextAsync(profileDir, options);
         _page = _context.Pages.Count > 0 ? _context.Pages[0] : await _context.NewPageAsync();
         _page.SetDefaultTimeout(30000);
