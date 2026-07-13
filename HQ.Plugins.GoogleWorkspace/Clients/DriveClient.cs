@@ -87,15 +87,23 @@ public class DriveClient
             returnedMime = meta.MimeType;
         }
 
-        return new
+        return BuildDownloadResult(r.FileId, meta.Name, returnedMime, Convert.ToBase64String(ms.ToArray()));
+    }
+
+    /// <summary>
+    /// Builds the download result, wrapping the file content as
+    /// <see cref="HQ.Models.Safety.Untrusted{T}"/> (source = file id) since it is fetched from a
+    /// potentially third-party-shared file. Public for unit testing.
+    /// </summary>
+    public static object BuildDownloadResult(string fileId, string fileName, string mimeType, string base64Content) =>
+        new
         {
             Success = true,
-            FileId = r.FileId,
-            FileName = meta.Name,
-            MimeType = returnedMime,
-            Content = Convert.ToBase64String(ms.ToArray())
+            FileId = fileId,
+            FileName = fileName,
+            MimeType = mimeType,
+            Content = WorkspaceContent.AsUntrusted(base64Content, "gworkspace-doc-content", fileId)
         };
-    }
 
     public async Task<object> UploadFile(DriveUploadFileArgs r)
     {

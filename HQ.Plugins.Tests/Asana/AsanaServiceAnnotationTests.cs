@@ -8,12 +8,14 @@ namespace HQ.Plugins.Tests.Asana;
 
 public class AsanaServiceAnnotationTests
 {
+    // Post-2.7.0: tool methods are (ServiceConfig config, FooArgs args) with a [Display] name —
+    // the second parameter is now a per-tool args record, not IPluginServiceRequest.
     private static IEnumerable<MethodInfo> GetToolMethods()
     {
         return typeof(AsanaService).GetMethods(BindingFlags.Public | BindingFlags.Instance)
-            .Where(m => m.GetParameters().Length == 2 &&
-                        typeof(IPluginConfig).IsAssignableFrom(m.GetParameters()[0].ParameterType) &&
-                        typeof(IPluginServiceRequest).IsAssignableFrom(m.GetParameters()[1].ParameterType));
+            .Where(m => m.GetCustomAttribute<DisplayAttribute>() != null &&
+                        m.GetParameters().Length == 2 &&
+                        typeof(IPluginConfig).IsAssignableFrom(m.GetParameters()[0].ParameterType));
     }
 
     [Fact]

@@ -48,8 +48,21 @@ public class DocsClient
     {
         if (string.IsNullOrWhiteSpace(r.FileId)) return new { Success = false, Error = "fileId (documentId) is required" };
         var doc = await _docs.Documents.Get(r.FileId).ExecuteAsync();
-        return new { Success = true, DocumentId = doc.DocumentId, doc.Title, Text = ExtractText(doc.Body) };
+        return BuildDocTextResult(doc.DocumentId, doc.Title, ExtractText(doc.Body));
     }
+
+    /// <summary>
+    /// Builds the get-text result, wrapping the document body as
+    /// <see cref="HQ.Models.Safety.Untrusted{T}"/> (source = document id). Public for unit testing.
+    /// </summary>
+    public static object BuildDocTextResult(string documentId, string title, string text) =>
+        new
+        {
+            Success = true,
+            DocumentId = documentId,
+            Title = title,
+            Text = WorkspaceContent.AsUntrusted(text, "gworkspace-doc-content", documentId)
+        };
 
     public async Task<object> AppendText(DocsAppendTextArgs r)
     {

@@ -44,6 +44,31 @@ public class TwilioCommand : CommandBase<ServiceRequest, ServiceConfig>
         return JsonSerializer.Deserialize<object>(doc.RootElement.GetRawText());
     }
 
+    // SAFE-02: inbound human-authored content (SMS/WhatsApp/participant message bodies) is
+    // attacker-controlled, so wrap it as Untrusted for the host to screen for prompt injection
+    // before it reaches the LLM. Never wrap ids, statuses, phone numbers, or agent-authored echoes.
+    private static object AsUntrusted(string content, string provenance, string source) =>
+        string.IsNullOrEmpty(content) ? content : new HQ.Models.Safety.Untrusted<string>(content, provenance, source);
+
+    // Rebuilds a Twilio message resource with its free-text `body` wrapped as Untrusted, keyed by
+    // the sender ("from"). Structural fields (sid, status, to, timestamps) are cloned through raw.
+    private static object WrapMessageBody(JsonElement message)
+    {
+        if (message.ValueKind != JsonValueKind.Object)
+            return JsonSerializer.Deserialize<object>(message.GetRawText());
+
+        var from = message.TryGetProperty("from", out var f) ? f.GetString() : null;
+        var result = new Dictionary<string, object>();
+        foreach (var prop in message.EnumerateObject())
+        {
+            result[prop.Name] = prop.NameEquals("body")
+                ? AsUntrusted(prop.Value.ValueKind == JsonValueKind.String ? prop.Value.GetString() : null,
+                    "twilio-sms-body", string.IsNullOrEmpty(from) ? "unknown" : from)
+                : prop.Value.Clone();
+        }
+        return result;
+    }
+
     /// <summary>
     /// Checks for Twilio error responses. Twilio uses "error_code" for message-level errors
     /// and "code" for HTTP-level errors (auth failures, invalid requests, etc.).
@@ -126,7 +151,7 @@ public class TwilioCommand : CommandBase<ServiceRequest, ServiceConfig>
     {
         using var client = CreateClient(config);
         var doc = await client.GetMessage(request.MessageSid);
-        return new { Success = true, Data = ToResult(doc) };
+        return new { Success = true, Data = WrapMessageBody(doc.RootElement) };
     }
 
     [Display(Name = "list_messages")]
@@ -136,7 +161,8 @@ public class TwilioCommand : CommandBase<ServiceRequest, ServiceConfig>
     {
         using var client = CreateClient(config);
         var doc = await client.ListMessages(request.PageSize);
-        return new { Success = true, Data = ToResult(doc) };
+        // Bulk message JSON is wrapped wholesale — the list mixes inbound bodies with metadata.
+        return new { Success = true, Data = AsUntrusted(doc.RootElement.GetRawText(), "twilio-api-response", "api.twilio.com") };
     }
 
     // ── Voice ──────────────────────────────────────────────────
@@ -313,6 +339,7 @@ public class TwilioCommand : CommandBase<ServiceRequest, ServiceConfig>
     {
         using var client = CreateClient(config);
         var doc = await client.ListConversationMessages(request.ConversationSid, request.PageSize);
-        return new { Success = true, Data = ToResult(doc) };
+        // Conversation messages include inbound participant text — wrap the payload wholesale.
+        return new { Success = true, Data = AsUntrusted(doc.RootElement.GetRawText(), "twilio-api-response", "conversations.twilio.com") };
     }
 }

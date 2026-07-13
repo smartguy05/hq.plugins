@@ -61,9 +61,12 @@ public class ExternalContentConventionTests
             var shortName = plugin.Replace("HQ.Plugins.", "");
             var expectedClass = $"{shortName}ProvenanceTests";
 
+            // Accept e.g. EmailServiceProvenanceTests for HQ.Plugins.Email: the class must
+            // start with the plugin's short name and end with "ProvenanceTests".
             var testClass = testTypes.FirstOrDefault(t =>
                 t.IsClass && !t.IsAbstract &&
-                string.Equals(t.Name, expectedClass, StringComparison.Ordinal));
+                t.Name.StartsWith(shortName, StringComparison.Ordinal) &&
+                t.Name.EndsWith("ProvenanceTests", StringComparison.Ordinal));
 
             var hasTests = testClass != null && testClass
                 .GetMethods(BindingFlags.Public | BindingFlags.Instance)

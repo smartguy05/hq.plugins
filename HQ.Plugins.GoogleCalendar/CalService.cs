@@ -54,7 +54,13 @@ public class CalService
             : "primary";
         try
         {
-            return await _calendarService.Events.List(calendarId).ExecuteAsync();
+            var events = await _calendarService.Events.List(calendarId).ExecuteAsync();
+            return new
+            {
+                CalendarId = calendarId,
+                events.NextPageToken,
+                Items = events.Items?.Select(MapEvent).ToList()
+            };
         }
         catch (Exception ex)
         {
@@ -112,7 +118,7 @@ public class CalService
 
         try
         {
-            return await _calendarService.Events.Get(calendarId, eventId).ExecuteAsync();
+            return MapEvent(await _calendarService.Events.Get(calendarId, eventId).ExecuteAsync());
         }
         catch (Exception ex)
         {
@@ -304,7 +310,7 @@ public class CalService
             {
                 CalendarId = calendarId,
                 EventId = e.Id,
-                Summary = e.Summary,
+                Summary = MaybeWrap(e.Summary, IsExternal(e), EventSource(e)),
                 Start = e.Start.DateTimeRaw ?? e.Start.Date,
                 End = e.End.DateTimeRaw ?? e.End.Date
             }).ToList();
@@ -333,7 +339,7 @@ public class CalService
             return events.Items.Select(e => new
             {
                 EventId = e.Id,
-                Summary = e.Summary,
+                Summary = MaybeWrap(e.Summary, IsExternal(e), EventSource(e)),
                 Start = e.Start.DateTimeRaw ?? e.Start.Date, // In case it's an all-day event
                 End = e.End.DateTimeRaw ?? e.End.Date
             }).ToList();
@@ -343,6 +349,44 @@ public class CalService
             throw new Exception($"Error fetching events: {ex.Message}");
         }
     }
+
+    /// <summary>
+    /// Projects a Calendar <see cref="Event"/> into a tool result. Free-text fields (summary,
+    /// description, location) of events organized by someone OTHER than the authenticated user
+    /// are wrapped as <see cref="HQ.Models.Safety.Untrusted{T}"/> — an invite from an external
+    /// organizer can carry prompt-injection. Own events, ids, times and statuses stay raw.
+    /// </summary>
+    public static object MapEvent(Event e)
+    {
+        if (e == null) return null;
+        var external = IsExternal(e);
+        var source = EventSource(e);
+        return new
+        {
+            EventId = e.Id,
+            Summary = MaybeWrap(e.Summary, external, source),
+            Description = MaybeWrap(e.Description, external, source),
+            Location = MaybeWrap(e.Location, external, source),
+            Start = e.Start?.DateTimeRaw ?? e.Start?.Date,
+            End = e.End?.DateTimeRaw ?? e.End?.Date,
+            Organizer = e.Organizer?.Email,
+            Attendees = e.Attendees?.Select(a => a.Email).ToList(),
+            Status = e.Status,
+            HtmlLink = e.HtmlLink
+        };
+    }
+
+    /// <summary>True unless the authenticated user is the event organizer (i.e. authored by others).</summary>
+    private static bool IsExternal(Event e) => !(e.Organizer?.Self ?? false);
+
+    private static string EventSource(Event e) =>
+        !string.IsNullOrWhiteSpace(e.Organizer?.Email) ? e.Organizer.Email : (e.Id ?? "unknown");
+
+    private static object MaybeWrap(string content, bool external, string source) =>
+        external ? AsUntrusted(content, "gcalendar-event-text", source) : content;
+
+    private static object AsUntrusted(string content, string provenance, string source) =>
+        string.IsNullOrEmpty(content) ? content : new HQ.Models.Safety.Untrusted<string>(content, provenance, source);
 
     // --- Annotated wrapper methods for tool definition scanning ---
 

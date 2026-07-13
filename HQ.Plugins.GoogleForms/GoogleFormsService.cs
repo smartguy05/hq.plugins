@@ -115,7 +115,7 @@ public class GoogleFormsService
         {
             var service = BuildService(config);
             var responses = await service.Forms.Responses.List(r.FormId).ExecuteAsync();
-            return new { Success = true, Responses = responses.Responses ?? [] };
+            return new { Success = true, Responses = (responses.Responses ?? []).Select(MapResponse) };
         });
 
     [Display(Name = GoogleFormsMethods.GetResponse)]
@@ -126,8 +126,42 @@ public class GoogleFormsService
         {
             var service = BuildService(config);
             var response = await service.Forms.Responses.Get(r.FormId, r.ResponseId).ExecuteAsync();
-            return new { Success = true, Response = response };
+            return new { Success = true, Response = MapResponse(response) };
         });
+
+    /// <summary>
+    /// Projects a <see cref="FormResponse"/> into a tool result, wrapping each respondent-typed
+    /// text answer as <see cref="HQ.Models.Safety.Untrusted{T}"/>. Form responses come from
+    /// arbitrary external respondents and are the primary prompt-injection vector for this plugin.
+    /// Ids, timestamps and the respondent email stay raw.
+    /// </summary>
+    public static object MapResponse(FormResponse resp)
+    {
+        if (resp == null) return null;
+        var source = !string.IsNullOrWhiteSpace(resp.RespondentEmail)
+            ? resp.RespondentEmail
+            : (resp.ResponseId ?? "unknown");
+        var answers = (resp.Answers ?? new Dictionary<string, Answer>())
+            .ToDictionary(
+                kv => kv.Key,
+                kv => (object)new
+                {
+                    QuestionId = kv.Value.QuestionId,
+                    TextValues = kv.Value.TextAnswers?.Answers?
+                        .Select(a => AsUntrusted(a.Value, "gforms-response", source)).ToList()
+                });
+        return new
+        {
+            ResponseId = resp.ResponseId,
+            RespondentEmail = resp.RespondentEmail,
+            CreateTime = resp.CreateTime,
+            LastSubmittedTime = resp.LastSubmittedTime,
+            Answers = answers
+        };
+    }
+
+    private static object AsUntrusted(string content, string provenance, string source) =>
+        string.IsNullOrEmpty(content) ? content : new HQ.Models.Safety.Untrusted<string>(content, provenance, source);
 
     /// <summary>Maps a QuestionSpec to a Forms API Item. Public for unit testing.</summary>
     public static Item BuildItem(QuestionSpec q)

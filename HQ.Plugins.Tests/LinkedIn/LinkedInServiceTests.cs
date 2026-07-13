@@ -27,7 +27,7 @@ public class LinkedInServiceTests
     {
         var svc = new LinkedInService(new FakeLinkedInBrowser(), Config());
         await Assert.ThrowsAsync<ArgumentException>(() =>
-            svc.GetChatMessages(Config(), new ServiceRequest { Method = "get_chat_messages" }));
+            svc.GetChatMessages(Config(), new GetChatMessagesArgs()));
     }
 
     [Fact]
@@ -35,7 +35,7 @@ public class LinkedInServiceTests
     {
         var svc = new LinkedInService(new FakeLinkedInBrowser(), Config());
         await Assert.ThrowsAsync<ArgumentException>(() =>
-            svc.SearchPeople(Config(), new ServiceRequest { Method = "search_people" }));
+            svc.SearchPeople(Config(), new SearchPeopleArgs()));
     }
 
     // ---- reads route to the right Voyager endpoints ----
@@ -46,7 +46,7 @@ public class LinkedInServiceTests
         var browser = new FakeLinkedInBrowser { OnVoyager = (_, _, _) => new VoyagerResponse(200, "{\"elements\":[]}") };
         var svc = new LinkedInService(browser, Config());
 
-        var result = Json(await svc.GetAllChats(Config(), new ServiceRequest()));
+        var result = Json(await svc.GetAllChats(Config(), new EmptyArgs()));
 
         Assert.True(result.GetProperty("Success").GetBoolean());
         Assert.Equal(200, result.GetProperty("Status").GetInt32());
@@ -59,7 +59,7 @@ public class LinkedInServiceTests
         var browser = new FakeLinkedInBrowser { OnVoyager = (_, _, _) => new VoyagerResponse(200, "{\"elements\":[]}") };
         var svc = new LinkedInService(browser, Config());
 
-        await svc.SearchPeople(Config(), new ServiceRequest { Query = "acme cto" });
+        await svc.SearchPeople(Config(), new SearchPeopleArgs { Query = "acme cto" });
 
         Assert.Contains("type=PEOPLE", browser.Calls.Single().Path);
         Assert.Contains("keywords=acme", browser.Calls.Single().Path);
@@ -71,7 +71,7 @@ public class LinkedInServiceTests
         var browser = new FakeLinkedInBrowser { OnVoyager = (_, _, _) => new VoyagerResponse(200, "{}") };
         var svc = new LinkedInService(browser, Config());
 
-        await svc.LookupCompany(Config(), new ServiceRequest { CompanyId = "anthropic" });
+        await svc.LookupCompany(Config(), new LookupCompanyArgs { CompanyId = "anthropic" });
 
         Assert.Contains("q=universalName", browser.Calls.Single().Path);
         Assert.Contains("universalName=anthropic", browser.Calls.Single().Path);
@@ -83,7 +83,7 @@ public class LinkedInServiceTests
         var browser = new FakeLinkedInBrowser { OnVoyager = (_, _, _) => new VoyagerResponse(403, "blocked") };
         var svc = new LinkedInService(browser, Config());
 
-        var result = Json(await svc.GetAllChats(Config(), new ServiceRequest()));
+        var result = Json(await svc.GetAllChats(Config(), new EmptyArgs()));
 
         Assert.False(result.GetProperty("Success").GetBoolean());
         Assert.Equal(403, result.GetProperty("Status").GetInt32());
@@ -99,7 +99,7 @@ public class LinkedInServiceTests
         var config = Config(requireConfirmation: true);
         var svc = new LinkedInService(browser, config, notif);
 
-        await svc.CreatePost(config, new ServiceRequest { Caption = "hello world" });
+        await svc.CreatePost(config, new CreatePostArgs { Caption = "hello world" });
 
         Assert.Equal(1, notif.RequestCount);
         Assert.Empty(browser.Calls); // nothing posted until confirmed
@@ -115,7 +115,7 @@ public class LinkedInServiceTests
         var config = Config(requireConfirmation: true);
         var svc = new LinkedInService(browser, config, notif);
 
-        await svc.CreatePost(config, new ServiceRequest { Caption = "hi", ConfirmationId = confirmationId.ToString() });
+        await svc.CreatePost(config, new CreatePostArgs { Caption = "hi", ConfirmationId = confirmationId.ToString() });
 
         Assert.Single(browser.Calls);
         Assert.Equal(Voyager.Shares, browser.Calls.Single().Path);
@@ -127,7 +127,7 @@ public class LinkedInServiceTests
         var browser = new FakeLinkedInBrowser { OnVoyager = (_, _, _) => new VoyagerResponse(201, "{}") };
         var svc = new LinkedInService(browser, Config(), new FakeNotificationService());
 
-        await svc.CreatePost(Config(), new ServiceRequest { Caption = "hi" });
+        await svc.CreatePost(Config(), new CreatePostArgs { Caption = "hi" });
 
         Assert.Single(browser.Calls);
     }
@@ -142,8 +142,8 @@ public class LinkedInServiceTests
         var config = Config(maxSearches: 1);
         var svc = new LinkedInService(browser, config, notificationService: null, rateLimiter: gate);
 
-        var first = Json(await svc.SearchPeople(config, new ServiceRequest { Query = "a" }));
-        var second = Json(await svc.SearchPeople(config, new ServiceRequest { Query = "b" }));
+        var first = Json(await svc.SearchPeople(config, new SearchPeopleArgs { Query = "a" }));
+        var second = Json(await svc.SearchPeople(config, new SearchPeopleArgs { Query = "b" }));
 
         Assert.True(first.GetProperty("Success").GetBoolean());
         Assert.False(second.GetProperty("Success").GetBoolean());

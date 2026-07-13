@@ -13,12 +13,10 @@ internal class HubSpotClient : IDisposable
         PropertyNameCaseInsensitive = true
     };
 
-    public HubSpotClient(string baseUrl, string accessToken)
+    public HubSpotClient(string baseUrl, string accessToken, HttpMessageHandler handler = null)
     {
-        _httpClient = new HttpClient
-        {
-            BaseAddress = new Uri(baseUrl)
-        };
+        _httpClient = handler is null ? new HttpClient() : new HttpClient(handler);
+        _httpClient.BaseAddress = new Uri(baseUrl);
 
         _httpClient.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", accessToken);
         _httpClient.DefaultRequestHeaders.Accept.Add(new MediaTypeWithQualityHeaderValue("application/json"));

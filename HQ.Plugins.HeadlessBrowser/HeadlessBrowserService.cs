@@ -24,6 +24,29 @@ public class HeadlessBrowserService
         _logger = logger;
     }
 
+    /// <summary>
+    /// Wraps page-derived text in an <see cref="HQ.Models.Safety.Untrusted{T}"/> envelope so the host
+    /// can screen rendered web content for prompt injection before forwarding it to the LLM.
+    /// </summary>
+    private static object AsUntrusted(string content, string provenance, string source) =>
+        string.IsNullOrEmpty(content) ? content : new HQ.Models.Safety.Untrusted<string>(content, provenance, source);
+
+    /// <summary>
+    /// Object overload for the ExecuteJavascript result, which is an arbitrary value evaluated
+    /// in the page context (not a simple string).
+    /// </summary>
+    private static object AsUntrusted(object content, string provenance, string source) =>
+        content is null ? content : new HQ.Models.Safety.Untrusted<object>(content, provenance, source);
+
+    /// <summary>
+    /// Derives the provenance source (the host of the page URL). Falls back to the raw URL when it
+    /// cannot be parsed, or "unknown" when there is no URL.
+    /// </summary>
+    private static string SourceHost(string url) =>
+        Uri.TryCreate(url, UriKind.Absolute, out var u) && !string.IsNullOrEmpty(u.Host)
+            ? u.Host
+            : string.IsNullOrEmpty(url) ? "unknown" : url;
+
     [Display(Name = BrowserMethods.NavigateToUrl)]
     [Description("Navigate to a URL and return the page title and a content summary. This initializes the browser session if not already open.")]
     [Parameters(typeof(NavigateToUrlArgs))]
@@ -104,7 +127,7 @@ public class HeadlessBrowserService
                     Title = title,
                     Url = url,
                     StatusCode = response?.Status,
-                    ContentSummary = summary.Trim(),
+                    ContentSummary = AsUntrusted(summary.Trim(), "browser-page-content", SourceHost(url)),
                     Format = format
                 };
             });
@@ -176,7 +199,7 @@ public class HeadlessBrowserService
                             Format = "text",
                             FallbackReason = "AriaSnapshot too sparse for this page",
                             Length = fallbackText.Length,
-                            Content = fallbackText.Trim()
+                            Content = AsUntrusted(fallbackText.Trim(), "browser-page-content", SourceHost(page.Url))
                         };
                     }
 
@@ -194,7 +217,7 @@ public class HeadlessBrowserService
                         Url = page.Url,
                         Format = "aria",
                         Lines = truncated.Split('\n').Length,
-                        Content = truncated
+                        Content = AsUntrusted(truncated, "browser-page-content", SourceHost(page.Url))
                     };
                 }
 
@@ -219,7 +242,7 @@ public class HeadlessBrowserService
                         Url = page.Url,
                         Format = "compressed",
                         Length = compressed.Length,
-                        Content = compressed
+                        Content = AsUntrusted(compressed, "browser-page-content", SourceHost(page.Url))
                     };
                 }
 
@@ -254,7 +277,7 @@ public class HeadlessBrowserService
                     Url = page.Url,
                     Format = contentType,
                     Length = content.Length,
-                    Content = content.Trim()
+                    Content = AsUntrusted(content.Trim(), "browser-page-content", SourceHost(page.Url))
                 };
             });
         }
@@ -418,7 +441,7 @@ public class HeadlessBrowserService
                     Url = page.Url,
                     Title = await page.TitleAsync(),
                     Lines = outline.Split('\n').Length,
-                    Outline = outline
+                    Outline = AsUntrusted(outline, "browser-page-content", SourceHost(page.Url))
                 };
             });
         }
@@ -466,7 +489,7 @@ public class HeadlessBrowserService
                     Success = true,
                     Url = page.Url,
                     Format = "aria",
-                    Results = result
+                    Results = AsUntrusted(result, "browser-page-content", SourceHost(page.Url))
                 };
             });
         }
@@ -524,7 +547,7 @@ public class HeadlessBrowserService
                     Role = elementRef.Role,
                     Name = elementRef.Name,
                     Lines = endLine - startLine,
-                    Content = subtree
+                    Content = AsUntrusted(subtree, "browser-page-content", SourceHost(page.Url))
                 };
             });
         }
@@ -569,7 +592,7 @@ public class HeadlessBrowserService
                     Success = true,
                     Url = page.Url,
                     Length = text.Length,
-                    Content = text.Trim()
+                    Content = AsUntrusted(text.Trim(), "browser-page-content", SourceHost(page.Url))
                 };
             });
         }
@@ -783,7 +806,7 @@ public class HeadlessBrowserService
                 return (object)new
                 {
                     Success = true,
-                    Result = result
+                    Result = AsUntrusted(result, "browser-js-result", SourceHost(page.Url))
                 };
             });
         }

@@ -14,10 +14,10 @@ public class HubSpotService
     private readonly HubSpotClient _client;
     private readonly LogDelegate _logger;
 
-    public HubSpotService(ServiceConfig config, LogDelegate logger)
+    public HubSpotService(ServiceConfig config, LogDelegate logger, HttpMessageHandler httpHandler = null)
     {
         _logger = logger;
-        _client = new HubSpotClient(config.BaseUrl, config.AccessToken);
+        _client = new HubSpotClient(config.BaseUrl, config.AccessToken, httpHandler);
     }
 
     // ───────────────────────────── Contacts ─────────────────────────────
@@ -115,14 +115,17 @@ public class HubSpotService
             foreach (var contact in results.EnumerateArray())
             {
                 var contactProps = contact.GetProperty("properties");
+                var id = contact.GetProperty("id").GetString();
                 contacts.Add(new
                 {
-                    Id = contact.GetProperty("id").GetString(),
-                    FirstName = GetProp(contactProps, "firstname"),
-                    LastName = GetProp(contactProps, "lastname"),
-                    Email = GetProp(contactProps, "email"),
-                    Company = GetProp(contactProps, "company"),
-                    JobTitle = GetProp(contactProps, "jobtitle"),
+                    Id = id,
+                    // Third-party-typed free text — wrapped so the host can screen for prompt injection.
+                    FirstName = AsUntrusted(GetProp(contactProps, "firstname"), "hubspot-contact-field", id),
+                    LastName = AsUntrusted(GetProp(contactProps, "lastname"), "hubspot-contact-field", id),
+                    Email = AsUntrusted(GetProp(contactProps, "email"), "hubspot-contact-field", id),
+                    Company = AsUntrusted(GetProp(contactProps, "company"), "hubspot-contact-field", id),
+                    JobTitle = AsUntrusted(GetProp(contactProps, "jobtitle"), "hubspot-contact-field", id),
+                    // Enum / URL / id — trusted, left raw.
                     LifecycleStage = GetProp(contactProps, "lifecyclestage"),
                     LinkedInUrl = GetProp(contactProps, "hs_linkedin_url")
                 });
@@ -148,15 +151,18 @@ public class HubSpotService
         var result = await _client.GetAsync($"/crm/v3/objects/contacts/{request.ContactId}?properties={props}");
 
         var contactProps = result.GetProperty("properties");
+        var id = result.GetProperty("id").GetString();
         return new
         {
-            Id = result.GetProperty("id").GetString(),
-            FirstName = GetProp(contactProps, "firstname"),
-            LastName = GetProp(contactProps, "lastname"),
-            Email = GetProp(contactProps, "email"),
-            Company = GetProp(contactProps, "company"),
-            JobTitle = GetProp(contactProps, "jobtitle"),
-            Phone = GetProp(contactProps, "phone"),
+            Id = id,
+            // Third-party-typed free text — wrapped so the host can screen for prompt injection.
+            FirstName = AsUntrusted(GetProp(contactProps, "firstname"), "hubspot-contact-field", id),
+            LastName = AsUntrusted(GetProp(contactProps, "lastname"), "hubspot-contact-field", id),
+            Email = AsUntrusted(GetProp(contactProps, "email"), "hubspot-contact-field", id),
+            Company = AsUntrusted(GetProp(contactProps, "company"), "hubspot-contact-field", id),
+            JobTitle = AsUntrusted(GetProp(contactProps, "jobtitle"), "hubspot-contact-field", id),
+            Phone = AsUntrusted(GetProp(contactProps, "phone"), "hubspot-contact-field", id),
+            // Enum / URL / id / timestamps — trusted, left raw.
             LifecycleStage = GetProp(contactProps, "lifecyclestage"),
             LinkedInUrl = GetProp(contactProps, "hs_linkedin_url"),
             Created = GetProp(contactProps, "createdate"),
@@ -282,10 +288,13 @@ public class HubSpotService
             foreach (var deal in results.EnumerateArray())
             {
                 var dealProps = deal.GetProperty("properties");
+                var id = deal.GetProperty("id").GetString();
                 deals.Add(new
                 {
-                    Id = deal.GetProperty("id").GetString(),
-                    DealName = GetProp(dealProps, "dealname"),
+                    Id = id,
+                    // Deal name is human-authored free text — wrapped. Stage/amount/date/pipeline are
+                    // enums/numbers/ids — left raw.
+                    DealName = AsUntrusted(GetProp(dealProps, "dealname"), "hubspot-deal-field", id),
                     DealStage = GetProp(dealProps, "dealstage"),
                     Amount = GetProp(dealProps, "amount"),
                     CloseDate = GetProp(dealProps, "closedate"),
@@ -353,10 +362,13 @@ public class HubSpotService
             foreach (var company in results.EnumerateArray())
             {
                 var companyProps = company.GetProperty("properties");
+                var id = company.GetProperty("id").GetString();
                 companies.Add(new
                 {
-                    Id = company.GetProperty("id").GetString(),
-                    Name = GetProp(companyProps, "name"),
+                    Id = id,
+                    // Company name is human-authored free text — wrapped. Domain (URL), industry
+                    // (enum), geo, id and timestamps left raw.
+                    Name = AsUntrusted(GetProp(companyProps, "name"), "hubspot-company-field", id),
                     Domain = GetProp(companyProps, "domain"),
                     Industry = GetProp(companyProps, "industry"),
                     City = GetProp(companyProps, "city"),
@@ -423,6 +435,14 @@ public class HubSpotService
     }
 
     // ───────────────────────────── Helpers ─────────────────────────────
+
+    /// <summary>
+    /// Wraps externally-authored free text (CRM records are populated by third parties) in an
+    /// <see cref="HQ.Models.Safety.Untrusted{T}"/> envelope so the host can screen it for prompt
+    /// injection before it reaches the LLM. Empty/null values pass through unwrapped.
+    /// </summary>
+    private static object AsUntrusted(string content, string provenance, string source) =>
+        string.IsNullOrEmpty(content) ? content : new HQ.Models.Safety.Untrusted<string>(content, provenance, source);
 
     private static string GetProp(JsonElement properties, string name)
     {

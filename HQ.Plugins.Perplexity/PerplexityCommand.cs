@@ -24,6 +24,11 @@ public class PerplexityCommand : CommandBase<ServiceRequest, ServiceConfig>
     private static readonly TimeSpan PollInterval = TimeSpan.FromSeconds(15);
     private static readonly TimeSpan MaxWait = TimeSpan.FromMinutes(30);
 
+    private System.Net.Http.HttpMessageHandler _httpMessageHandler;
+
+    // Seam for tests — lets a fake transport be injected without a real HTTP call.
+    internal void SetHttpMessageHandler(System.Net.Http.HttpMessageHandler handler) => _httpMessageHandler = handler;
+
     public override List<ToolCall> GetToolDefinitions()
     {
         return this.GetServiceToolCalls();
@@ -63,9 +68,15 @@ public class PerplexityCommand : CommandBase<ServiceRequest, ServiceConfig>
                 serviceRequest.Recency,
                 MergeDomainFilters(config, serviceRequest.DomainFilters),
                 config.MaxTokens,
-                TimeSpan.FromMinutes(2));
+                TimeSpan.FromMinutes(2),
+                _httpMessageHandler);
 
-            return new { Success = true, Answer = result.Answer, Citations = result.Citations };
+            return new
+            {
+                Success = true,
+                Answer = AsUntrusted(result.Answer, "perplexity-answer", "perplexity.ai"),
+                Citations = AsUntrusted(JoinCitations(result.Citations), "perplexity-citations", "perplexity.ai")
+            };
         }
         catch (Exception e)
         {
@@ -101,7 +112,12 @@ public class PerplexityCommand : CommandBase<ServiceRequest, ServiceConfig>
                 var result = await PerplexityClient.RunDeepResearchAsync(
                     config.PerplexityApiKey, serviceRequest.Query, serviceRequest.Recency,
                     domainFilters, config.MaxTokens, PollInterval, MaxWait);
-                return new { Success = true, Answer = result.Answer, Citations = result.Citations };
+                return new
+                {
+                    Success = true,
+                    Answer = AsUntrusted(result.Answer, "perplexity-answer", "perplexity.ai"),
+                    Citations = AsUntrusted(JoinCitations(result.Citations), "perplexity-citations", "perplexity.ai")
+                };
             }
             catch (Exception e)
             {
@@ -199,6 +215,13 @@ public class PerplexityCommand : CommandBase<ServiceRequest, ServiceConfig>
 
         return sb.ToString();
     }
+
+    // Wrap externally-sourced answer/citations so the host can classify them for prompt-injection.
+    private static object AsUntrusted(string content, string provenance, string source) =>
+        string.IsNullOrEmpty(content) ? content : new HQ.Models.Safety.Untrusted<string>(content, provenance, source);
+
+    private static string JoinCitations(List<string> citations) =>
+        citations is { Count: > 0 } ? string.Join("\n", citations) : null;
 
     private static List<string> MergeDomainFilters(ServiceConfig config, List<string> requestDomainFilters)
     {

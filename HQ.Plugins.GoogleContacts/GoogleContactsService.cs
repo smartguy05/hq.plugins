@@ -16,7 +16,7 @@ namespace HQ.Plugins.GoogleContacts;
 /// <summary>Tool surface for Google Contacts (People API). Reuses the GoogleForms refresh-token credential pattern.</summary>
 public class GoogleContactsService
 {
-    private const string Fields = "names,emailAddresses,phoneNumbers,organizations";
+    private const string Fields = "names,emailAddresses,phoneNumbers,organizations,biographies";
     private static readonly string[] Scopes = ["https://www.googleapis.com/auth/contacts"];
 
     private readonly LogDelegate _logger;
@@ -54,6 +54,35 @@ public class GoogleContactsService
         return person;
     }
 
+    /// <summary>
+    /// Projects a People API <see cref="Person"/> into a tool result, wrapping free-text fields
+    /// (names, organization, biography/notes) as <see cref="HQ.Models.Safety.Untrusted{T}"/> since
+    /// they are typed by third parties. Structured identifiers (resource name, emails, phones) stay raw.
+    /// </summary>
+    public static object MapContact(Person p)
+    {
+        if (p == null) return null;
+        var source = p.ResourceName ?? "unknown";
+        var name = p.Names?.FirstOrDefault();
+        var org = p.Organizations?.FirstOrDefault();
+        var bio = p.Biographies?.FirstOrDefault();
+        return new
+        {
+            ResourceName = p.ResourceName,
+            ETag = p.ETag,
+            DisplayName = AsUntrusted(name?.DisplayName, "gcontacts-field", source),
+            GivenName = AsUntrusted(name?.GivenName, "gcontacts-field", source),
+            FamilyName = AsUntrusted(name?.FamilyName, "gcontacts-field", source),
+            Organization = AsUntrusted(org?.Name, "gcontacts-field", source),
+            Notes = AsUntrusted(bio?.Value, "gcontacts-field", source),
+            EmailAddresses = p.EmailAddresses?.Select(e => e.Value).ToList(),
+            PhoneNumbers = p.PhoneNumbers?.Select(ph => ph.Value).ToList()
+        };
+    }
+
+    private static object AsUntrusted(string content, string provenance, string source) =>
+        string.IsNullOrEmpty(content) ? content : new HQ.Models.Safety.Untrusted<string>(content, provenance, source);
+
     [Display(Name = GoogleContactsMethods.ListContacts)]
     [Description("List the contacts in your address book (names, emails, phone numbers, organizations).")]
     [Parameters(typeof(ListContactsArgs))]
@@ -65,7 +94,7 @@ public class GoogleContactsService
             req.PersonFields = Fields;
             req.PageSize = Math.Clamp(r.PageSize ?? 50, 1, 1000);
             var resp = await req.ExecuteAsync();
-            return new { Success = true, Contacts = resp.Connections ?? [], Total = resp.TotalPeople };
+            return new { Success = true, Contacts = (resp.Connections ?? []).Select(MapContact), Total = resp.TotalPeople };
         });
 
     [Display(Name = GoogleContactsMethods.SearchContacts)]
@@ -80,7 +109,7 @@ public class GoogleContactsService
             req.ReadMask = Fields;
             req.PageSize = Math.Clamp(r.PageSize ?? 25, 1, 30);
             var resp = await req.ExecuteAsync();
-            return new { Success = true, Results = resp.Results?.Select(x => x.Person) ?? [] };
+            return new { Success = true, Results = (resp.Results?.Select(x => x.Person) ?? []).Select(MapContact) };
         });
 
     [Display(Name = GoogleContactsMethods.GetContact)]
@@ -93,7 +122,7 @@ public class GoogleContactsService
             var req = service.People.Get(r.ResourceName);
             req.PersonFields = Fields;
             var person = await req.ExecuteAsync();
-            return new { Success = true, Contact = person };
+            return new { Success = true, Contact = MapContact(person) };
         });
 
     [Display(Name = GoogleContactsMethods.CreateContact)]
@@ -105,7 +134,7 @@ public class GoogleContactsService
             var service = BuildService(config);
             var body = BuildPerson(r.GivenName, r.FamilyName, r.Email, r.Phone, r.Organization);
             var person = await service.People.CreateContact(body).ExecuteAsync();
-            return new { Success = true, Contact = person };
+            return new { Success = true, Contact = MapContact(person) };
         });
 
     [Display(Name = GoogleContactsMethods.UpdateContact)]
@@ -136,7 +165,7 @@ public class GoogleContactsService
             var req = service.People.UpdateContact(body, r.ResourceName);
             req.UpdatePersonFields = string.Join(",", updated);
             var person = await req.ExecuteAsync();
-            return new { Success = true, Contact = person };
+            return new { Success = true, Contact = MapContact(person) };
         });
 
     private async Task<object> Guard(Func<Task<object>> action)

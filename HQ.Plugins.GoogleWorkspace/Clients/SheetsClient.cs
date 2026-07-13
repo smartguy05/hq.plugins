@@ -34,7 +34,22 @@ public class SheetsClient
         if (string.IsNullOrWhiteSpace(r.Range)) return new { Success = false, Error = "range (A1 notation) is required" };
 
         var response = await _sheets.Spreadsheets.Values.Get(r.FileId, r.Range).ExecuteAsync();
-        return new { Success = true, response.Range, Values = response.Values ?? [] };
+        return BuildValuesResult(response.Range, response.Values, r.FileId);
+    }
+
+    /// <summary>
+    /// Builds the get-values result. Cell values come from a potentially externally-editable
+    /// spreadsheet, so the whole grid is wrapped wholesale as one
+    /// <see cref="HQ.Models.Safety.Untrusted{T}"/> JSON envelope (source = spreadsheet id).
+    /// An empty grid is returned raw. Public for unit testing.
+    /// </summary>
+    public static object BuildValuesResult(string range, IList<IList<object>> values, string fileId)
+    {
+        var rows = values ?? new List<IList<object>>();
+        object wrapped = rows.Count == 0
+            ? rows
+            : WorkspaceContent.AsUntrusted(JsonSerializer.Serialize(rows), "gworkspace-doc-content", fileId);
+        return new { Success = true, Range = range, Values = wrapped };
     }
 
     public async Task<object> UpdateValues(SheetsUpdateValuesArgs r)

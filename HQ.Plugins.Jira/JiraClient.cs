@@ -14,12 +14,10 @@ internal class JiraClient : IDisposable
         PropertyNameCaseInsensitive = true
     };
 
-    public JiraClient(string domain, string email, string apiToken)
+    public JiraClient(string domain, string email, string apiToken, HttpMessageHandler handler = null)
     {
-        _httpClient = new HttpClient
-        {
-            BaseAddress = new Uri($"https://{domain}.atlassian.net")
-        };
+        _httpClient = handler != null ? new HttpClient(handler, disposeHandler: false) : new HttpClient();
+        _httpClient.BaseAddress = new Uri($"https://{domain}.atlassian.net");
 
         var credentials = Convert.ToBase64String(Encoding.ASCII.GetBytes($"{email}:{apiToken}"));
         _httpClient.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Basic", credentials);

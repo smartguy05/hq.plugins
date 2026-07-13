@@ -46,7 +46,7 @@ public class EmailServiceIntegrationTests
     public async Task GetEmailSummary_ReturnsEmails()
     {
         // Arrange
-        var request = new ServiceRequest { MaxReturnedEmails = 3 };
+        var request = new GetEmailSummaryArgs { MaxReturnedEmails = 3 };
 
         // Act
         var result = await _service.GetEmailSummary(_config, request);
@@ -61,7 +61,7 @@ public class EmailServiceIntegrationTests
     public async Task GetFolders_ReturnsFolders()
     {
         // Arrange
-        var request = new ServiceRequest();
+        var request = new GetFoldersArgs();
 
         // Act
         var result = await _service.GetFolders(_config, request);
@@ -76,7 +76,7 @@ public class EmailServiceIntegrationTests
     public async Task GetDrafts_ReturnsDrafts()
     {
         // Arrange
-        var request = new ServiceRequest { MaxReturnedEmails = 5 };
+        var request = new GetDraftsArgs { MaxReturnedEmails = 5 };
 
         // Act
         var result = await _service.GetDrafts(_config, request);

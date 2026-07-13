@@ -10,10 +10,13 @@ public class HubSpotServiceAnnotationTests
 {
     private static IEnumerable<MethodInfo> GetToolMethods()
     {
+        // Post-migration, tool methods take (ServiceConfig, <PerToolArgs>) where the args type is a
+        // plain record and no longer implements IPluginServiceRequest. Identify them by the
+        // [Display] tool marker plus the (IPluginConfig, args) shape.
         return typeof(HubSpotService).GetMethods(BindingFlags.Public | BindingFlags.Instance)
-            .Where(m => m.GetParameters().Length == 2 &&
-                        typeof(IPluginConfig).IsAssignableFrom(m.GetParameters()[0].ParameterType) &&
-                        typeof(IPluginServiceRequest).IsAssignableFrom(m.GetParameters()[1].ParameterType));
+            .Where(m => m.GetCustomAttribute<DisplayAttribute>() != null &&
+                        m.GetParameters().Length == 2 &&
+                        typeof(IPluginConfig).IsAssignableFrom(m.GetParameters()[0].ParameterType));
     }
 
     [Fact]

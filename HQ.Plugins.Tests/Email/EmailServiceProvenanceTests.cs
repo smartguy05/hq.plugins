@@ -66,7 +66,7 @@ public class EmailServiceProvenanceTests : IDisposable
     {
         await SeedEmailAsync("m1@x.com", "attacker@bad.com", "hello");
 
-        var result = await _service.GetEmail(_config, new ServiceRequest
+        var result = await _service.GetEmail(_config, new GetEmailArgs
         {
             MessageId = "m1@x.com", Account = "default"
         });
@@ -79,12 +79,45 @@ public class EmailServiceProvenanceTests : IDisposable
     }
 
     [Fact]
+    public async Task GetEmail_UntrustedSender_WrapsSubjectAsUntrusted()
+    {
+        await SeedEmailAsync("s1@x.com", "attacker@bad.com", "hello");
+
+        var result = await _service.GetEmail(_config, new GetEmailArgs
+        {
+            MessageId = "s1@x.com", Account = "default"
+        });
+
+        var subject = ToJson(result).GetProperty("Result").GetProperty("Subject");
+        Assert.True(subject.GetProperty("__untrusted").GetBoolean());
+        Assert.Equal("email-subject", subject.GetProperty("provenance").GetString());
+        Assert.Equal("attacker@bad.com", subject.GetProperty("source").GetString());
+        Assert.Equal("test", subject.GetProperty("value").GetString());
+    }
+
+    [Fact]
+    public async Task GetEmail_TrustedSender_ReturnsRawSubject()
+    {
+        await SeedEmailAsync("s2@x.com", "boss@co.com", "hello boss");
+        _config.TrustedSenderSeed = new[] { "boss@co.com" };
+
+        var result = await _service.GetEmail(_config, new GetEmailArgs
+        {
+            MessageId = "s2@x.com", Account = "default"
+        });
+
+        var subject = ToJson(result).GetProperty("Result").GetProperty("Subject");
+        Assert.Equal(JsonValueKind.String, subject.ValueKind);
+        Assert.Equal("test", subject.GetString());
+    }
+
+    [Fact]
     public async Task GetEmail_SeedTrustedSender_ReturnsRawBody()
     {
         await SeedEmailAsync("m2@x.com", "boss@co.com", "hello boss");
         _config.TrustedSenderSeed = new[] { "boss@co.com" };
 
-        var result = await _service.GetEmail(_config, new ServiceRequest
+        var result = await _service.GetEmail(_config, new GetEmailArgs
         {
             MessageId = "m2@x.com", Account = "default"
         });
@@ -100,7 +133,7 @@ public class EmailServiceProvenanceTests : IDisposable
         await SeedEmailAsync("m3@x.com", "anyone@trusted.co", "hello team");
         _config.TrustedSenderSeed = new[] { "@trusted.co" };
 
-        var result = await _service.GetEmail(_config, new ServiceRequest
+        var result = await _service.GetEmail(_config, new GetEmailArgs
         {
             MessageId = "m3@x.com", Account = "default"
         });
@@ -116,7 +149,7 @@ public class EmailServiceProvenanceTests : IDisposable
         await SeedEmailAsync("m4@x.com", "friend@x.com", "hi");
         await _store.AddTrustedSenderAsync("friend@x.com", "added by agent");
 
-        var result = await _service.GetEmail(_config, new ServiceRequest
+        var result = await _service.GetEmail(_config, new GetEmailArgs
         {
             MessageId = "m4@x.com", Account = "default"
         });
@@ -131,7 +164,7 @@ public class EmailServiceProvenanceTests : IDisposable
     {
         await SeedEmailAsync("m5@x.com", null, "no sender");
 
-        var result = await _service.GetEmail(_config, new ServiceRequest
+        var result = await _service.GetEmail(_config, new GetEmailArgs
         {
             MessageId = "m5@x.com", Account = "default"
         });
@@ -144,7 +177,7 @@ public class EmailServiceProvenanceTests : IDisposable
     [Fact]
     public async Task AddTrustedSender_StoresAndAffectsLookup()
     {
-        var req = new ServiceRequest { Sender = "alice@x.com", Reason = "vetted" };
+        var req = new AddTrustedSenderArgs { Sender = "alice@x.com", Reason = "vetted" };
 
         var result = await _service.AddTrustedSender(_config, req);
 
@@ -156,7 +189,7 @@ public class EmailServiceProvenanceTests : IDisposable
     [Fact]
     public async Task AddTrustedSender_DomainWildcard_Accepted()
     {
-        var req = new ServiceRequest { Sender = "@trusted.co", Reason = "trusted partner" };
+        var req = new AddTrustedSenderArgs { Sender = "@trusted.co", Reason = "trusted partner" };
 
         var result = await _service.AddTrustedSender(_config, req);
 
@@ -168,7 +201,7 @@ public class EmailServiceProvenanceTests : IDisposable
     [Fact]
     public async Task AddTrustedSender_MalformedAddress_Rejected()
     {
-        var req = new ServiceRequest { Sender = "not an email", Reason = "r" };
+        var req = new AddTrustedSenderArgs { Sender = "not an email", Reason = "r" };
 
         var result = await _service.AddTrustedSender(_config, req);
 
@@ -178,7 +211,7 @@ public class EmailServiceProvenanceTests : IDisposable
     [Fact]
     public async Task AddTrustedSender_MissingReason_Rejected()
     {
-        var req = new ServiceRequest { Sender = "alice@x.com", Reason = "" };
+        var req = new AddTrustedSenderArgs { Sender = "alice@x.com", Reason = "" };
 
         var result = await _service.AddTrustedSender(_config, req);
 
@@ -189,7 +222,7 @@ public class EmailServiceProvenanceTests : IDisposable
     public async Task RemoveTrustedSender_OfSeededEntry_Refused()
     {
         _config.TrustedSenderSeed = new[] { "boss@co.com" };
-        var req = new ServiceRequest { Sender = "boss@co.com" };
+        var req = new RemoveTrustedSenderArgs { Sender = "boss@co.com" };
 
         var result = await _service.RemoveTrustedSender(_config, req);
 
@@ -200,7 +233,7 @@ public class EmailServiceProvenanceTests : IDisposable
     public async Task RemoveTrustedSender_OfAgentAddedEntry_Removes()
     {
         await _store.AddTrustedSenderAsync("alice@x.com", "r");
-        var req = new ServiceRequest { Sender = "alice@x.com" };
+        var req = new RemoveTrustedSenderArgs { Sender = "alice@x.com" };
 
         var result = await _service.RemoveTrustedSender(_config, req);
 
@@ -214,7 +247,7 @@ public class EmailServiceProvenanceTests : IDisposable
         _config.TrustedSenderSeed = new[] { "boss@co.com", "@trusted.co" };
         await _store.AddTrustedSenderAsync("friend@x.com", "vetted");
 
-        var result = await _service.ListTrustedSenders(_config, new ServiceRequest());
+        var result = await _service.ListTrustedSenders(_config, new EmptyArgs());
 
         var json = ToJson(result);
         Assert.True(json.GetProperty("Success").GetBoolean());

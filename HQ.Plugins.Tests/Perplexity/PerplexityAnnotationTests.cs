@@ -2,6 +2,7 @@ using System.ComponentModel;
 using System.ComponentModel.DataAnnotations;
 using System.Reflection;
 using System.Text.Json;
+using HQ.Models.Extensions;
 using HQ.Models.Interfaces;
 using HQ.Plugins.Perplexity;
 
@@ -14,7 +15,7 @@ public class PerplexityAnnotationTests
         return typeof(PerplexityCommand).GetMethods(BindingFlags.Public | BindingFlags.Instance)
             .Where(m => m.GetParameters().Length == 2 &&
                         typeof(IPluginConfig).IsAssignableFrom(m.GetParameters()[0].ParameterType) &&
-                        typeof(IPluginServiceRequest).IsAssignableFrom(m.GetParameters()[1].ParameterType));
+                        m.GetCustomAttribute<HQ.Models.Helpers.ParametersAttribute>() != null);
     }
 
     [Fact]
@@ -58,11 +59,13 @@ public class PerplexityAnnotationTests
         {
             var param = method.GetCustomAttribute<HQ.Models.Helpers.ParametersAttribute>();
             Assert.NotNull(param);
-            Assert.False(string.IsNullOrWhiteSpace(param.FunctionParameters),
-                $"Method {method.Name} has empty Parameters");
+            Assert.NotNull(param.ArgsType);
 
-            // Validate JSON is parseable
-            var doc = JsonDocument.Parse(param.FunctionParameters);
+            // The schema JSON is generated from the declared args type; validate it is non-empty and parseable.
+            var functionParameters = method.GetFunctionParameters();
+            Assert.False(string.IsNullOrWhiteSpace(functionParameters),
+                $"Method {method.Name} has empty Parameters");
+            var doc = JsonDocument.Parse(functionParameters);
             Assert.NotNull(doc);
         }
     }

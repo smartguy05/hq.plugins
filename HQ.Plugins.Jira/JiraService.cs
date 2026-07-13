@@ -15,10 +15,19 @@ public class JiraService
     private readonly LogDelegate _logger;
 
     public JiraService(ServiceConfig config, LogDelegate logger)
+        : this(config, logger, null) { }
+
+    // Test seam: lets a fake HttpMessageHandler be injected without hitting the network.
+    internal JiraService(ServiceConfig config, LogDelegate logger, HttpMessageHandler handler)
     {
         _logger = logger;
-        _client = new JiraClient(config.Domain, config.Email, config.ApiToken);
+        _client = new JiraClient(config.Domain, config.Email, config.ApiToken, handler);
     }
+
+    // Wrap third-party human-authored free text so the host can classify it for prompt-injection
+    // before the LLM sees it. Ids, enums, timestamps, counts, URLs and status fields stay raw.
+    private static object AsUntrusted(string content, string provenance, string source) =>
+        string.IsNullOrEmpty(content) ? content : new HQ.Models.Safety.Untrusted<string>(content, provenance, source);
 
     // ───────────────────────────── Issues ─────────────────────────────
 
@@ -46,10 +55,11 @@ public class JiraService
             foreach (var issue in issuesArray.EnumerateArray())
             {
                 var fields = issue.GetProperty("fields");
+                var key = issue.GetProperty("key").GetString();
                 issues.Add(new
                 {
-                    Key = issue.GetProperty("key").GetString(),
-                    Summary = GetStringOrNull(fields, "summary"),
+                    Key = key,
+                    Summary = AsUntrusted(GetStringOrNull(fields, "summary"), "jira-issue-summary", key),
                     Status = GetNestedName(fields, "status"),
                     Assignee = GetNestedDisplayName(fields, "assignee"),
                     Priority = GetNestedName(fields, "priority"),
@@ -99,20 +109,22 @@ public class JiraService
             foreach (var st in subtasksProp.EnumerateArray())
             {
                 var stFields = st.GetProperty("fields");
+                var stKey = st.GetProperty("key").GetString();
                 subtasks.Add(new
                 {
-                    Key = st.GetProperty("key").GetString(),
-                    Summary = GetStringOrNull(stFields, "summary"),
+                    Key = stKey,
+                    Summary = AsUntrusted(GetStringOrNull(stFields, "summary"), "jira-issue-summary", stKey),
                     Status = GetNestedName(stFields, "status")
                 });
             }
         }
 
+        var issueKey = result.GetProperty("key").GetString();
         return new
         {
-            Key = result.GetProperty("key").GetString(),
-            Summary = GetStringOrNull(fields, "summary"),
-            Description = description,
+            Key = issueKey,
+            Summary = AsUntrusted(GetStringOrNull(fields, "summary"), "jira-issue-summary", issueKey),
+            Description = AsUntrusted(description, "jira-issue-description", issueKey),
             Status = GetNestedName(fields, "status"),
             Priority = GetNestedName(fields, "priority"),
             IssueType = GetNestedName(fields, "issuetype"),
@@ -319,13 +331,14 @@ public class JiraService
             foreach (var c in commentsArray.EnumerateArray())
             {
                 var body = c.TryGetProperty("body", out var bodyProp) ? JiraClient.FromAdf(bodyProp) : string.Empty;
+                var author = c.TryGetProperty("author", out var authorProp)
+                    ? GetStringOrNull(authorProp, "displayName")
+                    : null;
                 comments.Add(new
                 {
                     Id = c.GetProperty("id").GetString(),
-                    Author = c.TryGetProperty("author", out var authorProp)
-                        ? GetStringOrNull(authorProp, "displayName")
-                        : null,
-                    Body = body,
+                    Author = author,
+                    Body = AsUntrusted(body, "jira-comment-body", author ?? request.IssueKey),
                     Created = GetStringOrNull(c, "created"),
                     Updated = GetStringOrNull(c, "updated")
                 });
@@ -430,11 +443,12 @@ public class JiraService
             }
         }
 
+        var projectKey = result.GetProperty("key").GetString();
         return new
         {
-            Key = result.GetProperty("key").GetString(),
+            Key = projectKey,
             Name = GetStringOrNull(result, "name"),
-            Description = GetStringOrNull(result, "description"),
+            Description = AsUntrusted(GetStringOrNull(result, "description"), "jira-project-description", projectKey),
             Lead = result.TryGetProperty("lead", out var leadProp)
                 ? GetStringOrNull(leadProp, "displayName")
                 : null,
@@ -491,12 +505,13 @@ public class JiraService
         {
             foreach (var s in valuesArray.EnumerateArray())
             {
+                var sprintId = s.GetProperty("id").GetInt32();
                 sprints.Add(new
                 {
-                    Id = s.GetProperty("id").GetInt32(),
+                    Id = sprintId,
                     Name = GetStringOrNull(s, "name"),
                     State = GetStringOrNull(s, "state"),
-                    Goal = GetStringOrNull(s, "goal"),
+                    Goal = AsUntrusted(GetStringOrNull(s, "goal"), "jira-sprint-goal", sprintId.ToString()),
                     StartDate = GetStringOrNull(s, "startDate"),
                     EndDate = GetStringOrNull(s, "endDate")
                 });
@@ -523,10 +538,11 @@ public class JiraService
             foreach (var issue in issuesArray.EnumerateArray())
             {
                 var fields = issue.GetProperty("fields");
+                var key = issue.GetProperty("key").GetString();
                 issues.Add(new
                 {
-                    Key = issue.GetProperty("key").GetString(),
-                    Summary = GetStringOrNull(fields, "summary"),
+                    Key = key,
+                    Summary = AsUntrusted(GetStringOrNull(fields, "summary"), "jira-issue-summary", key),
                     Status = GetNestedName(fields, "status"),
                     Assignee = GetNestedDisplayName(fields, "assignee"),
                     Priority = GetNestedName(fields, "priority"),
@@ -654,17 +670,18 @@ public class JiraService
                 var comment = w.TryGetProperty("comment", out var commentProp)
                     ? JiraClient.FromAdf(commentProp)
                     : string.Empty;
+                var author = w.TryGetProperty("author", out var authorProp)
+                    ? GetStringOrNull(authorProp, "displayName")
+                    : null;
 
                 worklogs.Add(new
                 {
                     Id = w.GetProperty("id").GetString(),
-                    Author = w.TryGetProperty("author", out var authorProp)
-                        ? GetStringOrNull(authorProp, "displayName")
-                        : null,
+                    Author = author,
                     TimeSpentSeconds = w.TryGetProperty("timeSpentSeconds", out var tsProp) ? tsProp.GetInt32() : 0,
                     TimeSpent = GetStringOrNull(w, "timeSpent"),
                     Started = GetStringOrNull(w, "started"),
-                    Comment = comment
+                    Comment = AsUntrusted(comment, "jira-worklog-comment", author ?? request.IssueKey)
                 });
             }
         }

@@ -2,29 +2,34 @@ using HQ.Plugins.Email.Models;
 
 namespace HQ.Plugins.Tests.Email;
 
+/// <summary>
+/// Validates the per-tool args records (which replaced the old ServiceRequest property bag)
+/// expose the expected properties and defaults. The fields formerly carried on ServiceRequest
+/// now live on the tool-specific args records that own them.
+/// </summary>
 public class ServiceRequestTests
 {
     [Fact]
-    public void ServiceRequest_ShouldInitializeWithDefaults()
+    public void GetEmailSummaryArgs_ShouldInitializeWithDefaults()
     {
         // Arrange & Act
-        var request = new ServiceRequest();
+        var request = new GetEmailSummaryArgs();
 
         // Assert
         Assert.Equal(10, request.MaxReturnedEmails);
         Assert.False(request.UnreadOnly);
-        Assert.Null(request.Method);
         Assert.Null(request.Account);
         Assert.Null(request.To);
         Assert.Null(request.Subject);
-        Assert.Null(request.Body);
+        Assert.Null(request.Sender);
+        Assert.Null(request.MessageId);
     }
 
     [Fact]
-    public void ServiceRequest_ShouldSetProperties()
+    public void SendEmailArgs_ShouldSetProperties()
     {
         // Arrange & Act
-        var request = new ServiceRequest
+        var request = new SendEmailArgs
         {
             Method = "send_email",
             Account = "work",
@@ -32,10 +37,6 @@ public class ServiceRequestTests
             Subject = "Test Subject",
             Body = "Test Body",
             RecipientName = "Test User",
-            MaxReturnedEmails = 5,
-            UnreadOnly = true,
-            Sender = "sender@example.com",
-            SearchSubject = "Search",
             MessageId = "msg-123",
             ToolCallId = "tool-456",
             RequestingService = "TestService",
@@ -49,10 +50,6 @@ public class ServiceRequestTests
         Assert.Equal("Test Subject", request.Subject);
         Assert.Equal("Test Body", request.Body);
         Assert.Equal("Test User", request.RecipientName);
-        Assert.Equal(5, request.MaxReturnedEmails);
-        Assert.True(request.UnreadOnly);
-        Assert.Equal("sender@example.com", request.Sender);
-        Assert.Equal("Search", request.SearchSubject);
         Assert.Equal("msg-123", request.MessageId);
         Assert.Equal("tool-456", request.ToolCallId);
         Assert.Equal("TestService", request.RequestingService);
@@ -60,10 +57,31 @@ public class ServiceRequestTests
     }
 
     [Fact]
-    public void ServiceRequest_DateFilters_ShouldWork()
+    public void GetEmailSummaryArgs_ShouldSetSearchProperties()
     {
         // Arrange & Act
-        var request = new ServiceRequest
+        var request = new GetEmailSummaryArgs
+        {
+            MaxReturnedEmails = 5,
+            UnreadOnly = true,
+            Sender = "sender@example.com",
+            SearchSubject = "Search",
+            MessageId = "msg-123"
+        };
+
+        // Assert
+        Assert.Equal(5, request.MaxReturnedEmails);
+        Assert.True(request.UnreadOnly);
+        Assert.Equal("sender@example.com", request.Sender);
+        Assert.Equal("Search", request.SearchSubject);
+        Assert.Equal("msg-123", request.MessageId);
+    }
+
+    [Fact]
+    public void GetEmailSummaryArgs_DateFilters_ShouldWork()
+    {
+        // Arrange & Act
+        var request = new GetEmailSummaryArgs
         {
             EmailsSentAfter = "2023-01-01",
             EmailsSentBefore = "2023-12-31"

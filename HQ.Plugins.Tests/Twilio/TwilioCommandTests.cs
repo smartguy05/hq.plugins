@@ -58,7 +58,7 @@ public class TwilioCommandTests
         var handler = CreateMockHandler("""{"sid":"SM123","status":"queued","error_code":null}""");
         var command = CreateCommand(handler);
         var config = CreateConfig();
-        var request = new ServiceRequest { To = "+15559999999", Body = "Hello" };
+        var request = new SendSmsArgs { To = "+15559999999", Body = "Hello" };
 
         var result = await command.SendSms(config, request);
 
@@ -76,7 +76,7 @@ public class TwilioCommandTests
             """{"sid":"SM123","status":"failed","error_code":21211,"message":"Invalid To number"}""");
         var command = CreateCommand(handler);
         var config = CreateConfig();
-        var request = new ServiceRequest { To = "+15559999999", Body = "Hello" };
+        var request = new SendSmsArgs { To = "+15559999999", Body = "Hello" };
 
         var result = await command.SendSms(config, request);
 
@@ -95,7 +95,7 @@ public class TwilioCommandTests
             HttpStatusCode.Unauthorized);
         var command = CreateCommand(handler);
         var config = CreateConfig();
-        var request = new ServiceRequest { To = "+15559999999", Body = "Hello" };
+        var request = new SendSmsArgs { To = "+15559999999", Body = "Hello" };
 
         // After fix: should NOT throw KeyNotFoundException
         var result = await command.SendSms(config, request);
@@ -113,7 +113,7 @@ public class TwilioCommandTests
         var handler = CreateMockHandler("""{"unexpected":"data"}""", HttpStatusCode.InternalServerError);
         var command = CreateCommand(handler);
         var config = CreateConfig();
-        var request = new ServiceRequest { To = "+15559999999", Body = "Hello" };
+        var request = new SendSmsArgs { To = "+15559999999", Body = "Hello" };
 
         var result = await command.SendSms(config, request);
 
@@ -132,7 +132,7 @@ public class TwilioCommandTests
             HttpStatusCode.Unauthorized);
         var command = CreateCommand(handler);
         var config = CreateConfig();
-        var request = new ServiceRequest { To = "+15559999999", Body = "Hello" };
+        var request = new SendWhatsAppArgs { To = "+15559999999", Body = "Hello" };
 
         var result = await command.SendWhatsApp(config, request);
 
@@ -149,7 +149,7 @@ public class TwilioCommandTests
         var handler = CreateMockHandler("""{"sid":"CA123","status":"queued","error_code":null}""");
         var command = CreateCommand(handler);
         var config = CreateConfig();
-        var request = new ServiceRequest { To = "+15559999999", Twiml = "<Response><Say>Hello</Say></Response>" };
+        var request = new MakeCallArgs { To = "+15559999999", Twiml = "<Response><Say>Hello</Say></Response>" };
 
         var result = await command.MakeCall(config, request);
 
@@ -167,7 +167,7 @@ public class TwilioCommandTests
             HttpStatusCode.Unauthorized);
         var command = CreateCommand(handler);
         var config = CreateConfig();
-        var request = new ServiceRequest { To = "+15559999999", Twiml = "<Response><Say>Hello</Say></Response>" };
+        var request = new MakeCallArgs { To = "+15559999999", Twiml = "<Response><Say>Hello</Say></Response>" };
 
         var result = await command.MakeCall(config, request);
 

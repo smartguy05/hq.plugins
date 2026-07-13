@@ -29,9 +29,10 @@ public static class PerplexityClient
         string recency,
         IEnumerable<string> domainFilters,
         int? maxTokens,
-        TimeSpan timeout)
+        TimeSpan timeout,
+        HttpMessageHandler handler = null)
     {
-        using var httpClient = CreateClient(apiKey, timeout);
+        using var httpClient = CreateClient(apiKey, timeout, handler);
         var body = BuildRequestBody(model, query, recency, domainFilters, maxTokens);
 
         var response = await httpClient.PostAsJsonAsync(ChatEndpoint, body);
@@ -126,9 +127,12 @@ public static class PerplexityClient
         return (status, result, error);
     }
 
-    private static HttpClient CreateClient(string apiKey, TimeSpan timeout)
+    // A non-null handler (test seam) lets a fake transport be injected without a real HTTP call.
+    private static HttpClient CreateClient(string apiKey, TimeSpan timeout, HttpMessageHandler handler = null)
     {
-        var httpClient = new HttpClient { Timeout = timeout };
+        var httpClient = handler != null
+            ? new HttpClient(handler, disposeHandler: false) { Timeout = timeout }
+            : new HttpClient { Timeout = timeout };
         httpClient.DefaultRequestHeaders.Accept.Add(new MediaTypeWithQualityHeaderValue("application/json"));
         httpClient.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", apiKey);
         return httpClient;

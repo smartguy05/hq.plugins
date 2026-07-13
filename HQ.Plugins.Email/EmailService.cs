@@ -490,6 +490,7 @@ public class EmailService
             if (local != null)
             {
                 var body = await MarkProvenanceAsync(local.BodyText, local.FromAddress, config, "email-body");
+                var subject = await MarkProvenanceAsync(local.Subject, local.FromAddress, config, "email-subject");
                 return new
                 {
                     Success = true,
@@ -497,7 +498,7 @@ public class EmailService
                     Result = new
                     {
                         local.MessageId,
-                        local.Subject,
+                        Subject = subject,
                         From = local.FromName ?? local.FromAddress,
                         local.ToAddress,
                         local.DateSent,
@@ -526,6 +527,7 @@ public class EmailService
             var mapped = MapToMailMessage(message);
             var senderAddr = message.From?.Mailboxes.FirstOrDefault()?.Address ?? message.Sender?.Address;
             var wrappedBody = await MarkProvenanceAsync(mapped.Body, senderAddr, config, "email-body");
+            var wrappedSubject = await MarkProvenanceAsync(mapped.Subject, senderAddr, config, "email-subject");
             return new
             {
                 Success = true,
@@ -533,7 +535,7 @@ public class EmailService
                 Result = new
                 {
                     mapped.MessageId,
-                    mapped.Subject,
+                    Subject = wrappedSubject,
                     mapped.From,
                     mapped.To,
                     mapped.Sender,
@@ -607,7 +609,7 @@ public class EmailService
                     summaries.Add(new
                     {
                         e.MessageId,
-                        e.Subject,
+                        Subject = await MarkProvenanceAsync(e.Subject, e.FromAddress, config, "email-subject"),
                         From = e.FromName ?? e.FromAddress,
                         Date = e.DateSent,
                         Preview = preview,
@@ -679,7 +681,7 @@ public class EmailService
         return new
         {
             MessageId = msg.MessageId,
-            Subject = msg.Subject,
+            Subject = await MarkProvenanceAsync(msg.Subject, senderAddr, config, "email-subject"),
             From = string.Join(", ", msg.From?.Select(s => s.Name) ?? new List<string>()),
             Date = msg.Date,
             Preview = preview,
@@ -762,7 +764,7 @@ public class EmailService
             enriched.Add(new
             {
                 MessageId = messageId,
-                Subject = email?.Subject ?? subject,
+                Subject = await MarkProvenanceAsync(email?.Subject ?? subject, previewSender, config, "email-subject"),
                 From = email != null ? (email.FromName ?? email.FromAddress) : null,
                 Date = email?.DateSent,
                 Preview = preview,
@@ -802,7 +804,7 @@ public class EmailService
             summaries.Add(new
             {
                 e.MessageId,
-                e.Subject,
+                Subject = await MarkProvenanceAsync(e.Subject, e.FromAddress, config, "email-subject"),
                 From = e.FromName ?? e.FromAddress,
                 Date = e.DateSent,
                 Preview = preview,

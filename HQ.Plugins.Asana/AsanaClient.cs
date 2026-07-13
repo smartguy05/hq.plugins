@@ -14,10 +14,10 @@ internal class AsanaClient : IDisposable
         PropertyNameCaseInsensitive = true
     };
 
-    public AsanaClient(string baseUrl, string accessToken)
+    public AsanaClient(string baseUrl, string accessToken, HttpMessageHandler handler = null)
     {
-        _baseUrl = baseUrl.TrimEnd('/');
-        _httpClient = new HttpClient();
+        _baseUrl = (baseUrl ?? "https://app.asana.com/api/1.0").TrimEnd('/');
+        _httpClient = handler != null ? new HttpClient(handler, disposeHandler: false) : new HttpClient();
 
         _httpClient.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", accessToken);
         _httpClient.DefaultRequestHeaders.Accept.Add(new MediaTypeWithQualityHeaderValue("application/json"));

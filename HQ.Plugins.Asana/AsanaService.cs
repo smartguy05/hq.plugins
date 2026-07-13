@@ -15,10 +15,19 @@ public class AsanaService
     private readonly LogDelegate _logger;
 
     public AsanaService(ServiceConfig config, LogDelegate logger)
+        : this(config, logger, null) { }
+
+    // Test seam: lets a fake HttpMessageHandler be injected without hitting the network.
+    internal AsanaService(ServiceConfig config, LogDelegate logger, HttpMessageHandler handler)
     {
         _logger = logger;
-        _client = new AsanaClient(config.BaseUrl, config.AccessToken);
+        _client = new AsanaClient(config.BaseUrl, config.AccessToken, handler);
     }
+
+    // Wrap third-party human-authored free text so the host can classify it for prompt-injection
+    // before the LLM sees it. Ids, enums, timestamps, counts, URLs and status fields stay raw.
+    private static object AsUntrusted(string content, string provenance, string source) =>
+        string.IsNullOrEmpty(content) ? content : new HQ.Models.Safety.Untrusted<string>(content, provenance, source);
 
     // ───────────────────────────── Workspaces ─────────────────────────────
 
@@ -137,11 +146,12 @@ public class AsanaService
         var query = BuildQuery(("opt_fields", request.OptFields ?? defaultFields));
         var result = await _client.GetAsync($"/tasks/{request.TaskId}{query}");
 
+        var taskGid = GetProp(result, "gid");
         var task = new Dictionary<string, object>
         {
-            ["Gid"] = GetProp(result, "gid"),
-            ["Name"] = GetProp(result, "name"),
-            ["Notes"] = GetProp(result, "notes"),
+            ["Gid"] = taskGid,
+            ["Name"] = AsUntrusted(GetProp(result, "name"), "asana-task-name", taskGid),
+            ["Notes"] = AsUntrusted(GetProp(result, "notes"), "asana-task-notes", taskGid),
             ["Completed"] = result.TryGetProperty("completed", out var comp) && comp.ValueKind == JsonValueKind.True,
             ["CompletedAt"] = GetProp(result, "completed_at"),
             ["DueOn"] = GetProp(result, "due_on"),
@@ -158,7 +168,7 @@ public class AsanaService
         {
             var projectList = new List<object>();
             foreach (var p in projects.EnumerateArray())
-                projectList.Add(new { Gid = GetProp(p, "gid"), Name = GetProp(p, "name") });
+                projectList.Add(new { Gid = GetProp(p, "gid"), Name = AsUntrusted(GetProp(p, "name"), "asana-project-name", GetProp(p, "gid")) });
             task["Projects"] = projectList;
         }
 
@@ -171,7 +181,7 @@ public class AsanaService
                 subtaskList.Add(new
                 {
                     Gid = GetProp(s, "gid"),
-                    Name = GetProp(s, "name"),
+                    Name = AsUntrusted(GetProp(s, "name"), "asana-task-name", GetProp(s, "gid")),
                     Completed = s.TryGetProperty("completed", out var sc) && sc.ValueKind == JsonValueKind.True,
                     DueOn = GetProp(s, "due_on"),
                     Assignee = GetNestedNameAndGid(s, "assignee")
@@ -191,7 +201,7 @@ public class AsanaService
                     storyList.Add(new
                     {
                         Gid = GetProp(s, "gid"),
-                        Text = GetProp(s, "text"),
+                        Text = AsUntrusted(GetProp(s, "text"), "asana-task-comment", GetNestedName(s, "created_by") ?? taskGid),
                         CreatedBy = GetNestedNameAndGid(s, "created_by"),
                         CreatedAt = GetProp(s, "created_at")
                     });
@@ -272,7 +282,7 @@ public class AsanaService
             tasks.Add(new
             {
                 Gid = GetProp(t, "gid"),
-                Name = GetProp(t, "name"),
+                Name = AsUntrusted(GetProp(t, "name"), "asana-task-name", GetProp(t, "gid")),
                 Completed = t.TryGetProperty("completed", out var comp) && comp.ValueKind == JsonValueKind.True,
                 DueOn = GetProp(t, "due_on"),
                 Assignee = GetNestedNameAndGid(t, "assignee"),
@@ -319,7 +329,7 @@ public class AsanaService
             tasks.Add(new
             {
                 Gid = GetProp(t, "gid"),
-                Name = GetProp(t, "name"),
+                Name = AsUntrusted(GetProp(t, "name"), "asana-task-name", GetProp(t, "gid")),
                 Completed = t.TryGetProperty("completed", out var comp) && comp.ValueKind == JsonValueKind.True,
                 DueOn = GetProp(t, "due_on"),
                 Assignee = GetNestedNameAndGid(t, "assignee")
@@ -406,7 +416,7 @@ public class AsanaService
             projects.Add(new
             {
                 Gid = GetProp(p, "gid"),
-                Name = GetProp(p, "name"),
+                Name = AsUntrusted(GetProp(p, "name"), "asana-project-name", GetProp(p, "gid")),
                 Owner = GetNestedNameAndGid(p, "owner"),
                 Color = GetProp(p, "color")
             });
@@ -438,11 +448,12 @@ public class AsanaService
                 members.Add(new { Gid = GetProp(m, "gid"), Name = GetProp(m, "name") });
         }
 
+        var projectGid = GetProp(result, "gid");
         return new
         {
-            Gid = GetProp(result, "gid"),
-            Name = GetProp(result, "name"),
-            Notes = GetProp(result, "notes"),
+            Gid = projectGid,
+            Name = AsUntrusted(GetProp(result, "name"), "asana-project-name", projectGid),
+            Notes = AsUntrusted(GetProp(result, "notes"), "asana-project-notes", projectGid),
             Owner = GetNestedNameAndGid(result, "owner"),
             Team = GetNestedNameAndGid(result, "team"),
             Color = GetProp(result, "color"),
@@ -474,7 +485,7 @@ public class AsanaService
             sections.Add(new
             {
                 Gid = GetProp(s, "gid"),
-                Name = GetProp(s, "name")
+                Name = AsUntrusted(GetProp(s, "name"), "asana-section-name", GetProp(s, "gid"))
             });
         }
 
@@ -528,7 +539,7 @@ public class AsanaService
             {
                 Gid = GetProp(s, "gid"),
                 Type = GetProp(s, "type"),
-                Text = GetProp(s, "text"),
+                Text = AsUntrusted(GetProp(s, "text"), "asana-story-text", GetNestedName(s, "created_by") ?? request.TaskId),
                 CreatedBy = GetNestedNameAndGid(s, "created_by"),
                 CreatedAt = GetProp(s, "created_at")
             });
@@ -564,7 +575,7 @@ public class AsanaService
             items.Add(new
             {
                 Gid = GetProp(item, "gid"),
-                Name = GetProp(item, "name"),
+                Name = AsUntrusted(GetProp(item, "name"), "asana-typeahead-name", GetProp(item, "gid")),
                 ResourceType = GetProp(item, "resource_type")
             });
         }
@@ -586,6 +597,13 @@ public class AsanaService
         if (!element.TryGetProperty(propertyName, out var nested) || nested.ValueKind != JsonValueKind.Object)
             return null;
         return new { Gid = GetProp(nested, "gid"), Name = GetProp(nested, "name") };
+    }
+
+    private static string GetNestedName(JsonElement element, string propertyName)
+    {
+        if (!element.TryGetProperty(propertyName, out var nested) || nested.ValueKind != JsonValueKind.Object)
+            return null;
+        return GetProp(nested, "name");
     }
 
     private static string BuildQuery(params (string key, string value)[] parameters)

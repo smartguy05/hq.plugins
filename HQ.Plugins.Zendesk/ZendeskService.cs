@@ -15,7 +15,45 @@ public class ZendeskService
 
     public ZendeskService(LogDelegate logger) => _logger = logger;
 
-    private static ZendeskClient Client(ServiceConfig c) => new(c.Subdomain, c.Email, c.ApiToken);
+    // Seam for tests — injects a fake HttpMessageHandler so tool bodies can run without a network.
+    internal HttpMessageHandler HttpHandler { get; set; }
+
+    private ZendeskClient Client(ServiceConfig c) => new(c.Subdomain, c.Email, c.ApiToken, HttpHandler);
+
+    // SAFE-02: requester-authored free text (ticket subjects/descriptions/comments) is untrusted
+    // inbound content, so wrap it as Untrusted for host prompt-injection screening. Ids, statuses,
+    // tags, and agent-authored fields stay raw.
+    private static object AsUntrusted(string content, string provenance, string source) =>
+        string.IsNullOrEmpty(content) ? content : new HQ.Models.Safety.Untrusted<string>(content, provenance, source);
+
+    private static string Str(JsonElement e) => e.ValueKind == JsonValueKind.String ? e.GetString() : null;
+
+    // Rebuilds a ticket resource with its requester-authored subject/description wrapped as
+    // Untrusted, keyed by the requester (falling back to the ticket id). All other ticket fields
+    // (id, status, priority, assignee, tags, timestamps) are cloned through raw.
+    private static object WrapTicket(JsonElement doc)
+    {
+        var ticket = doc.ValueKind == JsonValueKind.Object && doc.TryGetProperty("ticket", out var t) ? t : doc;
+        if (ticket.ValueKind != JsonValueKind.Object)
+            return ticket.Clone();
+
+        var source =
+            ticket.TryGetProperty("requester_id", out var r) && r.ValueKind is not JsonValueKind.Null ? $"requester:{r}"
+            : ticket.TryGetProperty("id", out var i) ? $"ticket:{i}"
+            : "unknown";
+
+        var result = new Dictionary<string, object>();
+        foreach (var prop in ticket.EnumerateObject())
+        {
+            result[prop.Name] = prop.Name switch
+            {
+                "subject" => AsUntrusted(Str(prop.Value), "zendesk-ticket-subject", source),
+                "description" => AsUntrusted(Str(prop.Value), "zendesk-comment-body", source),
+                _ => prop.Value.Clone()
+            };
+        }
+        return result;
+    }
 
     private static string[] SplitTags(string tags) =>
         string.IsNullOrWhiteSpace(tags) ? null : tags.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
@@ -29,7 +67,9 @@ public class ZendeskService
             using var client = Client(config);
             var query = Uri.EscapeDataString($"type:ticket {r.Query}");
             var doc = await client.GetAsync($"/search.json?query={query}&per_page={r.PageSize ?? 25}");
-            return new { Success = true, Results = Prop(doc, "results") };
+            var results = doc.ValueKind == JsonValueKind.Object && doc.TryGetProperty("results", out var el) ? el : doc;
+            // Ticket lists carry requester subjects/descriptions — wrap the payload wholesale.
+            return new { Success = true, Results = AsUntrusted(results.GetRawText(), "zendesk-api-response", $"{config.Subdomain}.zendesk.com") };
         });
 
     [Display(Name = ZendeskMethods.GetTicket)]
@@ -40,7 +80,7 @@ public class ZendeskService
         {
             using var client = Client(config);
             var doc = await client.GetAsync($"/tickets/{r.TicketId}.json");
-            return new { Success = true, Ticket = Prop(doc, "ticket") };
+            return new { Success = true, Ticket = WrapTicket(doc) };
         });
 
     [Display(Name = ZendeskMethods.CreateTicket)]
@@ -80,7 +120,7 @@ public class ZendeskService
             if (ticket.Count == 0) return new { Success = false, Error = "Provide at least one field to update." };
 
             var doc = await client.PutAsync($"/tickets/{r.TicketId}.json", new { ticket });
-            return new { Success = true, Ticket = Prop(doc, "ticket") };
+            return new { Success = true, Ticket = WrapTicket(doc) };
         });
 
     [Display(Name = ZendeskMethods.AddTicketComment)]
@@ -92,7 +132,7 @@ public class ZendeskService
             using var client = Client(config);
             var ticket = new { comment = new { body = r.Comment, @public = r.Public ?? true } };
             var doc = await client.PutAsync($"/tickets/{r.TicketId}.json", new { ticket });
-            return new { Success = true, Ticket = Prop(doc, "ticket") };
+            return new { Success = true, Ticket = WrapTicket(doc) };
         });
 
     [Display(Name = ZendeskMethods.ListTickets)]
@@ -103,7 +143,9 @@ public class ZendeskService
         {
             using var client = Client(config);
             var doc = await client.GetAsync($"/tickets.json?per_page={r.PageSize ?? 25}");
-            return new { Success = true, Tickets = Prop(doc, "tickets") };
+            var tickets = doc.ValueKind == JsonValueKind.Object && doc.TryGetProperty("tickets", out var el) ? el : doc;
+            // Ticket lists carry requester subjects/descriptions — wrap the payload wholesale.
+            return new { Success = true, Tickets = AsUntrusted(tickets.GetRawText(), "zendesk-api-response", $"{config.Subdomain}.zendesk.com") };
         });
 
     [Display(Name = ZendeskMethods.GetUser)]
@@ -152,7 +194,7 @@ public class ZendeskService
                 return new { Success = false, Error = "Macro did not return a ticket result." };
 
             var doc = await client.PutAsync($"/tickets/{r.TicketId}.json", new { ticket });
-            return new { Success = true, Ticket = Prop(doc, "ticket") };
+            return new { Success = true, Ticket = WrapTicket(doc) };
         });
 
     // Returns the named property as a JsonElement, or the whole doc if absent.

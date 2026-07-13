@@ -121,7 +121,7 @@ public class EmailServiceTests
     [Fact]
     public async Task ProcessRequest_RoutesToGetEmail()
     {
-        var request = new ServiceRequest { Method = "get_email", MessageId = "test-id-123" };
+        var request = "{\"method\":\"get_email\",\"messageId\":\"test-id-123\"}";
 
         var ex = await Assert.ThrowsAnyAsync<Exception>(
             () => _service.ProcessRequest(request, _config, _mockNotification.Object));
@@ -161,7 +161,7 @@ public class EmailServiceTests
     [Fact]
     public async Task GetEmail_ThrowsWhenMessageIdMissing()
     {
-        var request = new ServiceRequest { MessageId = null };
+        var request = new GetEmailArgs { MessageId = null };
 
         var ex = await Assert.ThrowsAsync<Exception>(
             () => _service.GetEmail(_config, request));
@@ -171,7 +171,7 @@ public class EmailServiceTests
     [Fact]
     public async Task DeleteEmail_ThrowsWhenMessageIdMissing()
     {
-        var request = new ServiceRequest { MessageId = null };
+        var request = new DeleteEmailArgs { MessageId = null };
 
         var ex = await Assert.ThrowsAsync<Exception>(
             () => _service.DeleteEmail(_config, request));
@@ -181,7 +181,7 @@ public class EmailServiceTests
     [Fact]
     public async Task SendEmail_ThrowsWhenNoToOrMessageId()
     {
-        var request = new ServiceRequest { To = null, MessageId = null };
+        var request = new SendEmailArgs { To = null, MessageId = null };
 
         var ex = await Assert.ThrowsAsync<Exception>(
             () => _service.SendEmail(_config, request));
@@ -191,7 +191,7 @@ public class EmailServiceTests
     [Fact]
     public async Task MoveToFolder_ThrowsWhenMessageIdMissing()
     {
-        var request = new ServiceRequest { Folder = "Archive" };
+        var request = new MoveToFolderArgs { Folder = "Archive" };
 
         var ex = await Assert.ThrowsAsync<Exception>(
             () => _service.MoveToFolder(_config, request));
@@ -201,7 +201,7 @@ public class EmailServiceTests
     [Fact]
     public async Task MoveToFolder_ThrowsWhenFolderMissing()
     {
-        var request = new ServiceRequest { MessageId = "test-id", Folder = null };
+        var request = new MoveToFolderArgs { MessageId = "test-id", Folder = null };
 
         var ex = await Assert.ThrowsAsync<Exception>(
             () => _service.MoveToFolder(_config, request));
@@ -211,7 +211,7 @@ public class EmailServiceTests
     [Fact]
     public async Task MarkAsRead_ThrowsWhenMessageIdMissing()
     {
-        var request = new ServiceRequest();
+        var request = new MarkAsReadArgs();
 
         var ex = await Assert.ThrowsAsync<Exception>(
             () => _service.MarkAsRead(_config, request));
@@ -221,7 +221,7 @@ public class EmailServiceTests
     [Fact]
     public async Task FlagEmail_ThrowsWhenMessageIdMissing()
     {
-        var request = new ServiceRequest();
+        var request = new FlagEmailArgs();
 
         var ex = await Assert.ThrowsAsync<Exception>(
             () => _service.FlagEmail(_config, request));
@@ -231,7 +231,7 @@ public class EmailServiceTests
     [Fact]
     public async Task DeleteDraft_ThrowsWhenMessageIdMissing()
     {
-        var request = new ServiceRequest();
+        var request = new DeleteDraftArgs();
 
         var ex = await Assert.ThrowsAsync<Exception>(
             () => _service.DeleteDraft(_config, request));
@@ -241,7 +241,7 @@ public class EmailServiceTests
     [Fact]
     public async Task GetAttachments_ThrowsWhenMessageIdMissing()
     {
-        var request = new ServiceRequest();
+        var request = new GetAttachmentsArgs();
 
         var ex = await Assert.ThrowsAsync<Exception>(
             () => _service.GetAttachments(_config, request));
@@ -251,7 +251,7 @@ public class EmailServiceTests
     [Fact]
     public async Task AddAttachmentToDraft_ThrowsWhenMessageIdMissing()
     {
-        var request = new ServiceRequest();
+        var request = new AddAttachmentToDraftArgs();
 
         var ex = await Assert.ThrowsAsync<Exception>(
             () => _service.AddAttachmentToDraft(_config, request));
@@ -261,7 +261,7 @@ public class EmailServiceTests
     [Fact]
     public async Task RemoveAttachmentFromDraft_ThrowsWhenMessageIdMissing()
     {
-        var request = new ServiceRequest();
+        var request = new RemoveAttachmentFromDraftArgs();
 
         var ex = await Assert.ThrowsAsync<Exception>(
             () => _service.RemoveAttachmentFromDraft(_config, request));
@@ -271,7 +271,7 @@ public class EmailServiceTests
     [Fact]
     public async Task GetDrafts_DoesNotRequireMessageId()
     {
-        var request = new ServiceRequest { Account = "personal" };
+        var request = new GetDraftsArgs { Account = "personal" };
 
         var ex = await Assert.ThrowsAnyAsync<Exception>(
             () => _service.GetDrafts(_config, request));
@@ -285,7 +285,7 @@ public class EmailServiceTests
     [Fact]
     public async Task GetEmail_UsesDefaultAccountWhenNoneSpecified()
     {
-        var request = new ServiceRequest { MessageId = "test-id" };
+        var request = new GetEmailArgs { MessageId = "test-id" };
 
         var ex = await Assert.ThrowsAnyAsync<Exception>(
             () => _service.GetEmail(_config, request));
@@ -295,7 +295,7 @@ public class EmailServiceTests
     [Fact]
     public async Task GetEmail_UsesNamedAccount()
     {
-        var request = new ServiceRequest { MessageId = "test-id", Account = "work" };
+        var request = new GetEmailArgs { MessageId = "test-id", Account = "work" };
 
         var ex = await Assert.ThrowsAnyAsync<Exception>(
             () => _service.GetEmail(_config, request));
@@ -313,7 +313,7 @@ public class EmailServiceTests
                 new() { Name = "work", Default = false }
             }
         };
-        var request = new ServiceRequest { MessageId = "test-id", Account = "nonexistent" };
+        var request = new GetEmailArgs { MessageId = "test-id", Account = "nonexistent" };
 
         var ex = await Assert.ThrowsAsync<Exception>(
             () => _service.GetEmail(configNoDefault, request));
@@ -327,7 +327,7 @@ public class EmailServiceTests
     [Fact]
     public async Task SendEmail_RequestsConfirmation_WhenNoConfirmationId()
     {
-        var request = new ServiceRequest
+        var request = new SendEmailArgs
         {
             To = "recipient@example.com",
             Subject = "Test",
@@ -352,7 +352,7 @@ public class EmailServiceTests
     public async Task SendEmail_ReturnsError_WhenConfirmationIdInvalid()
     {
         var confirmId = Guid.NewGuid();
-        var request = new ServiceRequest
+        var request = new SendEmailArgs
         {
             To = "recipient@example.com",
             ConfirmationId = confirmId.ToString()
@@ -375,7 +375,7 @@ public class EmailServiceTests
     [Fact]
     public async Task DeleteEmail_RequestsConfirmation_WhenNoConfirmationId()
     {
-        var request = new ServiceRequest { MessageId = "test-id" };
+        var request = new DeleteEmailArgs { MessageId = "test-id" };
         _mockNotification
             .Setup(n => n.RequestConfirmation(
                 It.IsAny<string>(),
@@ -395,7 +395,7 @@ public class EmailServiceTests
     public async Task DeleteEmail_ReturnsError_WhenConfirmationIdInvalid()
     {
         var confirmId = Guid.NewGuid();
-        var request = new ServiceRequest
+        var request = new DeleteEmailArgs
         {
             MessageId = "test-id",
             ConfirmationId = confirmId.ToString()
@@ -425,7 +425,7 @@ public class EmailServiceTests
             RequiresConfirmation = false,
             EmailAccounts = _config.EmailAccounts
         };
-        var request = new ServiceRequest
+        var request = new SendEmailArgs
         {
             To = "recipient@example.com",
             Subject = "Test",
@@ -452,7 +452,7 @@ public class EmailServiceTests
             RequiresConfirmation = false,
             EmailAccounts = _config.EmailAccounts
         };
-        var request = new ServiceRequest { MessageId = "test-id" };
+        var request = new DeleteEmailArgs { MessageId = "test-id" };
 
         // Should skip confirmation and go straight to IMAP (which will fail on connection)
         var ex = await Assert.ThrowsAnyAsync<Exception>(
@@ -471,7 +471,7 @@ public class EmailServiceTests
     [Fact]
     public async Task GetEmailSummary_UsesDefaultAccount()
     {
-        var request = new ServiceRequest();
+        var request = new GetEmailSummaryArgs();
 
         var ex = await Assert.ThrowsAnyAsync<Exception>(
             () => _service.GetEmailSummary(_config, request));
@@ -485,7 +485,7 @@ public class EmailServiceTests
     [Fact]
     public async Task SearchEmails_ReturnsNotConfigured_WhenNoVectorService()
     {
-        var request = new ServiceRequest { Query = "test query" };
+        var request = new SearchEmailsArgs { Query = "test query" };
         var result = await _service.SearchEmails(_config, request);
 
         var msgProp = result.GetType().GetProperty("Message");
@@ -496,7 +496,7 @@ public class EmailServiceTests
     [Fact]
     public async Task SearchEmails_ThrowsWhenQueryMissing()
     {
-        var request = new ServiceRequest { Query = null };
+        var request = new SearchEmailsArgs { Query = null };
 
         var ex = await Assert.ThrowsAsync<Exception>(
             () => _service.SearchEmails(_config, request));
@@ -506,7 +506,7 @@ public class EmailServiceTests
     [Fact]
     public async Task SearchEmailsLocal_ReturnsNotConfigured_WhenNoStore()
     {
-        var request = new ServiceRequest { SearchText = "test" };
+        var request = new SearchEmailsLocalArgs { SearchText = "test" };
         var result = await _service.SearchEmailsLocal(_config, request);
 
         var msgProp = result.GetType().GetProperty("Message");
@@ -517,7 +517,7 @@ public class EmailServiceTests
     [Fact]
     public async Task SyncEmails_ReturnsNotConfigured_WhenNoSyncEngine()
     {
-        var request = new ServiceRequest();
+        var request = new SyncEmailsArgs();
         var result = await _service.SyncEmails(_config, request);
 
         var msgProp = result.GetType().GetProperty("Message");
@@ -528,7 +528,7 @@ public class EmailServiceTests
     [Fact]
     public async Task GetFolders_ReturnsNotConfigured_WhenNoStore()
     {
-        var request = new ServiceRequest();
+        var request = new GetFoldersArgs();
         var result = await _service.GetFolders(_config, request);
 
         var msgProp = result.GetType().GetProperty("Message");
@@ -543,7 +543,7 @@ public class EmailServiceTests
     [Fact]
     public async Task CreateDraft_UsesDefaultAccount()
     {
-        var request = new ServiceRequest
+        var request = new CreateDraftArgs
         {
             To = "test@example.com",
             Subject = "Test Draft",

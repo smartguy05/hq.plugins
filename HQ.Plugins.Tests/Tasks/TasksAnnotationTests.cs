@@ -60,7 +60,8 @@ public class TasksAnnotationTests
         // A project-less task is private to the calling agent, so projectId must be optional.
         var method = typeof(TasksToolImpl).GetMethods()
             .Single(m => m.GetCustomAttribute<DisplayAttribute>()?.Name == "create_task");
-        var json = method.GetCustomAttribute<ParametersAttribute>()!.FunctionParameters;
+        var json = ToolSchemaGenerator.Generate(
+            method.GetCustomAttribute<ParametersAttribute>()!.ArgsType);
 
         using var doc = JsonDocument.Parse(json);
         var required = doc.RootElement.GetProperty("required")

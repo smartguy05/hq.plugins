@@ -67,12 +67,23 @@ public class DocumentAiService
                 })
             };
             var doc = await client.PostAsync(VisionUrl, body);
-            var text = doc.TryGetProperty("responses", out var resps) && resps.GetArrayLength() > 0 &&
-                       resps[0].TryGetProperty("fullTextAnnotation", out var fta) &&
-                       fta.TryGetProperty("text", out var t)
-                ? t.GetString() : "";
-            return new { Success = true, Text = text };
+            var source = string.IsNullOrWhiteSpace(r.ImageUri) ? "inline-content" : r.ImageUri;
+            return BuildExtractTextResult(doc, source);
         });
+
+    /// <summary>
+    /// Maps a Vision OCR response to the tool result, wrapping the extracted free text as
+    /// <see cref="HQ.Models.Safety.Untrusted{T}"/> — OCR text comes from an arbitrary uploaded
+    /// document and is untrusted external content.
+    /// </summary>
+    public static object BuildExtractTextResult(JsonElement doc, string source)
+    {
+        var text = doc.TryGetProperty("responses", out var resps) && resps.GetArrayLength() > 0 &&
+                   resps[0].TryGetProperty("fullTextAnnotation", out var fta) &&
+                   fta.TryGetProperty("text", out var t)
+            ? t.GetString() : "";
+        return new { Success = true, Text = AsUntrusted(text, "documentai-extracted-text", source) };
+    }
 
     [Display(Name = DocumentAiMethods.ExtractReceipt)]
     [Description("Extract structured fields from a receipt (merchant, total, line items, date) using the configured receipt processor.")]
@@ -104,11 +115,26 @@ public class DocumentAiService
                 }
             };
             var resp = await client.PostAsync(url, body);
-            var document = resp.TryGetProperty("document", out var d) ? d : resp;
-            object text = document.TryGetProperty("text", out var t) ? t.GetString() : null;
-            object entities = document.TryGetProperty("entities", out var e) ? e : (object)Array.Empty<object>();
-            return new { Success = true, Text = text, Entities = entities };
+            return BuildProcessResult(resp, processorId);
         });
+
+    /// <summary>
+    /// Maps a Document AI process response to the tool result. Both the extracted text and the
+    /// extracted entities are content derived from an arbitrary uploaded document, so they are
+    /// wrapped as <see cref="HQ.Models.Safety.Untrusted{T}"/> (the entity payload as one envelope).
+    /// </summary>
+    public static object BuildProcessResult(JsonElement resp, string source)
+    {
+        var document = resp.TryGetProperty("document", out var d) ? d : resp;
+        var textStr = document.TryGetProperty("text", out var t) ? t.GetString() : null;
+        object entities = document.TryGetProperty("entities", out var e)
+            ? AsUntrusted(e.GetRawText(), "documentai-extracted-text", source)
+            : (object)Array.Empty<object>();
+        return new { Success = true, Text = AsUntrusted(textStr, "documentai-extracted-text", source), Entities = entities };
+    }
+
+    private static object AsUntrusted(string content, string provenance, string source) =>
+        string.IsNullOrEmpty(content) ? content : new HQ.Models.Safety.Untrusted<string>(content, provenance, source);
 
     private async Task<object> Guard(Func<Task<object>> action)
     {
