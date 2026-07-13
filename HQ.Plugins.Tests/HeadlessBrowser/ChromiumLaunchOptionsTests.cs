@@ -21,6 +21,7 @@ public class ChromiumLaunchOptionsTests
         var options = ChromiumLaunchOptions.Build(headless: true, ContainerEnv);
         Assert.Contains("--no-sandbox", options.Args);
         Assert.Contains("--disable-dev-shm-usage", options.Args);
+        Assert.Contains("--crash-dumps-dir=/tmp", options.Args);
     }
 
     [Fact]
@@ -28,6 +29,7 @@ public class ChromiumLaunchOptionsTests
     {
         var options = ChromiumLaunchOptions.Build(headless: true, DesktopEnv);
         Assert.DoesNotContain("--no-sandbox", options.Args);
+        Assert.DoesNotContain("--crash-dumps-dir=/tmp", options.Args);
         Assert.Contains("--disable-dev-shm-usage", options.Args);
     }
 

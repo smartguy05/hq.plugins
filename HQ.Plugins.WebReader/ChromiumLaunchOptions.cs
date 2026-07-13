@@ -22,7 +22,13 @@ internal static class ChromiumLaunchOptions
             ? string.Equals(overrideValue, "true", StringComparison.OrdinalIgnoreCase)
             : string.Equals(getEnv("DOTNET_RUNNING_IN_CONTAINER"), "true", StringComparison.OrdinalIgnoreCase);
         if (noSandbox)
+        {
             args.Add("--no-sandbox");
+            // In the hardened container HOME may be read-only; give crashpad an
+            // explicit writable database dir so a crash-handler failure can't kill
+            // the browser launch.
+            args.Add("--crash-dumps-dir=/tmp");
+        }
 
         return new BrowserTypeLaunchOptions
         {
