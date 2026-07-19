@@ -44,7 +44,7 @@ public class WebReaderCommandTests
     public async Task ReadPage_ReturnsMarkdown_Success()
     {
         var cmd = CommandWith(PageHtml);
-        var request = new ServiceRequest { Url = "https://example.com/sample" };
+        var request = new ReadPageArgs { Url = "https://example.com/sample" };
 
         var result = await cmd.ReadPage(Config(), request);
         var json = Json(result);
@@ -58,7 +58,7 @@ public class WebReaderCommandTests
     public async Task ReadPage_MissingUrl_ReturnsError()
     {
         var cmd = CommandWith(PageHtml);
-        var result = await cmd.ReadPage(Config(), new ServiceRequest { Url = "" });
+        var result = await cmd.ReadPage(Config(), new ReadPageArgs { Url = "" });
 
         Assert.Contains("\"Success\":false", Json(result));
     }
@@ -67,7 +67,7 @@ public class WebReaderCommandTests
     public async Task ExtractLinks_ReturnsMarkdownList()
     {
         var cmd = CommandWith(PageHtml);
-        var request = new ServiceRequest { Url = "https://example.com/sample" };
+        var request = new ExtractLinksArgs { Url = "https://example.com/sample" };
 
         var result = await cmd.ExtractLinks(Config(), request);
         var json = Json(result);
@@ -81,7 +81,7 @@ public class WebReaderCommandTests
     public async Task SearchPage_ReturnsOnlyMatches()
     {
         var cmd = CommandWith(PageHtml);
-        var request = new ServiceRequest { Url = "https://example.com/sample", Query = "second paragraph", ContextChars = 40 };
+        var request = new SearchPageArgs { Url = "https://example.com/sample", Query = "second paragraph", ContextChars = 40 };
 
         var result = await cmd.SearchPage(Config(), request);
         var json = Json(result);
@@ -95,7 +95,7 @@ public class WebReaderCommandTests
     public async Task SearchPage_MissingQuery_ReturnsError()
     {
         var cmd = CommandWith(PageHtml);
-        var result = await cmd.SearchPage(Config(), new ServiceRequest { Url = "https://example.com/sample", Query = "" });
+        var result = await cmd.SearchPage(Config(), new SearchPageArgs { Url = "https://example.com/sample", Query = "" });
 
         Assert.Contains("\"Success\":false", Json(result));
     }

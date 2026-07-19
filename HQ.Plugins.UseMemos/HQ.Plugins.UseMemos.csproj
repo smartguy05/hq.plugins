@@ -16,7 +16,11 @@
 	</PropertyGroup>
 
 	<ItemGroup>
-		<PackageReference Include="HQ.Models" Version="2.7.0" ExcludeAssets="runtime" PrivateAssets="none" />
+		<InternalsVisibleTo Include="HQ.Plugins.Tests" />
+	</ItemGroup>
+
+	<ItemGroup>
+		<PackageReference Include="HQ.Models" Version="2.8.0" ExcludeAssets="runtime" PrivateAssets="none" />
 	</ItemGroup>
 
 </Project>

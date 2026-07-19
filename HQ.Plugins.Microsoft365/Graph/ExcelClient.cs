@@ -67,8 +67,17 @@ public class ExcelClient
         var url = $"{ItemBase(r.DriveId, r.ItemId)}/{WorksheetSegment(r.Worksheet, r.WorksheetName)}/range(address='{Uri.EscapeDataString(r.Range)}')";
         var json = await SendAsync(HttpMethod.Get, url, null);
         var values = json.RootElement.GetProperty("values");
-        return new { Success = true, Range = r.Range, Values = JsonSerializer.Deserialize<object>(values.GetRawText()) };
+        return BuildRangeResult(r.Range, values.GetRawText(), r.ItemId);
     }
+
+    /// <summary>
+    /// Builds the get-range result. Cell values come from a potentially externally-editable
+    /// workbook, so the whole grid is wrapped wholesale as one
+    /// <see cref="HQ.Models.Safety.Untrusted{T}"/> JSON envelope (source = drive item id).
+    /// Public for unit testing.
+    /// </summary>
+    public static object BuildRangeResult(string range, string valuesRawJson, string itemId) =>
+        new { Success = true, Range = range, Values = M365Content.AsUntrusted(valuesRawJson, "m365-doc-content", itemId) };
 
     public async Task<object> UpdateRange(ExcelUpdateRangeArgs r)
     {

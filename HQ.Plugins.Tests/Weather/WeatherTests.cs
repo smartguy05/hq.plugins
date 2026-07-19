@@ -13,7 +13,7 @@ public class WeatherTests
         typeof(WeatherService).GetMethods(BindingFlags.Public | BindingFlags.Instance)
             .Where(m => m.GetParameters().Length == 2 &&
                         typeof(IPluginConfig).IsAssignableFrom(m.GetParameters()[0].ParameterType) &&
-                        typeof(IPluginServiceRequest).IsAssignableFrom(m.GetParameters()[1].ParameterType));
+                        m.GetCustomAttribute<HQ.Models.Helpers.ParametersAttribute>() != null);
 
     [Fact]
     public void AllToolMethods_HaveCompleteAnnotations()
@@ -25,8 +25,10 @@ public class WeatherTests
             Assert.False(string.IsNullOrWhiteSpace(m.GetCustomAttribute<DisplayAttribute>()?.Name), $"{m.Name} missing Display.Name");
             Assert.False(string.IsNullOrWhiteSpace(m.GetCustomAttribute<DescriptionAttribute>()?.Description), $"{m.Name} missing Description");
             var p = m.GetCustomAttribute<HQ.Models.Helpers.ParametersAttribute>();
-            Assert.False(string.IsNullOrWhiteSpace(p?.FunctionParameters), $"{m.Name} missing Parameters");
-            Assert.NotNull(JsonDocument.Parse(p!.FunctionParameters));
+            Assert.NotNull(p?.ArgsType);
+            var schema = HQ.Models.Helpers.ToolSchemaGenerator.Generate(p!.ArgsType);
+            Assert.False(string.IsNullOrWhiteSpace(schema), $"{m.Name} missing Parameters");
+            Assert.NotNull(JsonDocument.Parse(schema));
         }
     }
 

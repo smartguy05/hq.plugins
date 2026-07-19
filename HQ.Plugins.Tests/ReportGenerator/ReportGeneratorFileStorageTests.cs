@@ -32,9 +32,8 @@ public class ReportGeneratorFileStorageTests
 
         var command = CreateCommandWithProvider(mockProvider);
         var config = new ServiceConfig { Name = "Test" };
-        var request = new ServiceRequest
+        var request = new GenerateReportArgs
         {
-            Method = "generate_report",
             Title = "Test Report",
             Content = "# Hello\n\nTest content",
             Format = "html"
@@ -62,9 +61,8 @@ public class ReportGeneratorFileStorageTests
 
         var command = CreateCommandWithProvider(mockProvider);
         var config = new ServiceConfig { Name = "Test" };
-        var request = new ServiceRequest
+        var request = new GenerateReportArgs
         {
-            Method = "generate_report",
             Title = "Test Report",
             Content = "Test content",
             Format = "markdown"
@@ -104,7 +102,7 @@ public class ReportGeneratorFileStorageTests
 
         var command = CreateCommandWithProvider(mockProvider);
         var config = new ServiceConfig { Name = "Test" };
-        var request = new ServiceRequest { Method = "list_reports" };
+        var request = new EmptyArgs();
 
         // Act
         var result = await command.ListReports(config, request);
@@ -139,7 +137,7 @@ public class ReportGeneratorFileStorageTests
 
         var command = CreateCommandWithProvider(mockProvider);
         var config = new ServiceConfig { Name = "Test" };
-        var request = new ServiceRequest { Method = "get_report", ReportId = "abc123" };
+        var request = new GetReportArgs { ReportId = "abc123" };
 
         // Act
         var result = await command.GetReport(config, request);
@@ -156,9 +154,8 @@ public class ReportGeneratorFileStorageTests
         command.Logger = TestLogger;
         var tempDir = Path.Combine(Path.GetTempPath(), $"hq-test-{Guid.NewGuid():N}");
         var config = new ServiceConfig { Name = "Test", OutputDirectory = tempDir };
-        var request = new ServiceRequest
+        var request = new GenerateReportArgs
         {
-            Method = "generate_report",
             Title = "Fallback Test",
             Content = "Fallback content",
             Format = "markdown"

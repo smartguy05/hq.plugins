@@ -1,7 +1,6 @@
 using System.ComponentModel;
 using System.ComponentModel.DataAnnotations;
 using System.Net.Http.Headers;
-using System.Net.Http.Json;
 using HQ.Models.Enums;
 using HQ.Models.Extensions;
 using HQ.Models.Helpers;
@@ -16,6 +15,11 @@ public class WebSearchCommand: CommandBase<ServiceRequest, ServiceConfig>
     public override string Name => "Web Search";
     public override string Description => "A plugin to allow searching the web";
     protected override INotificationService NotificationService { get; set; }
+
+    private HttpMessageHandler _httpMessageHandler;
+
+    // Seam for tests — lets a fake transport be injected without a real HTTP call.
+    internal void SetHttpMessageHandler(HttpMessageHandler handler) => _httpMessageHandler = handler;
 
     public override List<ToolCall> GetToolDefinitions()
     {
@@ -38,7 +42,9 @@ public class WebSearchCommand: CommandBase<ServiceRequest, ServiceConfig>
             return new { Success = false, Error = "WebSearchUrl is not configured" };
         }
 
-        using var httpClient = new HttpClient();
+        using var httpClient = _httpMessageHandler != null
+            ? new HttpClient(_httpMessageHandler, disposeHandler: false)
+            : new HttpClient();
         httpClient.DefaultRequestHeaders.Accept.Add(
             new MediaTypeWithQualityHeaderValue("application/json"));
         if (!string.IsNullOrWhiteSpace(config.WebSearchApiKey))
@@ -62,6 +68,21 @@ public class WebSearchCommand: CommandBase<ServiceRequest, ServiceConfig>
             };
         }
 
-        return await response.Content.ReadFromJsonAsync<dynamic>();
+        // Return the raw JSON body wrapped in a single Untrusted envelope. We make no schema
+        // assumptions about the search provider's response shape; the host classifies the whole
+        // string for prompt-injection before the LLM sees it.
+        var raw = await response.Content.ReadAsStringAsync();
+        return new
+        {
+            Success = true,
+            Results = new HQ.Models.Safety.Untrusted<string>(raw, "web-search-results", HostOf(config.WebSearchUrl))
+        };
+    }
+
+    // Provenance source = the search API host; fall back to the raw url string for malformed URLs.
+    private static string HostOf(string url)
+    {
+        try { return new Uri(url).Host; }
+        catch { return url; }
     }
 }

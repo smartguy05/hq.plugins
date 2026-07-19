@@ -67,18 +67,19 @@ public class WebReaderCommand : CommandBase<ServiceRequest, ServiceConfig>
                 : config;
 
             var result = ReaderPipeline.ToMarkdown(rendered.Html, rendered.FinalUrl, rendered.Title, effectiveConfig);
+            var source = HostOf(rendered.FinalUrl);
 
             return new
             {
                 Success = true,
                 Url = rendered.FinalUrl,
-                result.Title,
-                result.Byline,
+                Title = AsUntrusted(result.Title, "web-page-title", source),
+                Byline = AsUntrusted(result.Byline, "web-page-byline", source),
                 result.SiteName,
                 result.Length,
                 result.Truncated,
                 ExtractionFallback = result.UsedFallback,
-                result.Markdown
+                Markdown = AsUntrusted(result.Markdown, "web-page-content", source)
             };
         });
     }
@@ -101,7 +102,7 @@ public class WebReaderCommand : CommandBase<ServiceRequest, ServiceConfig>
                 Success = true,
                 Url = rendered.FinalUrl,
                 Count = links.Count,
-                Links = markdown
+                Links = AsUntrusted(markdown, "web-page-links", HostOf(rendered.FinalUrl))
             };
         });
     }
@@ -127,9 +128,20 @@ public class WebReaderCommand : CommandBase<ServiceRequest, ServiceConfig>
                 Url = rendered.FinalUrl,
                 serviceRequest.Query,
                 MatchCount = count,
-                Snippets = snippets
+                Snippets = AsUntrusted(snippets, "web-page-snippets", HostOf(rendered.FinalUrl))
             };
         });
+    }
+
+    // Wrap open-web content so the host can classify it for prompt-injection before the LLM sees it.
+    private static object AsUntrusted(string content, string provenance, string source) =>
+        string.IsNullOrEmpty(content) ? content : new HQ.Models.Safety.Untrusted<string>(content, provenance, source);
+
+    // Provenance source = the page host; fall back to the raw url string for malformed URLs.
+    private static string HostOf(string url)
+    {
+        try { return new Uri(url).Host; }
+        catch { return url; }
     }
 
     private async Task<object> WithRender(ServiceConfig config, string url, Func<RenderedPage, object> project)

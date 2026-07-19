@@ -16,9 +16,17 @@ public class SupportChannelKbService
         _config = config;
     }
 
+    // Seam for tests — injects a fake HttpMessageHandler so tool bodies can run without a network.
+    internal HttpMessageHandler HttpHandler { get; set; }
+
+    // SAFE-02: KB/article/message content comes from external support channels and is untrusted
+    // inbound content — wrap it as Untrusted for host prompt-injection screening.
+    private static object AsUntrusted(string content, string provenance, string source) =>
+        string.IsNullOrEmpty(content) ? content : new HQ.Models.Safety.Untrusted<string>(content, provenance, source);
+
     public async Task<string[]> SearchKnowledgeBase(SearchSupportChannelsArgs request)
     {
-        using var httpClient = new HttpClient();
+        using var httpClient = HttpHandler != null ? new HttpClient(HttpHandler, disposeHandler: false) : new HttpClient();
 
         httpClient.DefaultRequestHeaders.Authorization =
             new AuthenticationHeaderValue("Bearer", _config.DefaultChannelApiKey);
@@ -114,7 +122,10 @@ public class SupportChannelKbService
     [Parameters(typeof(SearchSupportChannelsArgs))]
     public async Task<object> SearchSupportChannels(ServiceConfig config, SearchSupportChannelsArgs request)
     {
-        return await SearchKnowledgeBase(request);
+        var results = await SearchKnowledgeBase(request);
+        if (results == null) return results;
+        var source = string.IsNullOrEmpty(_config.DefaultSaveChannel) ? "unknown" : _config.DefaultSaveChannel;
+        return results.Select(r => AsUntrusted(r, "supportkb-content", source)).ToArray();
     }
 
     [Display(Name = "get_support_channel_collections")]

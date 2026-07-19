@@ -18,9 +18,9 @@ internal class NotionClient : IDisposable
         DefaultIgnoreCondition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull
     };
 
-    public NotionClient(string accessToken, string version)
+    public NotionClient(string accessToken, string version, HttpMessageHandler handler = null)
     {
-        _httpClient = new HttpClient();
+        _httpClient = handler != null ? new HttpClient(handler, disposeHandler: false) : new HttpClient();
         _httpClient.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", accessToken);
         _httpClient.DefaultRequestHeaders.Add("Notion-Version", string.IsNullOrWhiteSpace(version) ? DefaultVersion : version);
         _httpClient.DefaultRequestHeaders.Accept.Add(new MediaTypeWithQualityHeaderValue("application/json"));

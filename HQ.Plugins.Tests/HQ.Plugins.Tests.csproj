@@ -45,7 +45,7 @@
         <ProjectReference Include="..\HQ.Plugins.ReportGenerator\HQ.Plugins.ReportGenerator.csproj" />
         <ProjectReference Include="..\HQ.Plugins.FileStorage\HQ.Plugins.FileStorage.csproj" />
         <ProjectReference Include="..\HQ.Plugins.Slack\HQ.Plugins.Slack.csproj" />
-        <PackageReference Include="HQ.Models" Version="2.7.0" />
+        <PackageReference Include="HQ.Models" Version="2.8.0" />
         <ProjectReference Include="..\HQ.Plugins.SupportChannelKb\HQ.Plugins.SupportChannelKb.csproj" />
         <ProjectReference Include="..\HQ.Plugins.Teams\HQ.Plugins.Teams.csproj" />
         <ProjectReference Include="..\HQ.Plugins.Telegram\HQ.Plugins.Telegram.csproj" />
@@ -62,6 +62,8 @@
         <ProjectReference Include="..\HQ.Plugins.Plaid\HQ.Plugins.Plaid.csproj" />
         <ProjectReference Include="..\HQ.Plugins.Health\HQ.Plugins.Health.csproj" />
         <ProjectReference Include="..\HQ.Plugins.DocumentAI\HQ.Plugins.DocumentAI.csproj" />
+        <ProjectReference Include="..\HQ.Plugins.ClaudeCode\HQ.Plugins.ClaudeCode.csproj" />
+        <ProjectReference Include="..\HQ.Plugins.ImageGeneration\HQ.Plugins.ImageGeneration.csproj" />
         <ProjectReference Include="..\Test_Plugin\Test_Plugin.csproj" />
     </ItemGroup>
 

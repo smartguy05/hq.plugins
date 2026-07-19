@@ -21,6 +21,28 @@ public class UseMemosCommand: CommandBase<ServiceRequest,ServiceConfig>
 
     private readonly string[] _validGetTypes = { "memos", "resources" };
 
+    // Test seam: lets tests fake the UseMemos server without a live HTTP call.
+    internal HttpMessageHandler HttpHandler { get; set; }
+
+    private HttpClient CreateClient(ServiceConfig config)
+    {
+        var httpClient = HttpHandler != null ? new HttpClient(HttpHandler, disposeHandler: false) : new HttpClient();
+        httpClient.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", config.MemoAccount.ApiKey);
+        return httpClient;
+    }
+
+    // SAFE-02: memo/resource content fetched from the server is externally-stored free text;
+    // wrap the whole payload so the host's ToolResultSanitizer classifies it before the LLM
+    // reads it. Source = the configured server host.
+    private static object AsUntrusted(string content, string provenance, string source) =>
+        string.IsNullOrEmpty(content) ? content : new HQ.Models.Safety.Untrusted<string>(content, provenance, source);
+
+    private static string HostOf(string url)
+    {
+        try { return new Uri(url).Host; }
+        catch { return url ?? "unknown"; }
+    }
+
     public override List<ToolCall> GetToolDefinitions()
     {
         return this.GetServiceToolCalls();
@@ -37,8 +59,7 @@ public class UseMemosCommand: CommandBase<ServiceRequest,ServiceConfig>
     public async Task<object> ReadMemos(ServiceConfig config, ReadMemosArgs serviceRequest)
     {
         ValidateDataType(serviceRequest.DataType);
-        using var httpClient = new HttpClient();
-        httpClient.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", config.MemoAccount.ApiKey);
+        using var httpClient = CreateClient(config);
         try
         {
             var location = serviceRequest.DataType.ToLower();
@@ -50,7 +71,8 @@ public class UseMemosCommand: CommandBase<ServiceRequest,ServiceConfig>
             var response = await httpClient.GetAsync(new Uri(url));
             response.EnsureSuccessStatusCode();
 
-            return await response.Content.ReadAsStringAsync();
+            var payload = await response.Content.ReadAsStringAsync();
+            return AsUntrusted(payload, "usememos-content", HostOf(config.MemoAccount.MemosUrl));
         }
         catch (Exception e)
         {
@@ -104,8 +126,7 @@ public class UseMemosCommand: CommandBase<ServiceRequest,ServiceConfig>
             };
         }
 
-        using var httpClient = new HttpClient();
-        httpClient.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", config.MemoAccount.ApiKey);
+        using var httpClient = CreateClient(config);
 
         var url = $"{config.MemoAccount.MemosUrl}/api/v1/memos";
 
@@ -148,8 +169,7 @@ public class UseMemosCommand: CommandBase<ServiceRequest,ServiceConfig>
             throw new ArgumentException("Memo Uid (memoId) cannot be empty for updating a memo.");
         }
 
-        using var httpClient = new HttpClient();
-        httpClient.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", config.MemoAccount.ApiKey);
+        using var httpClient = CreateClient(config);
 
         var url = $"{config.MemoAccount.MemosUrl}/api/v1/memos/{serviceRequest.Uid}";
 

@@ -20,10 +20,10 @@ internal class ZendeskClient : IDisposable
         PropertyNameCaseInsensitive = true
     };
 
-    public ZendeskClient(string subdomain, string email, string apiToken)
+    public ZendeskClient(string subdomain, string email, string apiToken, HttpMessageHandler handler = null)
     {
         _baseUrl = $"https://{subdomain}.zendesk.com/api/v2";
-        _httpClient = new HttpClient();
+        _httpClient = handler != null ? new HttpClient(handler, disposeHandler: false) : new HttpClient();
 
         var raw = Encoding.UTF8.GetBytes($"{email}/token:{apiToken}");
         _httpClient.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Basic", Convert.ToBase64String(raw));

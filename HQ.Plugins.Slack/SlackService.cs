@@ -29,6 +29,14 @@ public class SlackService(
 {
     public Confirmation PendingConfirmation;
     public const string ConfirmationActionId = "hq_confirmation_action";
+
+    /// <summary>
+    /// SAFE-02: wraps author-controlled display text (user handles/names, channel names, uploaded
+    /// file names) in an <see cref="HQ.Models.Safety.Untrusted{T}"/> envelope so the host can screen
+    /// it for prompt injection before it reaches the LLM. IDs/flags/counts are internal and stay raw.
+    /// </summary>
+    private static object AsUntrusted(string content, string provenance, string source) =>
+        string.IsNullOrEmpty(content) ? content : new HQ.Models.Safety.Untrusted<string>(content, provenance, source);
     private string _activeChannelId;
     private static readonly HttpClient HttpClient = new();
 
@@ -760,7 +768,9 @@ public class SlackService(
             {
                 Success = true,
                 FileId = file.Id,
-                FileName = file.Name,
+                // Uploader-chosen file name is author-controlled — wrap it (SAFE-02). The base64
+                // Content is binary and left raw; the host decodes it before any LLM sees text.
+                FileName = AsUntrusted(file.Name, "slack-file-name", file.Id),
                 MimeType = file.Mimetype,
                 Content = base64
             };
@@ -804,9 +814,9 @@ public class SlackService(
                 .Select(u => new
                 {
                     u.Id,
-                    u.Name,
-                    RealName = u.RealName,
-                    DisplayName = u.Profile?.DisplayName
+                    Name = AsUntrusted(u.Name, "slack-user-name", u.Id),
+                    RealName = AsUntrusted(u.RealName, "slack-user-real-name", u.Id),
+                    DisplayName = AsUntrusted(u.Profile?.DisplayName, "slack-user-display-name", u.Id)
                 }).ToList();
 
             return new { Success = true, Users = users };
@@ -829,7 +839,7 @@ public class SlackService(
             var channels = result.Channels.Select(c => new
             {
                 c.Id,
-                c.Name,
+                Name = AsUntrusted(c.Name, "slack-channel-name", c.Id),
                 c.IsPrivate,
                 c.NumMembers
             }).ToList();

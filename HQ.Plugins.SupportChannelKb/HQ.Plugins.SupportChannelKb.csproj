@@ -16,10 +16,14 @@
 	</PropertyGroup>
 
 	<ItemGroup>
-		<PackageReference Include="HQ.Models" Version="2.7.0" ExcludeAssets="runtime" PrivateAssets="none" />
+		<PackageReference Include="HQ.Models" Version="2.8.0" ExcludeAssets="runtime" PrivateAssets="none" />
 	</ItemGroup>
 
 	<ItemGroup>
 		<PackageReference Include="Newtonsoft.Json" Version="13.0.3" />
+	</ItemGroup>
+
+	<ItemGroup>
+		<InternalsVisibleTo Include="HQ.Plugins.Tests" />
 	</ItemGroup>
 </Project>

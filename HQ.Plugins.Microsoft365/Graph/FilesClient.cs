@@ -77,15 +77,23 @@ public class FilesClient
 
         using var ms = new MemoryStream();
         await stream.CopyToAsync(ms);
-        return new
+        return BuildDownloadResult(item?.Id, item?.Name, item?.File?.MimeType, Convert.ToBase64String(ms.ToArray()));
+    }
+
+    /// <summary>
+    /// Builds the download result, wrapping the file content as
+    /// <see cref="HQ.Models.Safety.Untrusted{T}"/> (source = drive item id) since it is fetched
+    /// from a potentially third-party-shared file. Public for unit testing.
+    /// </summary>
+    public static object BuildDownloadResult(string itemId, string fileName, string mimeType, string base64Content) =>
+        new
         {
             Success = true,
-            ItemId = item?.Id,
-            FileName = item?.Name,
-            MimeType = item?.File?.MimeType,
-            Content = Convert.ToBase64String(ms.ToArray())
+            ItemId = itemId,
+            FileName = fileName,
+            MimeType = mimeType,
+            Content = M365Content.AsUntrusted(base64Content, "m365-doc-content", itemId)
         };
-    }
 
     public async Task<object> Upload(FilesUploadArgs r)
     {

@@ -16,8 +16,29 @@ namespace HQ.Plugins.Notion;
 public class NotionService
 {
     private readonly LogDelegate _logger;
+    private readonly HttpMessageHandler _handler;
 
     public NotionService(LogDelegate logger) => _logger = logger;
+
+    // Test seam: lets a fake HttpMessageHandler be injected without hitting the network.
+    internal NotionService(LogDelegate logger, HttpMessageHandler handler)
+    {
+        _logger = logger;
+        _handler = handler;
+    }
+
+    private static readonly string ApiHost = new Uri(NotionClient.BaseUrl).Host;
+
+    // Wrap third-party human-authored payloads (raw Notion JSON — page/database content typed by
+    // people) as ONE Untrusted envelope so the host can classify it for prompt-injection before
+    // the LLM sees it. Ids/counts/status flags in the wrapper stay raw.
+    private static object AsUntrusted(string content, string provenance, string source) =>
+        string.IsNullOrEmpty(content) ? content : new HQ.Models.Safety.Untrusted<string>(content, provenance, source);
+
+    private static object WrapRaw(object json, string provenance, string source) =>
+        json is JsonElement el && el.ValueKind != JsonValueKind.Undefined
+            ? AsUntrusted(el.GetRawText(), provenance, source)
+            : json;
 
     /// <summary>Build a Notion rich_text array from plain text.</summary>
     public static JsonArray RichText(string content) =>
@@ -59,7 +80,7 @@ public class NotionService
             if (!string.IsNullOrWhiteSpace(request.FilterType))
                 body["filter"] = new JsonObject { ["property"] = "object", ["value"] = request.FilterType };
             var doc = await client.PostAsync("/search", body);
-            return new { Success = true, Results = Prop(doc, "results") };
+            return new { Success = true, Results = WrapRaw(Prop(doc, "results"), "notion-search-results", ApiHost) };
         });
 
     [Display(Name = NotionMethods.GetPage)]
@@ -70,7 +91,7 @@ public class NotionService
         {
             using var client = Client(config);
             var doc = await client.GetAsync($"/pages/{request.PageId}");
-            return new { Success = true, Page = (object)doc };
+            return new { Success = true, Page = WrapRaw(doc, "notion-page-content", request.PageId) };
         });
 
     [Display(Name = NotionMethods.CreatePage)]
@@ -94,7 +115,7 @@ public class NotionService
             if (children is JsonArray arr && arr.Count > 0) body["children"] = children;
 
             var doc = await client.PostAsync("/pages", body);
-            return new { Success = true, Page = (object)doc };
+            return new { Success = true, Page = WrapRaw(doc, "notion-page-content", request.ParentId) };
         });
 
     [Display(Name = NotionMethods.AppendBlock)]
@@ -108,7 +129,7 @@ public class NotionService
             if (children is not JsonArray arr || arr.Count == 0)
                 return new { Success = false, Error = "Provide text or childrenJson to append." };
             var doc = await client.PatchAsync($"/blocks/{request.BlockId}/children", new JsonObject { ["children"] = children });
-            return new { Success = true, Result = (object)doc };
+            return new { Success = true, Result = WrapRaw(doc, "notion-block-content", request.BlockId) };
         });
 
     [Display(Name = NotionMethods.QueryDatabase)]
@@ -124,7 +145,7 @@ public class NotionService
             var sorts = ParseOrNull(request.SortsJson);
             if (sorts is not null) body["sorts"] = sorts;
             var doc = await client.PostAsync($"/databases/{request.DatabaseId}/query", body);
-            return new { Success = true, Results = Prop(doc, "results") };
+            return new { Success = true, Results = WrapRaw(Prop(doc, "results"), "notion-database-results", request.DatabaseId) };
         });
 
     [Display(Name = NotionMethods.UpdatePage)]
@@ -137,10 +158,10 @@ public class NotionService
             var props = ParseOrNull(request.PropertiesJson)
                         ?? throw new InvalidOperationException("propertiesJson is required.");
             var doc = await client.PatchAsync($"/pages/{request.PageId}", new JsonObject { ["properties"] = props });
-            return new { Success = true, Page = (object)doc };
+            return new { Success = true, Page = WrapRaw(doc, "notion-page-content", request.PageId) };
         });
 
-    private static NotionClient Client(ServiceConfig config) => new(config.AccessToken, config.NotionVersion);
+    private NotionClient Client(ServiceConfig config) => new(config.AccessToken, config.NotionVersion, _handler);
 
     private static object Prop(JsonElement doc, string name) =>
         doc.ValueKind == JsonValueKind.Object && doc.TryGetProperty(name, out var el) ? el : doc;

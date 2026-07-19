@@ -320,17 +320,47 @@ public class LinkedInService
     private static object Shape(VoyagerResponse res, string key, object summary = null)
     {
         if (!res.IsSuccess)
-            return new { Success = false, Status = res.Status, Error = "LinkedIn request was not successful.", Raw = res.RawBody };
+            return new
+            {
+                Success = false,
+                Status = res.Status,
+                Error = "LinkedIn request was not successful.",
+                // Failure bodies are still third-party content — wrap wholesale.
+                Raw = AsUntrusted(res.RawBody, "linkedin-api-response", Host)
+            };
 
         return new
         {
             Success = true,
             Status = res.Status,
             Key = key,
-            Summary = summary,
-            Raw = res.Json
+            // The parsed summary carries third-party free text (profile text, headlines, job
+            // descriptions, search hits) — wrap with a content-type provenance, preserving shape.
+            Summary = summary is null ? null : new HQ.Models.Safety.Untrusted<object>(summary, SummaryProvenance(key), Host),
+            // The Voyager payload is returned wholesale — wrap the whole string as ONE envelope.
+            Raw = AsUntrusted(res.RawBody, "linkedin-api-response", Host)
         };
     }
+
+    /// <summary>Host recorded as the <c>source</c> on every LinkedIn untrusted envelope.</summary>
+    private const string Host = "linkedin.com";
+
+    /// <summary>Content-type provenance for the parsed summary, keyed by the Shape result kind.</summary>
+    private static string SummaryProvenance(string key) => key switch
+    {
+        "profile" or "person" => "linkedin-profile-text",
+        "company" => "linkedin-company-text",
+        "people" or "companies" => "linkedin-search-results",
+        _ => "linkedin-summary"
+    };
+
+    /// <summary>
+    /// Wraps externally-authored free text (scraped/fetched from LinkedIn) in an
+    /// <see cref="HQ.Models.Safety.Untrusted{T}"/> envelope so the host can screen it for prompt
+    /// injection before it reaches the LLM. Empty/null values pass through unwrapped.
+    /// </summary>
+    private static object AsUntrusted(string content, string provenance, string source) =>
+        string.IsNullOrEmpty(content) ? content : new HQ.Models.Safety.Untrusted<string>(content, provenance, source);
 
     private static void Require(string value, string name)
     {

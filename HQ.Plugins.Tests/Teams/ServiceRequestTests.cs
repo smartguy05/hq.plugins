@@ -2,6 +2,12 @@ using HQ.Plugins.Teams.Models;
 
 namespace HQ.Plugins.Tests.Teams;
 
+/// <summary>
+/// Post-migration, <see cref="ServiceRequest"/> carries only orchestrator routing fields; the
+/// per-tool LLM arguments (team/channel/message/file fields) now live on dedicated args records in
+/// <c>ToolArgs.cs</c>. These tests preserve the original intent — verifying the DTOs round-trip —
+/// against the new shapes.
+/// </summary>
 public class ServiceRequestTests
 {
     [Fact]
@@ -12,39 +18,30 @@ public class ServiceRequestTests
         Assert.Null(request.ToolCallId);
         Assert.Null(request.RequestingService);
         Assert.Null(request.ConfirmationId);
-        Assert.Null(request.TeamId);
-        Assert.Null(request.ChannelId);
-        Assert.Null(request.ChatId);
-        Assert.Null(request.MessageText);
-        Assert.Null(request.FileContent);
-        Assert.Null(request.FileName);
-        Assert.Null(request.FileType);
-        Assert.Null(request.DriveItemId);
     }
 
     [Fact]
-    public void ServiceRequest_ShouldSetMessageProperties()
+    public void SendTeamsMessageArgs_ShouldSetMessageProperties()
     {
-        var request = new ServiceRequest
+        var request = new ServiceRequest { Method = "send_teams_message" };
+        var args = new SendTeamsMessageArgs
         {
-            Method = "send_teams_message",
             TeamId = "team-123",
             ChannelId = "channel-456",
             MessageText = "Hello Teams!"
         };
 
         Assert.Equal("send_teams_message", request.Method);
-        Assert.Equal("team-123", request.TeamId);
-        Assert.Equal("channel-456", request.ChannelId);
-        Assert.Equal("Hello Teams!", request.MessageText);
+        Assert.Equal("team-123", args.TeamId);
+        Assert.Equal("channel-456", args.ChannelId);
+        Assert.Equal("Hello Teams!", args.MessageText);
     }
 
     [Fact]
-    public void ServiceRequest_ShouldSetFileProperties()
+    public void SendTeamsFileArgs_ShouldSetFileProperties()
     {
-        var request = new ServiceRequest
+        var args = new SendTeamsFileArgs
         {
-            Method = "send_teams_file",
             TeamId = "team-123",
             ChannelId = "channel-456",
             FileContent = "SGVsbG8gV29ybGQ=",
@@ -52,23 +49,25 @@ public class ServiceRequestTests
             FileType = "text/plain"
         };
 
-        Assert.Equal("send_teams_file", request.Method);
-        Assert.Equal("SGVsbG8gV29ybGQ=", request.FileContent);
-        Assert.Equal("test.txt", request.FileName);
-        Assert.Equal("text/plain", request.FileType);
+        Assert.Equal("team-123", args.TeamId);
+        Assert.Equal("channel-456", args.ChannelId);
+        Assert.Equal("SGVsbG8gV29ybGQ=", args.FileContent);
+        Assert.Equal("test.txt", args.FileName);
+        Assert.Equal("text/plain", args.FileType);
     }
 
     [Fact]
-    public void ServiceRequest_ShouldSetDownloadProperties()
+    public void ListTeamsChannelsArgs_ShouldSetTeamId()
     {
-        var request = new ServiceRequest
-        {
-            Method = "download_teams_file",
-            DriveItemId = "driveId/itemId"
-        };
+        var args = new ListTeamsChannelsArgs { TeamId = "team-123" };
+        Assert.Equal("team-123", args.TeamId);
+    }
 
-        Assert.Equal("download_teams_file", request.Method);
-        Assert.Equal("driveId/itemId", request.DriveItemId);
+    [Fact]
+    public void DownloadTeamsFileArgs_ShouldSetDownloadProperties()
+    {
+        var args = new DownloadTeamsFileArgs { DriveItemId = "driveId/itemId" };
+        Assert.Equal("driveId/itemId", args.DriveItemId);
     }
 
     [Fact]

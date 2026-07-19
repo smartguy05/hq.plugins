@@ -9,11 +9,13 @@ namespace HQ.Plugins.Tests.Zendesk;
 
 public class ZendeskTests
 {
+    // Tool methods are now (ServiceConfig config, TArgs args) with a [Parameters(typeof(TArgs))]
+    // attribute driving the generated schema — mirrors the migrated-plugin convention.
     private static IEnumerable<MethodInfo> ToolMethods() =>
         typeof(ZendeskService).GetMethods(BindingFlags.Public | BindingFlags.Instance)
             .Where(m => m.GetParameters().Length == 2 &&
                         typeof(IPluginConfig).IsAssignableFrom(m.GetParameters()[0].ParameterType) &&
-                        typeof(IPluginServiceRequest).IsAssignableFrom(m.GetParameters()[1].ParameterType));
+                        m.GetCustomAttribute<HQ.Models.Helpers.ParametersAttribute>() != null);
 
     [Fact]
     public void AllToolMethods_HaveCompleteAnnotations()
@@ -25,8 +27,9 @@ public class ZendeskTests
             Assert.False(string.IsNullOrWhiteSpace(m.GetCustomAttribute<DisplayAttribute>()?.Name), $"{m.Name} missing Display.Name");
             Assert.False(string.IsNullOrWhiteSpace(m.GetCustomAttribute<DescriptionAttribute>()?.Description), $"{m.Name} missing Description");
             var p = m.GetCustomAttribute<HQ.Models.Helpers.ParametersAttribute>();
-            Assert.False(string.IsNullOrWhiteSpace(p?.FunctionParameters), $"{m.Name} missing Parameters");
-            Assert.NotNull(JsonDocument.Parse(p!.FunctionParameters));
+            Assert.NotNull(p?.ArgsType);
+            // The args type must yield a valid OpenAI parameter schema.
+            Assert.NotNull(JsonDocument.Parse(HQ.Models.Helpers.ToolSchemaGenerator.Generate(p!.ArgsType)));
         }
     }
 

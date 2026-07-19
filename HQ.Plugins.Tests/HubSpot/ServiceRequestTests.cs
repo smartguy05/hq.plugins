@@ -2,33 +2,49 @@ using HQ.Plugins.HubSpot.Models;
 
 namespace HQ.Plugins.Tests.HubSpot;
 
+/// <summary>
+/// Validates the per-tool argument records (see <c>ToolArgs.cs</c>) that replaced the old
+/// property-bag <c>ServiceRequest</c> under the HQ.Models 2.7.0 typed-args migration. The
+/// framework <see cref="ServiceRequest"/> now carries only orchestrator routing fields, so the
+/// contact/deal/company/note fields these tests assert live on their dedicated args types.
+/// </summary>
 public class ServiceRequestTests
 {
     [Fact]
-    public void ServiceRequest_ShouldInitializeWithNullValues()
+    public void ServiceRequest_ShouldInitializeRoutingFieldsWithNullValues()
     {
         var request = new ServiceRequest();
         Assert.Null(request.Method);
-        Assert.Null(request.ContactId);
-        Assert.Null(request.Email);
-        Assert.Null(request.DealId);
-        Assert.Null(request.CompanyId);
-        Assert.Null(request.Query);
+        Assert.Null(request.ToolCallId);
+        Assert.Null(request.RequestingService);
+        Assert.Null(request.ConfirmationId);
     }
 
     [Fact]
-    public void ServiceRequest_MaxResults_DefaultsTo10()
+    public void ArgsRecords_ShouldInitializeWithNullValues()
     {
-        var request = new ServiceRequest();
-        Assert.Equal(10, request.MaxResults);
+        // Formerly asserted the property-bag defaults; the same fields now default to null on their
+        // dedicated args records.
+        Assert.Null(new UpdateContactArgs().ContactId);
+        Assert.Null(new CreateContactArgs().Email);
+        Assert.Null(new UpdateDealArgs().DealId);
+        Assert.Null(new SearchContactsArgs().Query);
     }
 
     [Fact]
-    public void ServiceRequest_ShouldSetContactProperties()
+    public void SearchContactsArgs_MaxResults_DefaultsToNull()
     {
-        var request = new ServiceRequest
+        // MaxResults is now nullable; the default (10) / cap (100) is applied in the service via
+        // `request.MaxResults ?? 10`, not on the args record.
+        var request = new SearchContactsArgs();
+        Assert.Null(request.MaxResults);
+    }
+
+    [Fact]
+    public void CreateContactArgs_ShouldSetContactProperties()
+    {
+        var request = new CreateContactArgs
         {
-            Method = "create_contact",
             Email = "test@example.com",
             FirstName = "John",
             LastName = "Doe",
@@ -39,7 +55,6 @@ public class ServiceRequestTests
             LifecycleStage = "lead"
         };
 
-        Assert.Equal("create_contact", request.Method);
         Assert.Equal("test@example.com", request.Email);
         Assert.Equal("John", request.FirstName);
         Assert.Equal("Doe", request.LastName);
@@ -51,9 +66,9 @@ public class ServiceRequestTests
     }
 
     [Fact]
-    public void ServiceRequest_ShouldSetDealProperties()
+    public void UpdateDealArgs_ShouldSetDealProperties()
     {
-        var request = new ServiceRequest
+        var request = new UpdateDealArgs
         {
             DealId = "123",
             DealName = "Big Contract",
@@ -72,33 +87,33 @@ public class ServiceRequestTests
     }
 
     [Fact]
-    public void ServiceRequest_ShouldSetCompanyProperties()
+    public void CreateCompanyArgs_ShouldSetCompanyProperties()
     {
-        var request = new ServiceRequest
+        // Note: the old property-bag had a `CompanyId` field; there is no update_company tool in the
+        // migrated surface, so CompanyId no longer exists on any HubSpot args record.
+        var request = new CreateCompanyArgs
         {
-            CompanyId = "456",
             CompanyName = "Acme Corp",
             Domain = "acme.com",
             Industry = "Technology"
         };
 
-        Assert.Equal("456", request.CompanyId);
         Assert.Equal("Acme Corp", request.CompanyName);
         Assert.Equal("acme.com", request.Domain);
         Assert.Equal("Technology", request.Industry);
     }
 
     [Fact]
-    public void ServiceRequest_Amount_ShouldAcceptNull()
+    public void CreateDealArgs_Amount_ShouldAcceptNull()
     {
-        var request = new ServiceRequest { Amount = null };
+        var request = new CreateDealArgs { DealName = "d", Amount = null };
         Assert.Null(request.Amount);
     }
 
     [Fact]
-    public void ServiceRequest_ShouldSetNoteProperties()
+    public void AddNoteArgs_ShouldSetNoteProperties()
     {
-        var request = new ServiceRequest
+        var request = new AddNoteArgs
         {
             Notes = "Had a great meeting",
             ObjectType = "contacts",

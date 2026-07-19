@@ -19,20 +19,55 @@ public class TeamsGraphClient
         _graphClient = new GraphServiceClient(credential, new[] { "https://graph.microsoft.com/.default" });
     }
 
+    /// <summary>
+    /// Test seam — constructs the client without a live Graph connection. Subclasses override the
+    /// <c>Fetch*</c> methods to supply canned entities so the projection/wrapping logic can be
+    /// exercised without hitting Microsoft Graph. Mirrors <c>WebReaderCommand.SetRenderer</c>.
+    /// </summary>
+    protected TeamsGraphClient(LogDelegate logger)
+    {
+        _logger = logger;
+    }
+
+    /// <summary>
+    /// SAFE-02: wraps author-controlled display text (team/channel names, uploaded file names) in an
+    /// <see cref="HQ.Models.Safety.Untrusted{T}"/> envelope so the host can screen it for prompt
+    /// injection before it reaches the LLM. IDs/timestamps/statuses are internal and stay raw.
+    /// </summary>
+    private static object AsUntrusted(string content, string provenance, string source) =>
+        string.IsNullOrEmpty(content) ? content : new HQ.Models.Safety.Untrusted<string>(content, provenance, source);
+
+    /// <summary>Fetch seam for <see cref="ListTeams"/> — overridable so tests can bypass Graph.</summary>
+    protected virtual async Task<IList<Team>> FetchTeamsAsync()
+    {
+        var teams = await _graphClient.Teams.GetAsync(requestConfig =>
+        {
+            requestConfig.QueryParameters.Select = new[] { "id", "displayName", "description" };
+        });
+        return teams?.Value;
+    }
+
+    /// <summary>Fetch seam for <see cref="ListChannels"/> — overridable so tests can bypass Graph.</summary>
+    protected virtual async Task<IList<Channel>> FetchChannelsAsync(string teamId)
+    {
+        var channels = await _graphClient.Teams[teamId].Channels.GetAsync(requestConfig =>
+        {
+            requestConfig.QueryParameters.Select = new[] { "id", "displayName", "membershipType" };
+        });
+        return channels?.Value;
+    }
+
     public async Task<object> ListTeams()
     {
         try
         {
-            var teams = await _graphClient.Teams.GetAsync(requestConfig =>
-            {
-                requestConfig.QueryParameters.Select = new[] { "id", "displayName", "description" };
-            });
+            var teams = await FetchTeamsAsync();
 
-            var result = teams?.Value?.Select(t => new
+            var result = teams?.Select(t => new
             {
                 Id = t.Id,
-                DisplayName = t.DisplayName,
-                Description = t.Description
+                DisplayName = AsUntrusted(t.DisplayName, "teams-team-name", t.Id),
+                Description = AsUntrusted(t.Description, "teams-team-description", t.Id)
             }).ToList();
 
             return new { Success = true, Teams = result ?? [] };
@@ -48,15 +83,12 @@ public class TeamsGraphClient
     {
         try
         {
-            var channels = await _graphClient.Teams[teamId].Channels.GetAsync(requestConfig =>
-            {
-                requestConfig.QueryParameters.Select = new[] { "id", "displayName", "membershipType" };
-            });
+            var channels = await FetchChannelsAsync(teamId);
 
-            var result = channels?.Value?.Select(c => new
+            var result = channels?.Select(c => new
             {
                 Id = c.Id,
-                DisplayName = c.DisplayName,
+                DisplayName = AsUntrusted(c.DisplayName, "teams-channel-name", c.Id),
                 MembershipType = c.MembershipType?.ToString()
             }).ToList();
 
@@ -166,7 +198,9 @@ public class TeamsGraphClient
             {
                 Success = true,
                 DriveItemId = driveItemId,
-                FileName = item?.Name,
+                // Uploader-chosen file name is author-controlled — wrap it (SAFE-02). The base64
+                // Content is binary and left raw; the host decodes it before any LLM sees text.
+                FileName = AsUntrusted(item?.Name, "teams-file-name", driveItemId),
                 MimeType = item?.File?.MimeType,
                 Content = base64
             };

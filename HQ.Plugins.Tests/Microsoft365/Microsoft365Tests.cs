@@ -13,9 +13,11 @@ public class Microsoft365Tests
     private static IEnumerable<MethodInfo> GetToolMethods()
     {
         return typeof(Microsoft365Service).GetMethods(BindingFlags.Public | BindingFlags.Instance)
-            .Where(m => m.GetParameters().Length == 2 &&
+            .Where(m => typeof(Task).IsAssignableFrom(m.ReturnType) &&
+                        m.GetParameters().Length == 2 &&
                         typeof(IPluginConfig).IsAssignableFrom(m.GetParameters()[0].ParameterType) &&
-                        typeof(IPluginServiceRequest).IsAssignableFrom(m.GetParameters()[1].ParameterType));
+                        !m.GetParameters()[1].ParameterType.IsValueType &&
+                        !typeof(IPluginConfig).IsAssignableFrom(m.GetParameters()[1].ParameterType));
     }
 
     [Fact]
@@ -32,8 +34,10 @@ public class Microsoft365Tests
 
             Assert.False(string.IsNullOrWhiteSpace(display?.Name), $"{method.Name} missing Display.Name");
             Assert.False(string.IsNullOrWhiteSpace(desc?.Description), $"{method.Name} missing Description");
-            Assert.False(string.IsNullOrWhiteSpace(param?.FunctionParameters), $"{method.Name} missing Parameters");
-            Assert.NotNull(JsonDocument.Parse(param!.FunctionParameters));
+            Assert.NotNull(param?.ArgsType);
+            var schema = HQ.Models.Helpers.ToolSchemaGenerator.Generate(param!.ArgsType);
+            Assert.False(string.IsNullOrWhiteSpace(schema), $"{method.Name} missing Parameters");
+            Assert.NotNull(JsonDocument.Parse(schema));
         }
     }
 

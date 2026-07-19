@@ -29,7 +29,7 @@ public class HeadlessBrowserServiceTests
     [Fact]
     public async Task ExecuteJavascript_WhenScriptThrowsPlaywrightException_ReturnsErrorResult()
     {
-        var request = new ServiceRequest { Script = "throw new Error('test error')" };
+        var request = new ExecuteJavascriptArgs { Script = "throw new Error('test error')" };
 
         _mockClient.Setup(c => c.ExecuteAsync(It.IsAny<Func<IPage, Task<object>>>()))
             .ThrowsAsync(new PlaywrightException("Evaluation failed: Error: test error"));
@@ -44,7 +44,7 @@ public class HeadlessBrowserServiceTests
     [Fact]
     public async Task ExecuteJavascript_WhenScriptSucceeds_ReturnsSuccessResult()
     {
-        var request = new ServiceRequest { Script = "return 42" };
+        var request = new ExecuteJavascriptArgs { Script = "return 42" };
         var expected = new { Success = true, Result = (object)42 };
 
         _mockClient.Setup(c => c.ExecuteAsync(It.IsAny<Func<IPage, Task<object>>>()))
@@ -59,7 +59,7 @@ public class HeadlessBrowserServiceTests
     [Fact]
     public async Task ExecuteJavascript_WhenScriptIsEmpty_ThrowsArgumentException()
     {
-        var request = new ServiceRequest { Script = "" };
+        var request = new ExecuteJavascriptArgs { Script = "" };
 
         await Assert.ThrowsAsync<ArgumentException>(() => _service.ExecuteJavascript(_config, request));
     }
@@ -67,7 +67,7 @@ public class HeadlessBrowserServiceTests
     [Fact]
     public async Task GetPageContent_WhenEvaluateThrowsPlaywrightException_ReturnsErrorResult()
     {
-        var request = new ServiceRequest { ContentType = "text" };
+        var request = new GetPageContentArgs { ContentType = "text" };
 
         _mockClient.Setup(c => c.ExecuteAsync(It.IsAny<Func<IPage, Task<object>>>()))
             .ThrowsAsync(new PlaywrightException("Page crashed"));
@@ -82,7 +82,7 @@ public class HeadlessBrowserServiceTests
     [Fact]
     public async Task GetInteractiveElements_WhenEvaluateThrowsPlaywrightException_ReturnsErrorResult()
     {
-        var request = new ServiceRequest { ElementType = "all" };
+        var request = new GetInteractiveElementsArgs { ElementType = "all" };
 
         _mockClient.Setup(c => c.ExecuteAsync(It.IsAny<Func<IPage, Task<object>>>()))
             .ThrowsAsync(new PlaywrightException("Execution context was destroyed"));
@@ -97,7 +97,7 @@ public class HeadlessBrowserServiceTests
     [Fact]
     public async Task SubmitForm_WhenEvaluateThrowsPlaywrightException_ReturnsErrorResult()
     {
-        var request = new ServiceRequest { Selector = "#myform" };
+        var request = new SubmitFormArgs { Selector = "#myform" };
 
         // SubmitForm now returns ValueTuple via WithDiffIfEnabled
         _mockClient.Setup(c => c.ExecuteAsync(It.IsAny<Func<IPage, Task<(bool, string, string, string)>>>()))
@@ -113,7 +113,7 @@ public class HeadlessBrowserServiceTests
     [Fact]
     public async Task NavigateToUrl_WhenMissingBrowsers_ReturnsInstallMessage()
     {
-        var request = new ServiceRequest { Url = "https://example.com" };
+        var request = new NavigateToUrlArgs { Url = "https://example.com" };
 
         _mockClient.Setup(c => c.ExecuteAsync(It.IsAny<Func<IPage, Task<object>>>()))
             .ThrowsAsync(new PlaywrightException("Executable doesn't exist at /path/chromium"));
@@ -128,7 +128,7 @@ public class HeadlessBrowserServiceTests
     [Fact]
     public async Task NavigateToUrl_WhenPageThrowsPlaywrightException_ReturnsErrorResult()
     {
-        var request = new ServiceRequest { Url = "https://example.com" };
+        var request = new NavigateToUrlArgs { Url = "https://example.com" };
 
         _mockClient.Setup(c => c.ExecuteAsync(It.IsAny<Func<IPage, Task<object>>>()))
             .ThrowsAsync(new PlaywrightException("net::ERR_NAME_NOT_RESOLVED"));

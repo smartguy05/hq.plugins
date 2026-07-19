@@ -61,6 +61,19 @@ public class WordClient
         using var ms = new MemoryStream();
         await stream.CopyToAsync(ms);
         var text = DocxHelper.ExtractText(ms.ToArray());
-        return new { Success = true, ItemId = itemId, FileName = meta?.Name, Text = text };
+        return BuildReadResult(itemId, meta?.Name, text);
     }
+
+    /// <summary>
+    /// Builds the Word read result, wrapping the document body as
+    /// <see cref="HQ.Models.Safety.Untrusted{T}"/> (source = drive item id). Public for unit testing.
+    /// </summary>
+    public static object BuildReadResult(string itemId, string fileName, string text) =>
+        new
+        {
+            Success = true,
+            ItemId = itemId,
+            FileName = fileName,
+            Text = M365Content.AsUntrusted(text, "m365-doc-content", itemId)
+        };
 }
