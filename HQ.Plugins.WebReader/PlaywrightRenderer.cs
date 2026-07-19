@@ -75,10 +75,7 @@ public class PlaywrightRenderer : IPageRenderer, IAsyncDisposable
         if (_browser is not null) return;
 
         _playwright = await Playwright.CreateAsync();
-        _browser = await _playwright.Chromium.LaunchAsync(new BrowserTypeLaunchOptions
-        {
-            Headless = _headless
-        });
+        _browser = await _playwright.Chromium.LaunchAsync(ChromiumLaunchOptions.Build(_headless));
     }
 
     public async ValueTask DisposeAsync()

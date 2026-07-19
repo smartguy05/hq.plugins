@@ -35,10 +35,7 @@ public class BrowserClient : IBrowserClient
 
         _playwright = await Playwright.CreateAsync();
 
-        var launchOptions = new BrowserTypeLaunchOptions
-        {
-            Headless = _headless
-        };
+        var launchOptions = ChromiumLaunchOptions.Build(_headless);
 
         _browser = await _playwright.Chromium.LaunchAsync(launchOptions);
 
