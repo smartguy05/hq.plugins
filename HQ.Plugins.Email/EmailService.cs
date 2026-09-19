@@ -364,6 +364,19 @@ public class EmailService
         return new Untrusted<string>(content, provenance, normalized ?? "unknown");
     }
 
+    // WP6B-14: attachment filenames are sender-controlled the same way the subject/body are — a
+    // mail client lets the sender name their attachment anything, including injected text — so
+    // wrap each one individually the same way MarkProvenanceAsync wraps the body/subject.
+    private async Task<IEnumerable<object>> MarkAttachmentNamesAsync(
+        IEnumerable<string> fileNames, string senderAddress, ServiceConfig config)
+    {
+        if (fileNames == null) return null;
+        var wrapped = new List<object>();
+        foreach (var name in fileNames)
+            wrapped.Add(await MarkProvenanceAsync(name, senderAddress, config, "email-attachment-name"));
+        return wrapped;
+    }
+
     private static bool IsInSeed(string normalized, ServiceConfig config)
     {
         if (string.IsNullOrEmpty(normalized) || config.TrustedSenderSeed == null) return false;
@@ -491,6 +504,10 @@ public class EmailService
             {
                 var body = await MarkProvenanceAsync(local.BodyText, local.FromAddress, config, "email-body");
                 var subject = await MarkProvenanceAsync(local.Subject, local.FromAddress, config, "email-subject");
+                // WP6B-14: the sender display name and attachment filenames are attacker-controlled
+                // (a mail client lets the sender set both) just like the subject/body — wrap them too.
+                var fromName = await MarkProvenanceAsync(local.FromName ?? local.FromAddress, local.FromAddress, config, "email-sender-name");
+                var attachmentNames = await MarkProvenanceAsync(local.AttachmentNames, local.FromAddress, config, "email-attachment-name");
                 return new
                 {
                     Success = true,
@@ -499,12 +516,12 @@ public class EmailService
                     {
                         local.MessageId,
                         Subject = subject,
-                        From = local.FromName ?? local.FromAddress,
+                        From = fromName,
                         local.ToAddress,
                         local.DateSent,
                         Body = body,
                         local.HasAttachments,
-                        local.AttachmentNames,
+                        AttachmentNames = attachmentNames,
                         local.IsRead,
                         local.IsFlagged,
                         local.Folder
@@ -528,6 +545,8 @@ public class EmailService
             var senderAddr = message.From?.Mailboxes.FirstOrDefault()?.Address ?? message.Sender?.Address;
             var wrappedBody = await MarkProvenanceAsync(mapped.Body, senderAddr, config, "email-body");
             var wrappedSubject = await MarkProvenanceAsync(mapped.Subject, senderAddr, config, "email-subject");
+            var wrappedFrom = await MarkProvenanceAsync(mapped.From, senderAddr, config, "email-sender-name");
+            var wrappedAttachments = await MarkAttachmentNamesAsync(mapped.Attachments, senderAddr, config);
             return new
             {
                 Success = true,
@@ -536,7 +555,7 @@ public class EmailService
                 {
                     mapped.MessageId,
                     Subject = wrappedSubject,
-                    mapped.From,
+                    From = wrappedFrom,
                     mapped.To,
                     mapped.Sender,
                     mapped.ReplyTo,
@@ -545,7 +564,7 @@ public class EmailService
                     mapped.Priority,
                     Body = wrappedBody,
                     mapped.HasAttachments,
-                    mapped.Attachments
+                    Attachments = wrappedAttachments
                 }
             };
         }
@@ -610,7 +629,7 @@ public class EmailService
                     {
                         e.MessageId,
                         Subject = await MarkProvenanceAsync(e.Subject, e.FromAddress, config, "email-subject"),
-                        From = e.FromName ?? e.FromAddress,
+                        From = await MarkProvenanceAsync(e.FromName ?? e.FromAddress, e.FromAddress, config, "email-sender-name"),
                         Date = e.DateSent,
                         Preview = preview,
                         e.IsRead,
@@ -678,14 +697,16 @@ public class EmailService
         var body = GetEmailBody(msg);
         var senderAddr = msg.From?.Mailboxes.FirstOrDefault()?.Address ?? msg.Sender?.Address;
         var preview = await MarkProvenanceAsync(GetPreview(body), senderAddr, config, "email-body");
+        var fromName = string.Join(", ", msg.From?.Select(s => s.Name) ?? new List<string>());
+        var attachmentNames = msg.Attachments?.Select(a => a is MimePart mp ? mp.FileName : a.ContentType?.Name).Where(n => n != null).ToList();
         return new
         {
             MessageId = msg.MessageId,
             Subject = await MarkProvenanceAsync(msg.Subject, senderAddr, config, "email-subject"),
-            From = string.Join(", ", msg.From?.Select(s => s.Name) ?? new List<string>()),
+            From = await MarkProvenanceAsync(fromName, senderAddr, config, "email-sender-name"),
             Date = msg.Date,
             Preview = preview,
-            Attachments = msg.Attachments?.Select(a => a is MimePart mp ? mp.FileName : a.ContentType?.Name).Where(n => n != null).ToList()
+            Attachments = await MarkAttachmentNamesAsync(attachmentNames, senderAddr, config)
         };
     }
 
@@ -707,6 +728,7 @@ public class EmailService
                 return new { Success = false, Message = "Email not found" };
 
             var message = await found.Value.folder.GetMessageAsync(found.Value.uid);
+            var senderAddr = message.From?.Mailboxes.FirstOrDefault()?.Address ?? message.Sender?.Address;
             var attachments = new List<object>();
 
             foreach (var attachment in message.Attachments)
@@ -717,9 +739,12 @@ public class EmailService
                     await mimePart.Content.DecodeToAsync(stream);
                     var data = Convert.ToBase64String(stream.ToArray());
 
+                    // WP6B-14: the attachment filename is sender-controlled free text.
+                    var fileName = await MarkProvenanceAsync(mimePart.FileName, senderAddr, config, "email-attachment-name");
+
                     attachments.Add(new
                     {
-                        FileName = mimePart.FileName,
+                        FileName = fileName,
                         ContentType = mimePart.ContentType?.MimeType,
                         Size = stream.Length,
                         Data = data
@@ -765,7 +790,7 @@ public class EmailService
             {
                 MessageId = messageId,
                 Subject = await MarkProvenanceAsync(email?.Subject ?? subject, previewSender, config, "email-subject"),
-                From = email != null ? (email.FromName ?? email.FromAddress) : null,
+                From = email != null ? await MarkProvenanceAsync(email.FromName ?? email.FromAddress, previewSender, config, "email-sender-name") : null,
                 Date = email?.DateSent,
                 Preview = preview,
                 Similarity = 1.0f - distance,
@@ -805,7 +830,7 @@ public class EmailService
             {
                 e.MessageId,
                 Subject = await MarkProvenanceAsync(e.Subject, e.FromAddress, config, "email-subject"),
-                From = e.FromName ?? e.FromAddress,
+                From = await MarkProvenanceAsync(e.FromName ?? e.FromAddress, e.FromAddress, config, "email-sender-name"),
                 Date = e.DateSent,
                 Preview = preview,
                 e.IsRead,
@@ -1015,10 +1040,15 @@ public class EmailService
             }
             else if (string.IsNullOrWhiteSpace(request.ConfirmationId))
             {
+                // WP6B-13: the approver must see WHO the email is actually going to (and the
+                // subject/account) — not just the body — or a prompt-injected agent can keep an
+                // innocuous body and redirect `To` to an attacker address with nothing for a
+                // human to object to.
+                var recipient = !string.IsNullOrWhiteSpace(request.To) ? request.To : $"(draft {request.MessageId})";
                 var confirmation = new Confirmation
                 {
                     ConfirmationMessage = "Are you sure you want to send this email?",
-                    Content = request.Body,
+                    Content = $"To: {recipient}\nSubject: {request.Subject}\nAccount: {request.Account ?? "default"}\n\n{request.Body}",
                     Options = new Dictionary<string, bool>
                     {
                         { "Yes", true },
@@ -1103,12 +1133,16 @@ public class EmailService
             }
             else if (string.IsNullOrWhiteSpace(request.ConfirmationId))
             {
+                // WP6B-13: request.Body is [Injected] and never actually populated for this tool,
+                // so the old `Content = request.Body` confirmation was always blank — the approver
+                // had no way to tell WHICH email was about to be deleted. Show the identifying
+                // fields instead.
                 return await _notificationService.RequestConfirmation(
                     PluginName,
                     new Confirmation
                     {
                         ConfirmationMessage = "Are you sure you want to delete this email?",
-                        Content = request.Body,
+                        Content = $"MessageId: {request.MessageId}\nAccount: {request.Account ?? "default"}",
                         Options = new Dictionary<string, bool>
                         {
                             { "Yes", true },

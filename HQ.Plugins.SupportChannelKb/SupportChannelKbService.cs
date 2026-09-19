@@ -47,20 +47,25 @@ public class SupportChannelKbService
 
     public async Task<object> GetCollections()
     {
-        using var httpClient = new HttpClient();
+        using var httpClient = HttpHandler != null ? new HttpClient(HttpHandler, disposeHandler: false) : new HttpClient();
         httpClient.DefaultRequestHeaders.Accept.Add(
             new MediaTypeWithQualityHeaderValue("application/json"));
 
         var response = await httpClient.GetAsync($"{_config.SupportChannelKbUrl}/collections");
         response.EnsureSuccessStatusCode();
 
+        // WP6B-12: the upstream response carries a per-collection api_key that nothing in this
+        // plugin reads (auth uses _config.DefaultChannelApiKey) — deserializing straight into the
+        // Collection DTO and returning it verbatim would leak that key into the LLM conversation
+        // and the persisted trace/debug log. Collection has no api_key-shaped property, so this
+        // projection is redaction-by-construction rather than an allow-list that can drift.
         var collections = await response.Content.ReadFromJsonAsync<Collection[]>();
         return collections;
     }
 
     public async Task<object> AddCollection(AddSupportChannelCollectionArgs request)
     {
-        using var httpClient = new HttpClient();
+        using var httpClient = HttpHandler != null ? new HttpClient(HttpHandler, disposeHandler: false) : new HttpClient();
         httpClient.DefaultRequestHeaders.Accept.Add(
             new MediaTypeWithQualityHeaderValue("application/json"));
 
@@ -77,12 +82,17 @@ public class SupportChannelKbService
 
         response.EnsureSuccessStatusCode();
 
-        return await response.Content.ReadFromJsonAsync<object>();
+        // WP6B-14: unconstrained third-party JSON from the KB service — wrap the whole response
+        // wholesale (same treatment as get_support_channel_collections / search results) rather
+        // than returning it verbatim, since the upstream service could reflect back fields we
+        // don't control (WP6B-12 showed it already does this for /collections).
+        var raw = await response.Content.ReadAsStringAsync();
+        return AsUntrusted(raw, "supportkb-api-response", _config.SupportChannelKbUrl ?? "unknown");
     }
 
     public async Task<object> AddTextToCollection(SaveSupportChannelInformationArgs request)
     {
-        using var httpClient = new HttpClient();
+        using var httpClient = HttpHandler != null ? new HttpClient(HttpHandler, disposeHandler: false) : new HttpClient();
         httpClient.DefaultRequestHeaders.Accept.Add(
             new MediaTypeWithQualityHeaderValue("application/json"));
 
@@ -100,12 +110,13 @@ public class SupportChannelKbService
 
         response.EnsureSuccessStatusCode();
 
-        return await response.Content.ReadFromJsonAsync<object>();
+        var raw = await response.Content.ReadAsStringAsync();
+        return AsUntrusted(raw, "supportkb-api-response", _config.SupportChannelKbUrl ?? "unknown");
     }
 
     public async Task<object> HealthCheck()
     {
-        using var httpClient = new HttpClient();
+        using var httpClient = HttpHandler != null ? new HttpClient(HttpHandler, disposeHandler: false) : new HttpClient();
         httpClient.DefaultRequestHeaders.Accept.Add(
             new MediaTypeWithQualityHeaderValue("application/json"));
 
@@ -133,7 +144,22 @@ public class SupportChannelKbService
     [Parameters(typeof(EmptyArgs))]
     public async Task<object> GetSupportChannelCollections(ServiceConfig config, EmptyArgs request)
     {
-        return await GetCollections();
+        var collections = await GetCollections();
+
+        // WP6B-14: name/description are set via add_support_channel_collection and can carry
+        // attacker-authored text the same way KB search results can — wrap them like
+        // SearchSupportChannels already wraps its results. Created is a server-set timestamp.
+        if (collections is Collection[] typed)
+        {
+            return typed.Select(c => new
+            {
+                Name = AsUntrusted(c.Name, "supportkb-collection-name", "unknown"),
+                Description = AsUntrusted(c.Description, "supportkb-collection-description", "unknown"),
+                c.Created
+            }).ToArray();
+        }
+
+        return collections;
     }
 
     [Display(Name = "add_support_channel_collection")]

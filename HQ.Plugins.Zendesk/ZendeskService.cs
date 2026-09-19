@@ -55,6 +55,37 @@ public class ZendeskService
         return result;
     }
 
+    // Rebuilds a user resource with its customer-editable free-text fields (name/notes/details)
+    // wrapped as Untrusted, keyed by the user id. Structural fields (id, email, role, tags) are
+    // cloned through raw.
+    private static object WrapUser(JsonElement user)
+    {
+        if (user.ValueKind != JsonValueKind.Object)
+            return user.Clone();
+
+        var source = user.TryGetProperty("id", out var id) && id.ValueKind is not JsonValueKind.Null
+            ? $"user:{id}"
+            : "unknown";
+
+        var result = new Dictionary<string, object>();
+        foreach (var prop in user.EnumerateObject())
+        {
+            result[prop.Name] = prop.Name switch
+            {
+                "name" => AsUntrusted(Str(prop.Value), "zendesk-user-name", source),
+                "notes" => AsUntrusted(Str(prop.Value), "zendesk-user-notes", source),
+                "details" => AsUntrusted(Str(prop.Value), "zendesk-user-details", source),
+                _ => prop.Value.Clone()
+            };
+        }
+        return result;
+    }
+
+    private static object WrapUserList(JsonElement users) =>
+        users.ValueKind == JsonValueKind.Array
+            ? users.EnumerateArray().Select(WrapUser).ToList()
+            : users.Clone();
+
     private static string[] SplitTags(string tags) =>
         string.IsNullOrWhiteSpace(tags) ? null : tags.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
 
@@ -102,7 +133,7 @@ public class ZendeskService
             if (SplitTags(r.Tags) is { } tags) ticket["tags"] = tags;
 
             var doc = await client.PostAsync("/tickets.json", new { ticket });
-            return new { Success = true, Ticket = Prop(doc, "ticket") };
+            return new { Success = true, Ticket = WrapTicket(doc) };
         });
 
     [Display(Name = ZendeskMethods.UpdateTicket)]
@@ -156,7 +187,8 @@ public class ZendeskService
         {
             using var client = Client(config);
             var doc = await client.GetAsync($"/users/{r.UserId}.json");
-            return new { Success = true, User = Prop(doc, "user") };
+            var user = doc.ValueKind == JsonValueKind.Object && doc.TryGetProperty("user", out var u) ? u : doc;
+            return new { Success = true, User = WrapUser(user) };
         });
 
     [Display(Name = ZendeskMethods.SearchUsers)]
@@ -167,7 +199,8 @@ public class ZendeskService
         {
             using var client = Client(config);
             var doc = await client.GetAsync($"/users/search.json?query={Uri.EscapeDataString(r.Query)}");
-            return new { Success = true, Users = Prop(doc, "users") };
+            var users = doc.ValueKind == JsonValueKind.Object && doc.TryGetProperty("users", out var us) ? us : doc;
+            return new { Success = true, Users = WrapUserList(users) };
         });
 
     [Display(Name = ZendeskMethods.ListMacros)]

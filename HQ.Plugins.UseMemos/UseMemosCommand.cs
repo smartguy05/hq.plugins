@@ -150,7 +150,8 @@ public class UseMemosCommand: CommandBase<ServiceRequest,ServiceConfig>
         {
             var response = await httpClient.PostAsync(new Uri(url), content);
             response.EnsureSuccessStatusCode();
-            return await response.Content.ReadAsStringAsync();
+            var payload = await response.Content.ReadAsStringAsync();
+            return AsUntrusted(payload, "usememos-content", HostOf(config.MemoAccount.MemosUrl));
         }
         catch (Exception e)
         {
@@ -201,7 +202,8 @@ public class UseMemosCommand: CommandBase<ServiceRequest,ServiceConfig>
             };
             var response = await httpClient.SendAsync(request);
             response.EnsureSuccessStatusCode();
-            return await response.Content.ReadAsStringAsync();
+            var payload = await response.Content.ReadAsStringAsync();
+            return AsUntrusted(payload, "usememos-content", HostOf(config.MemoAccount.MemosUrl));
         }
         catch (Exception e)
         {

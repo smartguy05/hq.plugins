@@ -159,6 +159,75 @@ public class EmailServiceProvenanceTests : IDisposable
         Assert.Equal("hi", body.GetString());
     }
 
+    // WP6B-14: MarkProvenanceAsync wrapped Subject/Body, but the sender's display name (From) was
+    // returned raw everywhere — an attacker who cannot get injected text past a Subject/Body
+    // scanner can still put it in their mail client's "From" display name.
+    [Fact]
+    public async Task GetEmail_UntrustedSender_WrapsFromAsUntrusted()
+    {
+        await SeedEmailAsync("f1@x.com", "attacker@bad.com", "hello");
+
+        var result = await _service.GetEmail(_config, new GetEmailArgs
+        {
+            MessageId = "f1@x.com", Account = "default"
+        });
+
+        var from = ToJson(result).GetProperty("Result").GetProperty("From");
+        Assert.True(from.GetProperty("__untrusted").GetBoolean());
+        Assert.Equal("email-sender-name", from.GetProperty("provenance").GetString());
+        Assert.Equal("attacker@bad.com", from.GetProperty("source").GetString());
+    }
+
+    [Fact]
+    public async Task GetEmail_TrustedSender_ReturnsRawFrom()
+    {
+        await SeedEmailAsync("f2@x.com", "boss@co.com", "hello boss");
+        _config.TrustedSenderSeed = new[] { "boss@co.com" };
+
+        var result = await _service.GetEmail(_config, new GetEmailArgs
+        {
+            MessageId = "f2@x.com", Account = "default"
+        });
+
+        var from = ToJson(result).GetProperty("Result").GetProperty("From");
+        Assert.Equal(JsonValueKind.String, from.ValueKind);
+        Assert.Equal("boss@co.com", from.GetString());
+    }
+
+    [Fact]
+    public async Task GetEmailSummary_UntrustedSender_WrapsFromAsUntrusted()
+    {
+        await SeedEmailAsync("fs1@x.com", "attacker@bad.com", "hello");
+
+        var result = await _service.GetEmailSummary(_config, new GetEmailSummaryArgs
+        {
+            Account = "default", MaxReturnedEmails = 10
+        });
+
+        var first = ToJson(result).GetProperty("Result").EnumerateArray().First();
+        var from = first.GetProperty("From");
+        Assert.True(from.GetProperty("__untrusted").GetBoolean());
+        Assert.Equal("email-sender-name", from.GetProperty("provenance").GetString());
+        Assert.Equal("attacker@bad.com", from.GetProperty("source").GetString());
+    }
+
+    [Fact]
+    public async Task SearchEmailsLocal_UntrustedSender_WrapsFromAsUntrusted()
+    {
+        await SeedEmailAsync("se1@x.com", "attacker@bad.com", "hello");
+
+        var result = await _service.SearchEmailsLocal(_config, new SearchEmailsLocalArgs
+        {
+            SearchText = "hello", MaxResults = 10
+        });
+
+        var first = ToJson(result).GetProperty("Result").EnumerateArray().First();
+        var from = first.GetProperty("From");
+        Assert.True(from.GetProperty("__untrusted").GetBoolean());
+        Assert.Equal("email-sender-name", from.GetProperty("provenance").GetString());
+        Assert.Equal("attacker@bad.com", from.GetProperty("source").GetString());
+    }
+
     [Fact]
     public async Task GetEmail_NullSender_WrapsAsUnknown()
     {

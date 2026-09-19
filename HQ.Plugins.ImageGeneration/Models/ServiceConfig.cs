@@ -8,6 +8,7 @@ public class ServiceConfig : IPluginConfig
     public string Name { get; set; }
     public string Description { get; set; }
 
+    [Sensitive]
     [Tooltip("Google Gemini API key for image generation")]
     public string ApiKey { get; set; }
 

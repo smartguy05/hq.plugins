@@ -1,5 +1,7 @@
 using System.Net;
 using System.Text.Json;
+using HQ.Models;
+using HQ.Models.Interfaces;
 using HQ.Plugins.Twilio;
 using HQ.Plugins.Twilio.Models;
 using Moq;
@@ -174,5 +176,114 @@ public class TwilioCommandTests
         var json = JsonSerializer.Serialize(result);
         using var doc = JsonDocument.Parse(json);
         Assert.False(doc.RootElement.GetProperty("Success").GetBoolean());
+    }
+
+    // ── WP6B-6: outbound-communication confirmation gate ────────────────
+
+    private static async Task<TwilioCommand> CreateCommandWithNotification(
+        Mock<HttpMessageHandler> handler, Mock<INotificationService> notification)
+    {
+        var command = CreateCommand(handler);
+        await command.Initialize("{}", (_, _, _) => Task.CompletedTask, notification.Object);
+        return command;
+    }
+
+    [Fact]
+    public async Task SendSms_RequestsConfirmation_WhenNoConfirmationIdSupplied()
+    {
+        var handler = CreateMockHandler("""{"sid":"SM123","status":"queued","error_code":null}""");
+        var notification = new Mock<INotificationService>();
+        notification
+            .Setup(n => n.RequestConfirmation(
+                It.IsAny<string>(), It.IsAny<Confirmation>(), It.IsAny<IPluginServiceRequest>()))
+            .ReturnsAsync(new { Success = true, AwaitingConfirmation = true });
+        var command = await CreateCommandWithNotification(handler, notification);
+        var config = CreateConfig(); // RequiresConfirmation defaults to true
+        var request = new SendSmsArgs { To = "+15559999999", Body = "phish payload" };
+
+        await command.SendSms(config, request);
+
+        notification.Verify(n => n.RequestConfirmation(
+            "Twilio",
+            It.IsAny<Confirmation>(),
+            It.IsAny<IPluginServiceRequest>()), Times.Once);
+        handler.Protected().Verify("SendAsync", Times.Never(),
+            ItExpr.IsAny<HttpRequestMessage>(), ItExpr.IsAny<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task SendSms_Executes_WhenConfirmationIdIsValid()
+    {
+        var handler = CreateMockHandler("""{"sid":"SM123","status":"queued","error_code":null}""");
+        var notification = new Mock<INotificationService>();
+        var confirmId = Guid.NewGuid();
+        Confirmation outConf = null;
+        notification.Setup(n => n.DoesConfirmationExist(confirmId, out outConf)).Returns(true);
+        var command = await CreateCommandWithNotification(handler, notification);
+        var config = CreateConfig();
+        var request = new SendSmsArgs { To = "+15559999999", Body = "Hello", ConfirmationId = confirmId.ToString() };
+
+        var result = await command.SendSms(config, request);
+
+        var json = JsonSerializer.Serialize(result);
+        using var doc = JsonDocument.Parse(json);
+        Assert.True(doc.RootElement.GetProperty("Success").GetBoolean());
+    }
+
+    [Fact]
+    public async Task SendWhatsApp_RequestsConfirmation_WhenNoConfirmationIdSupplied()
+    {
+        var handler = CreateMockHandler("""{"sid":"SM123","status":"queued","error_code":null}""");
+        var notification = new Mock<INotificationService>();
+        notification
+            .Setup(n => n.RequestConfirmation(
+                It.IsAny<string>(), It.IsAny<Confirmation>(), It.IsAny<IPluginServiceRequest>()))
+            .ReturnsAsync(new { Success = true, AwaitingConfirmation = true });
+        var command = await CreateCommandWithNotification(handler, notification);
+        var config = CreateConfig();
+        var request = new SendWhatsAppArgs { To = "+15559999999", Body = "phish payload" };
+
+        await command.SendWhatsApp(config, request);
+
+        notification.Verify(n => n.RequestConfirmation(
+            "Twilio", It.IsAny<Confirmation>(), It.IsAny<IPluginServiceRequest>()), Times.Once);
+    }
+
+    [Fact]
+    public async Task MakeCall_RequestsConfirmation_WhenNoConfirmationIdSupplied()
+    {
+        var handler = CreateMockHandler("""{"sid":"CA123","status":"queued","error_code":null}""");
+        var notification = new Mock<INotificationService>();
+        notification
+            .Setup(n => n.RequestConfirmation(
+                It.IsAny<string>(), It.IsAny<Confirmation>(), It.IsAny<IPluginServiceRequest>()))
+            .ReturnsAsync(new { Success = true, AwaitingConfirmation = true });
+        var command = await CreateCommandWithNotification(handler, notification);
+        var config = CreateConfig();
+        var request = new MakeCallArgs { To = "+15559999999", Twiml = "<Response><Say>hi</Say></Response>" };
+
+        await command.MakeCall(config, request);
+
+        notification.Verify(n => n.RequestConfirmation(
+            "Twilio", It.IsAny<Confirmation>(), It.IsAny<IPluginServiceRequest>()), Times.Once);
+    }
+
+    [Fact]
+    public async Task SendSms_SkipsConfirmation_WhenRequiresConfirmationFalse()
+    {
+        var handler = CreateMockHandler("""{"sid":"SM123","status":"queued","error_code":null}""");
+        var notification = new Mock<INotificationService>();
+        var command = await CreateCommandWithNotification(handler, notification);
+        var config = CreateConfig();
+        config.RequiresConfirmation = false;
+        var request = new SendSmsArgs { To = "+15559999999", Body = "Hello" };
+
+        var result = await command.SendSms(config, request);
+
+        notification.Verify(n => n.RequestConfirmation(
+            It.IsAny<string>(), It.IsAny<Confirmation>(), It.IsAny<IPluginServiceRequest>()), Times.Never);
+        var json = JsonSerializer.Serialize(result);
+        using var doc = JsonDocument.Parse(json);
+        Assert.True(doc.RootElement.GetProperty("Success").GetBoolean());
     }
 }

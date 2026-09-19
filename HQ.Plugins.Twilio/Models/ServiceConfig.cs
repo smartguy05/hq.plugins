@@ -11,6 +11,7 @@ public class ServiceConfig : IPluginConfig
     [Tooltip("Twilio Account SID")]
     public string AccountSid { get; set; }
 
+    [Sensitive]
     [Tooltip("Twilio Auth Token")]
     public string AuthToken { get; set; }
 
@@ -19,4 +20,7 @@ public class ServiceConfig : IPluginConfig
 
     [Tooltip("Twilio Verify Service SID for OTP verification (optional)")]
     public string VerifyServiceSid { get; set; }
+
+    [Tooltip("Require user confirmation before sending SMS/WhatsApp messages or placing calls. Default true.")]
+    public bool RequiresConfirmation { get; set; } = true;
 }

@@ -8,6 +8,7 @@ public class ServiceConfig: IPluginConfig
     public string Name { get; set; }
     public string Description { get; set; }
 
+    [Sensitive]
     [Tooltip("Long-lived access token from Home Assistant. Generate at /profile under Long-Lived Access Tokens.")]
     public string HomeAssistApiKey { get; set; }
 

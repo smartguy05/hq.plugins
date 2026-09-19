@@ -8,6 +8,7 @@ public record ServiceConfig : IPluginConfig
     public string Name { get; set; }
     public string Description { get; set; }
 
+    [Sensitive]
     [Tooltip("Anthropic API key passed as ANTHROPIC_API_KEY env var to the container.")]
     public string AnthropicApiKey { get; set; }
 
@@ -32,6 +33,7 @@ public record ServiceConfig : IPluginConfig
     [Tooltip("Default tool allowlist for Claude Code.")]
     public string AllowedTools { get; set; } = "Bash,Read,Edit,Write,Glob,Grep";
 
+    [Sensitive]
     [Tooltip("GitHub PAT for clone/push/PR operations.")]
     public string GitHubToken { get; set; }
 

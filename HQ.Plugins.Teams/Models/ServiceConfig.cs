@@ -14,12 +14,14 @@ public class ServiceConfig : IPluginConfig
     [Tooltip("Application (client) ID from the Azure AD App Registration")]
     public string ClientId { get; set; }
 
+    [Sensitive]
     [Tooltip("Client secret value from the Azure AD App Registration")]
     public string ClientSecret { get; set; }
 
     [Tooltip("Bot Framework App ID. Usually the same as ClientId.")]
     public string BotAppId { get; set; }
 
+    [Sensitive]
     [Tooltip("Bot Framework App Password. Usually the same as ClientSecret.")]
     public string BotAppPassword { get; set; }
 

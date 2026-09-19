@@ -11,6 +11,7 @@ public class ServiceConfig: IPluginConfig
     [Tooltip("Base URL of the web search API, e.g. https://api.search.brave.com/res/v1")]
     public string WebSearchUrl { get; set; }
 
+    [Sensitive]
     [Tooltip("API key for the web search service")]
     public string WebSearchApiKey { get; set; }
 }

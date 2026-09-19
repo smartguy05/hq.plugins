@@ -1,6 +1,7 @@
 using System.ComponentModel;
 using System.ComponentModel.DataAnnotations;
 using System.Text.Json;
+using HQ.Models;
 using HQ.Models.Enums;
 using HQ.Models.Extensions;
 using HQ.Models.Helpers;
@@ -37,6 +38,34 @@ public class TwilioCommand : CommandBase<ServiceRequest, ServiceConfig>
     private string ResolveFrom(ServiceConfig config, string from)
     {
         return !string.IsNullOrWhiteSpace(from) ? from : config.DefaultFromNumber;
+    }
+
+    // WP6B-6: send_sms/send_whatsapp/make_call are fully LLM-controlled (recipient, body, TwiML
+    // are ordinary tool arguments) and send on the org's verified Twilio identity, so route them
+    // through a human-in-the-loop confirmation gate the same way DocuSign/Stripe do — the message
+    // recipient/content is rendered in the confirmation so a human approver has something to
+    // reject an injected/redirected send with.
+    private async Task<object> Confirm(ServiceConfig config, IPluginServiceRequest request, string message, string content, Func<Task<object>> execute)
+    {
+        if (config.RequiresConfirmation && NotificationService != null)
+        {
+            if (string.IsNullOrWhiteSpace(request.ConfirmationId))
+            {
+                var confirmation = new Confirmation
+                {
+                    ConfirmationMessage = message,
+                    Content = content,
+                    Options = new Dictionary<string, bool> { { "Yes", true }, { "No", false } },
+                    Id = Guid.NewGuid()
+                };
+                return await NotificationService.RequestConfirmation(Name, confirmation, request);
+            }
+
+            if (!NotificationService.DoesConfirmationExist(Guid.Parse(request.ConfirmationId), out _))
+                return new { Success = false, Error = "Action was not confirmed." };
+        }
+
+        return await execute();
     }
 
     private static object ToResult(JsonDocument doc)
@@ -105,44 +134,48 @@ public class TwilioCommand : CommandBase<ServiceRequest, ServiceConfig>
     [Display(Name = "send_sms")]
     [Description("Sends an SMS or MMS message to a phone number.")]
     [Parameters(typeof(SendSmsArgs))]
-    public async Task<object> SendSms(ServiceConfig config, SendSmsArgs request)
-    {
-        using var client = CreateClient(config);
-        var from = ResolveFrom(config, request.From);
-        var doc = await client.SendSms(from, request.To, request.Body, request.MediaUrl);
-
-        if (IsErrorResponse(doc.RootElement, out var errorMessage))
+    [SupportsConfirmation]
+    public Task<object> SendSms(ServiceConfig config, SendSmsArgs request) =>
+        Confirm(config, request, "Send this SMS/MMS message?", $"To {request.To}: {request.Body}", async () =>
         {
-            await Log(LogLevel.Warning, $"SMS send failed: {errorMessage}");
-            return new { Success = false, Message = errorMessage };
-        }
+            using var client = CreateClient(config);
+            var from = ResolveFrom(config, request.From);
+            var doc = await client.SendSms(from, request.To, request.Body, request.MediaUrl);
 
-        await Log(LogLevel.Info, $"SMS sent to {request.To}");
-        var sid = doc.RootElement.TryGetProperty("sid", out var sidEl) ? sidEl.GetString() : null;
-        var status = doc.RootElement.TryGetProperty("status", out var statusEl) ? statusEl.GetString() : null;
-        return new { Success = true, MessageSid = sid, Status = status };
-    }
+            if (IsErrorResponse(doc.RootElement, out var errorMessage))
+            {
+                await Log(LogLevel.Warning, $"SMS send failed: {errorMessage}");
+                return new { Success = false, Message = errorMessage };
+            }
+
+            await Log(LogLevel.Info, $"SMS sent to {request.To}");
+            var sid = doc.RootElement.TryGetProperty("sid", out var sidEl) ? sidEl.GetString() : null;
+            var status = doc.RootElement.TryGetProperty("status", out var statusEl) ? statusEl.GetString() : null;
+            return new { Success = true, MessageSid = sid, Status = status };
+        });
 
     [Display(Name = "send_whatsapp")]
     [Description("Sends a WhatsApp message to a phone number via Twilio.")]
     [Parameters(typeof(SendWhatsAppArgs))]
-    public async Task<object> SendWhatsApp(ServiceConfig config, SendWhatsAppArgs request)
-    {
-        using var client = CreateClient(config);
-        var from = ResolveFrom(config, request.From);
-        var doc = await client.SendWhatsApp(from, request.To, request.Body, request.MediaUrl);
-
-        if (IsErrorResponse(doc.RootElement, out var errorMessage))
+    [SupportsConfirmation]
+    public Task<object> SendWhatsApp(ServiceConfig config, SendWhatsAppArgs request) =>
+        Confirm(config, request, "Send this WhatsApp message?", $"To {request.To}: {request.Body}", async () =>
         {
-            await Log(LogLevel.Warning, $"WhatsApp send failed: {errorMessage}");
-            return new { Success = false, Message = errorMessage };
-        }
+            using var client = CreateClient(config);
+            var from = ResolveFrom(config, request.From);
+            var doc = await client.SendWhatsApp(from, request.To, request.Body, request.MediaUrl);
 
-        await Log(LogLevel.Info, $"WhatsApp message sent to {request.To}");
-        var sid = doc.RootElement.TryGetProperty("sid", out var sidEl) ? sidEl.GetString() : null;
-        var status = doc.RootElement.TryGetProperty("status", out var statusEl) ? statusEl.GetString() : null;
-        return new { Success = true, MessageSid = sid, Status = status };
-    }
+            if (IsErrorResponse(doc.RootElement, out var errorMessage))
+            {
+                await Log(LogLevel.Warning, $"WhatsApp send failed: {errorMessage}");
+                return new { Success = false, Message = errorMessage };
+            }
+
+            await Log(LogLevel.Info, $"WhatsApp message sent to {request.To}");
+            var sid = doc.RootElement.TryGetProperty("sid", out var sidEl) ? sidEl.GetString() : null;
+            var status = doc.RootElement.TryGetProperty("status", out var statusEl) ? statusEl.GetString() : null;
+            return new { Success = true, MessageSid = sid, Status = status };
+        });
 
     [Display(Name = "get_message")]
     [Description("Gets details and delivery status of a specific SMS/MMS message by its SID.")]
@@ -170,23 +203,25 @@ public class TwilioCommand : CommandBase<ServiceRequest, ServiceConfig>
     [Display(Name = "make_call")]
     [Description("Initiates an outbound phone call. Use TwiML to control what happens on the call (e.g. <Say> for text-to-speech, <Play> for audio, <Gather> for input).")]
     [Parameters(typeof(MakeCallArgs))]
-    public async Task<object> MakeCall(ServiceConfig config, MakeCallArgs request)
-    {
-        using var client = CreateClient(config);
-        var from = ResolveFrom(config, request.From);
-        var doc = await client.MakeCall(from, request.To, request.Twiml, request.Record);
-
-        if (IsErrorResponse(doc.RootElement, out var errorMessage))
+    [SupportsConfirmation]
+    public Task<object> MakeCall(ServiceConfig config, MakeCallArgs request) =>
+        Confirm(config, request, "Place this outbound call?", $"To {request.To}, TwiML: {request.Twiml}", async () =>
         {
-            await Log(LogLevel.Warning, $"Call failed: {errorMessage}");
-            return new { Success = false, Message = errorMessage };
-        }
+            using var client = CreateClient(config);
+            var from = ResolveFrom(config, request.From);
+            var doc = await client.MakeCall(from, request.To, request.Twiml, request.Record);
 
-        await Log(LogLevel.Info, $"Call initiated to {request.To}");
-        var sid = doc.RootElement.TryGetProperty("sid", out var sidEl) ? sidEl.GetString() : null;
-        var status = doc.RootElement.TryGetProperty("status", out var statusEl) ? statusEl.GetString() : null;
-        return new { Success = true, CallSid = sid, Status = status };
-    }
+            if (IsErrorResponse(doc.RootElement, out var errorMessage))
+            {
+                await Log(LogLevel.Warning, $"Call failed: {errorMessage}");
+                return new { Success = false, Message = errorMessage };
+            }
+
+            await Log(LogLevel.Info, $"Call initiated to {request.To}");
+            var sid = doc.RootElement.TryGetProperty("sid", out var sidEl) ? sidEl.GetString() : null;
+            var status = doc.RootElement.TryGetProperty("status", out var statusEl) ? statusEl.GetString() : null;
+            return new { Success = true, CallSid = sid, Status = status };
+        });
 
     [Display(Name = "get_call")]
     [Description("Gets details and status of a specific phone call by its SID.")]

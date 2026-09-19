@@ -14,6 +14,7 @@ public record ServiceConfig: IPluginConfig
     [Tooltip("Default channel name to save new KB articles to")]
     public string DefaultSaveChannel { get; set; }
 
+    [Sensitive]
     [Tooltip("API key for authenticating with the Support Channel KB service")]
     public string DefaultChannelApiKey { get; set; }
 }

@@ -14,6 +14,7 @@ public class ServiceConfig : IPluginConfig
     /// </summary>
     public Guid? AgentId { get; set; }
 
+    [Sensitive]
     [Tooltip("Perplexity API key (starts with pplx-). Found in your Perplexity account settings.")]
     public string PerplexityApiKey { get; set; }
 

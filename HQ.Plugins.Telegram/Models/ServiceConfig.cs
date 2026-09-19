@@ -8,6 +8,7 @@ public class ServiceConfig: IPluginConfig
     public string Name { get; set; }
     public string Description { get; set; }
 
+    [Sensitive]
     [Tooltip("Bot token from @BotFather, e.g. 123456:ABC-DEF1234ghIkl-zyx57W2v1u123ew11")]
     public string BotToken { get; set; }
 
