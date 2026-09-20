@@ -16,8 +16,12 @@ namespace HQ.Plugins.Teams;
 
 public class TeamsBot : TeamsActivityHandler
 {
-    public static Confirmation PendingConfirmation;
     public static readonly Dictionary<string, ConversationReference> ConversationReferences = new();
+
+    // WP6B-4: instance-scoped (one per agent's Teams config), keyed by the Teams channel id the
+    // confirmation was posted to — replaces the old process-global `static Confirmation
+    // PendingConfirmation` slot. See PendingConfirmationStore.
+    private readonly PendingConfirmationStore _pendingConfirmations = new();
 
     private readonly LogDelegate _logger;
     private readonly ServiceConfig _config;
@@ -39,6 +43,17 @@ public class TeamsBot : TeamsActivityHandler
         _graphClient = graphClient;
     }
 
+    /// <summary>
+    /// WP6B-4: records the confirmation that was just posted to <paramref name="channelId"/>
+    /// (the Teams channel id, e.g. <c>ServiceConfig.NotificationChannelId</c>) so an inbound
+    /// reply or Adaptive Card action can only approve it if it arrives on that same channel.
+    /// </summary>
+    public void SetPendingConfirmation(Confirmation confirmation, string channelId) =>
+        _pendingConfirmations.Set(channelId, confirmation);
+
+    /// <summary>Test/observability seam: whether a confirmation is pending for <paramref name="channelKey"/>.</summary>
+    public bool HasPendingConfirmation(string channelKey) => _pendingConfirmations.TryGet(channelKey, out _);
+
     protected override async Task OnMessageActivityAsync(ITurnContext<IMessageActivity> turnContext, CancellationToken cancellationToken)
     {
         try
@@ -56,24 +71,28 @@ public class TeamsBot : TeamsActivityHandler
             if (await ProcessSpecialCommands(turnContext, conversationId, messageText, cancellationToken))
                 return;
 
-            // Check for pending confirmations (text-based)
-            if (PendingConfirmation is not null &&
-                _notificationService.DoesConfirmationExist(PendingConfirmation.Id ?? Guid.Empty, out _))
+            // Check for pending confirmations (text-based). WP6B-4: only a reply on the same
+            // Teams channel the confirmation was posted to can ever match — a different
+            // channel/team, or an unrelated 1:1 chat with this bot, gets no channel key match
+            // (TeamsGetChannelId() is null/empty there) and so can never approve it.
+            var channelKey = turnContext.Activity.TeamsGetChannelId();
+            if (_pendingConfirmations.TryGet(channelKey, out var pendingConfirmation) &&
+                _notificationService.DoesConfirmationExist(pendingConfirmation.Id ?? Guid.Empty, out _))
             {
                 var lowerMessage = messageText.ToLowerInvariant();
-                if (PendingConfirmation.Options.Any(a =>
+                if (pendingConfirmation.Options.Any(a =>
                         string.Equals(a.Key, lowerMessage, StringComparison.InvariantCultureIgnoreCase)))
                 {
-                    var value = PendingConfirmation.Options
+                    var value = pendingConfirmation.Options
                         .First(a => string.Equals(a.Key, lowerMessage, StringComparison.InvariantCultureIgnoreCase))
                         .Value;
-                    var confirmationResult = await _confirm(PendingConfirmation.Id.ToString(), value);
+                    var confirmationResult = await _confirm(pendingConfirmation.Id.ToString(), value);
                     await SendConfirmationResult(turnContext, confirmationResult, cancellationToken);
-                    PendingConfirmation = null;
+                    _pendingConfirmations.Remove(channelKey);
                     return;
                 }
 
-                PendingConfirmation = null;
+                _pendingConfirmations.Remove(channelKey);
             }
 
             // Send typing indicator
@@ -88,15 +107,24 @@ public class TeamsBot : TeamsActivityHandler
             if (attachments is { Count: > 0 })
             {
                 var lastAttachment = attachments.Last();
-                try
+
+                // WP6B-8: refuse to fetch a contentUrl that would reach an internal/loopback/
+                // cloud-metadata address (SSRF) before ever making the outbound request.
+                if (!TeamsAttachmentValidator.IsAttachmentUrlAllowed(lastAttachment.ContentUrl, out var blockReason))
                 {
-                    using var httpClient = new HttpClient();
-                    var bytes = await httpClient.GetByteArrayAsync(lastAttachment.ContentUrl);
-                    fileBase64 = Convert.ToBase64String(bytes);
+                    await _logger(LogLevel.Warning,
+                        $"Refusing to download Teams attachment: {blockReason}");
                 }
-                catch (Exception e)
+                else
                 {
-                    await _logger(LogLevel.Error, $"Failed to download Teams attachment: {e.Message}", e);
+                    try
+                    {
+                        fileBase64 = await DownloadAttachmentSafelyAsync(lastAttachment.ContentUrl);
+                    }
+                    catch (Exception e)
+                    {
+                        await _logger(LogLevel.Error, $"Failed to download Teams attachment: {e.Message}", e);
+                    }
                 }
             }
 
@@ -113,7 +141,8 @@ public class TeamsBot : TeamsActivityHandler
             var request = new OrchestratorRequest
             {
                 Service = _config.AiPlugin,
-                ServiceRequest = serviceRequestJson
+                ServiceRequest = serviceRequestJson,
+                AgentId = _config.AgentId
             };
 
             var tryAgain = false;
@@ -186,6 +215,45 @@ public class TeamsBot : TeamsActivityHandler
         }
     }
 
+    /// <summary>
+    /// WP6B-8 review follow-up: TeamsAttachmentValidator only validated the literal contentUrl
+    /// before the fetch; a bare HttpClient with its default AllowAutoRedirect=true would then
+    /// follow a 302 from an allowed public host straight to an internal/loopback/cloud-metadata
+    /// address, bypassing the check entirely (TOCTOU via redirect). This disables automatic
+    /// redirect-following and re-validates every hop's target with
+    /// <see cref="TeamsAttachmentValidator.IsRedirectAllowed"/> before following it.
+    /// </summary>
+    private static async Task<string> DownloadAttachmentSafelyAsync(string contentUrl, int maxRedirects = 5)
+    {
+        using var handler = new HttpClientHandler { AllowAutoRedirect = false };
+        using var httpClient = new HttpClient(handler);
+
+        var currentUri = new Uri(contentUrl, UriKind.Absolute);
+
+        for (var hop = 0; ; hop++)
+        {
+            using var response = await httpClient.GetAsync(currentUri);
+
+            if ((int)response.StatusCode is >= 300 and < 400 && response.Headers.Location != null)
+            {
+                if (hop >= maxRedirects)
+                    throw new InvalidOperationException("Too many redirects while downloading Teams attachment.");
+
+                if (!TeamsAttachmentValidator.IsRedirectAllowed(
+                        currentUri, response.Headers.Location.ToString(), out currentUri, out var reason))
+                {
+                    throw new InvalidOperationException($"Refusing to follow Teams attachment redirect: {reason}");
+                }
+
+                continue;
+            }
+
+            response.EnsureSuccessStatusCode();
+            var bytes = await response.Content.ReadAsByteArrayAsync();
+            return Convert.ToBase64String(bytes);
+        }
+    }
+
     protected override async Task<InvokeResponse> OnTeamsCardActionInvokeAsync(ITurnContext<IInvokeActivity> turnContext, CancellationToken cancellationToken)
     {
         try
@@ -200,8 +268,11 @@ public class TeamsBot : TeamsActivityHandler
             var action = actionProp.GetString();
             if (action != "hq_confirmation_action") return new InvokeResponse { Status = 200 };
 
-            if (PendingConfirmation is null ||
-                !_notificationService.DoesConfirmationExist(PendingConfirmation.Id ?? Guid.Empty, out _))
+            // WP6B-4: same channel-scoping as the text-based path above — a card action on a
+            // different channel/team can never match this channel's pending confirmation.
+            var channelKey = turnContext.Activity.TeamsGetChannelId();
+            if (!_pendingConfirmations.TryGet(channelKey, out var pendingConfirmation) ||
+                !_notificationService.DoesConfirmationExist(pendingConfirmation.Id ?? Guid.Empty, out _))
             {
                 return new InvokeResponse { Status = 200 };
             }
@@ -209,17 +280,17 @@ public class TeamsBot : TeamsActivityHandler
             if (!actionData.TryGetProperty("optionKey", out var optionKeyProp)) return new InvokeResponse { Status = 200 };
             var optionKey = optionKeyProp.GetString();
 
-            if (PendingConfirmation.Options.Any(a =>
+            if (pendingConfirmation.Options.Any(a =>
                     string.Equals(a.Key, optionKey, StringComparison.InvariantCultureIgnoreCase)))
             {
-                var optionValue = PendingConfirmation.Options
+                var optionValue = pendingConfirmation.Options
                     .First(a => string.Equals(a.Key, optionKey, StringComparison.InvariantCultureIgnoreCase))
                     .Value;
-                var confirmationResult = await _confirm(PendingConfirmation.Id.ToString(), optionValue);
+                var confirmationResult = await _confirm(pendingConfirmation.Id.ToString(), optionValue);
 
                 // Send result as a follow-up message
                 await SendConfirmationResult(turnContext, confirmationResult, cancellationToken);
-                PendingConfirmation = null;
+                _pendingConfirmations.Remove(channelKey);
             }
         }
         catch (Exception e)

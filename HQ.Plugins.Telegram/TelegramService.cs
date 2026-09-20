@@ -17,12 +17,24 @@ namespace HQ.Plugins.Telegram;
 
 public class TelegramService(TelegramBotClient client, LogDelegate logger, ServiceConfig config, INotificationService notificationService, Func<string,bool,ValueTask<object>> confirm): IDisposable
 {
-    public static Confirmation PendingConfirmation;
-    private static long? _chatId;
-    
+    // WP6B-4: instance-scoped (one per agent's Telegram config), keyed by chat id — replaces the
+    // old process-global `static Confirmation PendingConfirmation` slot. See PendingConfirmationStore.
+    private readonly PendingConfirmationStore _pendingConfirmations = new();
+
+    /// <summary>
+    /// WP6B-4: records the confirmation that was just sent to <paramref name="chatId"/> (falls
+    /// back to the configured NotificationChatId, matching SendMessage's own default) so an
+    /// inbound reply can only approve it if it arrives on that same chat.
+    /// </summary>
+    public void SetPendingConfirmation(Confirmation confirmation, string chatId) =>
+        _pendingConfirmations.Set(chatId ?? config.NotificationChatId, confirmation);
+
     public async Task<object> SendMessage(string messageText, string chatId = null, string[] options = null)
     {
-        chatId ??= _chatId?.ToString();
+        // WP6B-3: no more static `_chatId` — the first stranger to DM the bot could otherwise
+        // become the permanent default outbound recipient for the whole process. The only
+        // trustworthy default is the operator-configured NotificationChatId.
+        chatId ??= config.NotificationChatId;
         if (chatId is null)
         {
             var errorMessage = "A telegram message must first be received to get the chat Id";
@@ -109,12 +121,26 @@ public class TelegramService(TelegramBotClient client, LogDelegate logger, Servi
             if (updates.Any())
             {
                 var tryAgain = false;
-                _chatId ??= updates.FirstOrDefault()?.Message?.Chat.Id;
-                
+
                 // only get updates sent in the last 5 minutes
                 var filteredUpdates = updates
-                    .Where(update => 
+                    .Where(update =>
                         (DateTime.UtcNow - (update.Message?.Date ?? DateTime.UtcNow)).Minutes <= 5)
+                    .ToList();
+
+                // WP6B-3: drop (log-only) any update whose chat/sender isn't explicitly
+                // allow-listed instead of routing it to the orchestrator. See TelegramAccessControl.
+                var disallowedUpdates = filteredUpdates
+                    .Where(u => !TelegramAccessControl.IsUpdateAllowed(config, u.Message?.Chat.Id, u.Message?.From?.Id))
+                    .ToList();
+                foreach (var disallowed in disallowedUpdates)
+                {
+                    await logger(LogLevel.Warning,
+                        $"Dropping Telegram update from disallowed chat {disallowed.Message?.Chat.Id} " +
+                        $"(user {disallowed.Message?.From?.Id}); not in AllowedChatIds/AllowedUserIds or NotificationChatId");
+                }
+                filteredUpdates = filteredUpdates
+                    .Where(u => TelegramAccessControl.IsUpdateAllowed(config, u.Message?.Chat.Id, u.Message?.From?.Id))
                     .ToList();
 
                 if (filteredUpdates.Count != 0)
@@ -134,13 +160,15 @@ public class TelegramService(TelegramBotClient client, LogDelegate logger, Servi
                         continue;
                     }
                     
-                    if (PendingConfirmation is not null && notificationService.DoesConfirmationExist(PendingConfirmation.Id ?? Guid.Empty, out _))
+                    var pendingChatKey = lastMessage.Message?.Chat.Id.ToString();
+                    if (_pendingConfirmations.TryGet(pendingChatKey, out var pendingConfirmation) &&
+                        notificationService.DoesConfirmationExist(pendingConfirmation.Id ?? Guid.Empty, out _))
                     {
                         var lowerMessage = concatenatedMessage.ToLowerInvariant();
-                        if (PendingConfirmation.Options.Any(a => string.Equals(a.Key, lowerMessage, StringComparison.InvariantCultureIgnoreCase)))
+                        if (pendingConfirmation.Options.Any(a => string.Equals(a.Key, lowerMessage, StringComparison.InvariantCultureIgnoreCase)))
                         {
-                            var value = PendingConfirmation.Options.First(a => string.Equals(a.Key, lowerMessage, StringComparison.InvariantCultureIgnoreCase)).Value;
-                            var confirmationResult = await confirm(PendingConfirmation.Id.ToString(), value);
+                            var value = pendingConfirmation.Options.First(a => string.Equals(a.Key, lowerMessage, StringComparison.InvariantCultureIgnoreCase)).Value;
+                            var confirmationResult = await confirm(pendingConfirmation.Id.ToString(), value);
                             if (confirmationResult.GetType().GetProperty("Success")?.GetValue(confirmationResult) is bool success)
                             {
                                 if (success)
@@ -171,12 +199,12 @@ public class TelegramService(TelegramBotClient client, LogDelegate logger, Servi
                                 }
                             }
                             
-                            PendingConfirmation = null;
+                            _pendingConfirmations.Remove(pendingChatKey);
                             updates = (await client.GetUpdates(updates.Last().Id + (tryAgain ? 0 : 1)))?.ToList() ?? [];
                             continue;
                         }
-                        
-                        PendingConfirmation = null;
+
+                        _pendingConfirmations.Remove(pendingChatKey);
                     }
                     
                     var images = await GetFileFromMessages(filteredUpdates);
@@ -193,7 +221,8 @@ public class TelegramService(TelegramBotClient client, LogDelegate logger, Servi
                     var request = new OrchestratorRequest
                     {
                         Service = config.AiPlugin,
-                        ServiceRequest = serviceRequestJson
+                        ServiceRequest = serviceRequestJson,
+                        AgentId = config.AgentId
                     };
 
                     try { await client.SendChatAction(lastMessage.Message.Chat.Id, ChatAction.Typing); }
