@@ -1,6 +1,7 @@
 using System.ComponentModel;
 using System.ComponentModel.DataAnnotations;
 using HQ.Models.Helpers;
+using HQ.Models.Interfaces;
 
 namespace HQ.Plugins.HeadlessBrowser.Models;
 
@@ -120,8 +121,16 @@ public class TakeScreenshotArgs
     public string Selector { get; set; }
 }
 
-public class ExecuteJavascriptArgs
+// WP6A-2: implements IPluginServiceRequest (mirrors HQ.Plugins.Email's DeleteEmailArgs) so the
+// [Injected] ConfirmationId round-trips through the plugin's own confirmation protocol in
+// HeadlessBrowserService.ExecuteJavascript.
+public class ExecuteJavascriptArgs : IPluginServiceRequest
 {
+    [Injected] public string Method { get; set; }
+    [Injected] public string ToolCallId { get; set; }
+    [Injected] public string RequestingService { get; set; }
+    [Injected] public string ConfirmationId { get; set; }
+
     [Required]
     [Description("JavaScript code to execute in the page context. Use 'return' for expressions or write a function body.")]
     public string Script { get; set; }

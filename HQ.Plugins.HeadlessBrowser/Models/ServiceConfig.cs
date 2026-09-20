@@ -26,6 +26,14 @@ public record ServiceConfig : IPluginConfig
     [Tooltip("Directory to save screenshots. Defaults to temp directory.")]
     public string ScreenshotDirectory { get; set; }
 
+    // WP6A-2 (Medium): execute_javascript is a general-purpose internal HTTP/DOM client whose
+    // results reach the LLM context, and same-origin policy is the only other control. Default
+    // this on (mirrors HQ.Plugins.Email/Stripe's ServiceConfig.RequiresConfirmation) so the
+    // [SupportsConfirmation] on ExecuteJavascript below is actually backed by a true value in
+    // ConfigJson for every new and existing agent, not just ones an operator opts in manually.
+    [Tooltip("Whether to require user confirmation before executing arbitrary JavaScript via execute_javascript")]
+    public bool RequiresConfirmation { get; set; } = true;
+
     [Tooltip("Maximum lines to return from AriaSnapshot (default 300). Reduces token usage on large pages.")]
     public int MaxSnapshotLines { get; set; } = 300;
 

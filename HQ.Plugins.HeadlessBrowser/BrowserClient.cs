@@ -50,7 +50,30 @@ public class BrowserClient : IBrowserClient
         var context = await _browser.NewContextAsync(contextOptions);
         _page = await context.NewPageAsync();
         _page.SetDefaultTimeout(_timeoutMs);
+        await InstallUrlGuardRouteAsync(_page);
     }
+
+    /// <summary>
+    /// WP6A-1 (Critical), defense in depth: <see cref="HeadlessBrowserService.NavigateToUrl"/>
+    /// validates the top-level navigation URL before this method is ever reached, but
+    /// <c>GotoAsync</c> follows redirects and in-page script (including from
+    /// <see cref="HeadlessBrowserService.ExecuteJavascript"/>) can issue its own requests that
+    /// bypass that pre-check entirely. Aborting every request the guard rejects — installed once,
+    /// here, for the lifetime of the page — closes both gaps without touching every call site.
+    /// </summary>
+    private static async Task InstallUrlGuardRouteAsync(IPage page)
+    {
+        await page.RouteAsync("**/*", async route =>
+        {
+            if (IsRequestNavigable(route.Request.Url))
+                await route.ContinueAsync();
+            else
+                await route.AbortAsync();
+        });
+    }
+
+    /// <summary>Pure predicate the route filter above consults. Exposed for testing without a real browser.</summary>
+    internal static bool IsRequestNavigable(string url) => HQ.Models.Safety.UrlGuard.IsNavigable(url, out _);
 
     public async Task<T> ExecuteAsync<T>(Func<IPage, Task<T>> action)
     {

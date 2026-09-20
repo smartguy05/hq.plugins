@@ -144,8 +144,31 @@ public class WebReaderCommand : CommandBase<ServiceRequest, ServiceConfig>
         catch { return url; }
     }
 
+    /// <summary>
+    /// WP6A-1 (Critical): testable seam for the navigability guard. A prompt-injected page could
+    /// otherwise tell the agent to "read_page file:///app/dpkeys/" or an internal
+    /// http://hq-postgres/ target and this would render it with no scheme/host check — reading
+    /// the DataProtection master key or hitting an unauthenticated internal service.
+    /// Defaults to <see cref="HQ.Models.Safety.UrlGuard.IsNavigable(string, out string, HQ.Models.Safety.UrlGuardOptions)"/>.
+    /// Tests inject a fake here to verify the guard is consulted, and that a blocked URL never
+    /// reaches <see cref="_renderer"/>, without needing DNS resolution or a real browser.
+    /// </summary>
+    internal Func<string, (bool IsNavigable, string Reason)> UrlValidator { get; set; } = DefaultUrlValidator;
+
+    private static (bool IsNavigable, string Reason) DefaultUrlValidator(string url)
+    {
+        var navigable = HQ.Models.Safety.UrlGuard.IsNavigable(url, out var reason);
+        return (navigable, reason);
+    }
+
     private async Task<object> WithRender(ServiceConfig config, string url, Func<RenderedPage, object> project)
     {
+        var (isNavigable, blockReason) = UrlValidator(url);
+        if (!isNavigable)
+        {
+            return new { Success = false, Url = url, Message = $"Blocked request to '{url}': {blockReason}" };
+        }
+
         try
         {
             _renderer ??= new PlaywrightRenderer(config);

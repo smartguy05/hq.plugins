@@ -50,6 +50,7 @@ public class PlaywrightRenderer : IPageRenderer, IAsyncDisposable
             context = await _browser.NewContextAsync(contextOptions);
             var page = await context.NewPageAsync();
             page.SetDefaultTimeout(_timeoutMs);
+            await InstallUrlGuardRouteAsync(page);
 
             await page.GotoAsync(url, new PageGotoOptions
             {
@@ -77,6 +78,27 @@ public class PlaywrightRenderer : IPageRenderer, IAsyncDisposable
         _playwright = await Playwright.CreateAsync();
         _browser = await _playwright.Chromium.LaunchAsync(ChromiumLaunchOptions.Build(_headless));
     }
+
+    /// <summary>
+    /// WP6A-1 (Critical), defense in depth: <see cref="WebReaderCommand.WithRender"/> validates
+    /// the requested URL before <see cref="RenderAsync"/> is ever called, but <c>GotoAsync</c>
+    /// follows redirects and the rendered page's own script can issue requests that bypass that
+    /// pre-check entirely. Aborting every request the guard rejects — installed once per page —
+    /// closes both gaps without touching every call site.
+    /// </summary>
+    private static async Task InstallUrlGuardRouteAsync(IPage page)
+    {
+        await page.RouteAsync("**/*", async route =>
+        {
+            if (IsRequestNavigable(route.Request.Url))
+                await route.ContinueAsync();
+            else
+                await route.AbortAsync();
+        });
+    }
+
+    /// <summary>Pure predicate the route filter above consults. Exposed for testing without a real browser.</summary>
+    internal static bool IsRequestNavigable(string url) => HQ.Models.Safety.UrlGuard.IsNavigable(url, out _);
 
     public async ValueTask DisposeAsync()
     {

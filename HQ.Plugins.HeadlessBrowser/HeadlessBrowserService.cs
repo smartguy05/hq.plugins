@@ -16,12 +16,16 @@ public class HeadlessBrowserService
     private readonly IBrowserClient _client;
     private readonly ServiceConfig _config;
     private readonly LogDelegate _logger;
+    private readonly INotificationService _notificationService;
+    private const string PluginName = "HQ.Plugins.HeadlessBrowser";
 
-    public HeadlessBrowserService(IBrowserClient client, ServiceConfig config, LogDelegate logger)
+    public HeadlessBrowserService(IBrowserClient client, ServiceConfig config, LogDelegate logger,
+        INotificationService notificationService = null)
     {
         _client = client;
         _config = config;
         _logger = logger;
+        _notificationService = notificationService;
     }
 
     /// <summary>
@@ -47,6 +51,23 @@ public class HeadlessBrowserService
             ? u.Host
             : string.IsNullOrEmpty(url) ? "unknown" : url;
 
+    /// <summary>
+    /// WP6A-1 (Critical): testable seam for the navigability guard. A prompt-injected page could
+    /// otherwise tell the agent to "navigate to file:///app/dpkeys/" or an internal
+    /// http://hq-postgres/ target and Playwright would follow it with no scheme/host check —
+    /// reading the DataProtection master key or hitting an unauthenticated internal service.
+    /// Defaults to <see cref="HQ.Models.Safety.UrlGuard.IsNavigable(string, out string, HQ.Models.Safety.UrlGuardOptions)"/>.
+    /// Tests inject a fake here to verify the guard is consulted, and that a blocked URL never
+    /// reaches <see cref="_client"/>, without needing DNS resolution or a real browser.
+    /// </summary>
+    internal Func<string, (bool IsNavigable, string Reason)> UrlValidator { get; set; } = DefaultUrlValidator;
+
+    private static (bool IsNavigable, string Reason) DefaultUrlValidator(string url)
+    {
+        var navigable = HQ.Models.Safety.UrlGuard.IsNavigable(url, out var reason);
+        return (navigable, reason);
+    }
+
     [Display(Name = BrowserMethods.NavigateToUrl)]
     [Description("Navigate to a URL and return the page title and a content summary. This initializes the browser session if not already open.")]
     [Parameters(typeof(NavigateToUrlArgs))]
@@ -54,6 +75,17 @@ public class HeadlessBrowserService
     {
         if (string.IsNullOrWhiteSpace(request.Url))
             throw new ArgumentException("Missing required parameter: url");
+
+        var (isNavigable, blockReason) = UrlValidator(request.Url);
+        if (!isNavigable)
+        {
+            return new
+            {
+                Success = false,
+                Url = request.Url,
+                Message = $"Blocked navigation to '{request.Url}': {blockReason}"
+            };
+        }
 
         try
         {
@@ -754,14 +786,29 @@ public class HeadlessBrowserService
 
             Directory.CreateDirectory(dir);
 
+            // WP6A-8 (Low): request.FileName is LLM-controlled. Path.Combine silently discards
+            // `dir` when it's given an absolute path, and does nothing to stop "../..". Reducing
+            // it to its bare file name first means the write can never leave `dir` by name.
             var fileName = !string.IsNullOrWhiteSpace(request.FileName)
-                ? request.FileName
-                : $"screenshot_{DateTime.UtcNow:yyyyMMdd_HHmmss}.png";
+                ? Path.GetFileName(request.FileName)
+                : null;
+
+            if (string.IsNullOrWhiteSpace(fileName))
+                fileName = $"screenshot_{DateTime.UtcNow:yyyyMMdd_HHmmss}.png";
 
             if (!fileName.EndsWith(".png", StringComparison.OrdinalIgnoreCase))
                 fileName += ".png";
 
             var filePath = Path.Combine(dir, fileName);
+
+            // Defense in depth: confirm the resolved path still resolves inside `dir` even if a
+            // future change to the file-name handling above reintroduces a traversal primitive.
+            var resolvedDir = Path.GetFullPath(dir);
+            var resolvedFilePath = Path.GetFullPath(filePath);
+            if (!resolvedFilePath.StartsWith(resolvedDir + Path.DirectorySeparatorChar, StringComparison.Ordinal))
+            {
+                return (object)new { Success = false, Message = "Invalid screenshot file name." };
+            }
 
             if (!string.IsNullOrWhiteSpace(request.Selector))
             {
@@ -789,6 +836,7 @@ public class HeadlessBrowserService
         });
     }
 
+    [SupportsConfirmation]
     [Display(Name = BrowserMethods.ExecuteJavascript)]
     [Description("Execute arbitrary JavaScript in the browser page context and return the result. Use for advanced interactions or data extraction.")]
     [Parameters(typeof(ExecuteJavascriptArgs))]
@@ -796,6 +844,40 @@ public class HeadlessBrowserService
     {
         if (string.IsNullOrWhiteSpace(request.Script))
             throw new ArgumentException("Missing required parameter: script");
+
+        // WP6A-2 (Medium): execute_javascript is a general-purpose internal HTTP/DOM client whose
+        // results reach the LLM context. [SupportsConfirmation] on this method only backs the
+        // host-side ConfirmationGate's replay check (CONF-01); the first-call gate is this
+        // plugin's own responsibility, same as HQ.Plugins.Email.SendEmail/DeleteEmail.
+        if (config.RequiresConfirmation)
+        {
+            if (_notificationService == null)
+            {
+                _logger?.Invoke(LogLevel.Warning, "Skipping confirmation — no notification service configured");
+            }
+            else if (string.IsNullOrWhiteSpace(request.ConfirmationId))
+            {
+                return await _notificationService.RequestConfirmation(
+                    PluginName,
+                    new Confirmation
+                    {
+                        ConfirmationMessage = "Are you sure you want to run this JavaScript in the browser page?",
+                        Content = request.Script,
+                        Options = new Dictionary<string, bool>
+                        {
+                            { "Yes", true },
+                            { "No", false }
+                        },
+                        Id = Guid.NewGuid()
+                    },
+                    request);
+            }
+            else if (!Guid.TryParse(request.ConfirmationId, out var confirmationId) ||
+                     !_notificationService.DoesConfirmationExist(confirmationId, out _))
+            {
+                return new { Success = false, Error = "Unable to execute JavaScript without valid confirmation" };
+            }
+        }
 
         try
         {
