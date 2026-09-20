@@ -33,37 +33,35 @@ public class LinkedInCommand :
     // live browser, so a second tenant's call disposed and replaced it (thrashing), and two
     // tenants racing on the same account label could hand each other the exact same live,
     // authenticated LinkedIn session. Keying by (org, account) instead means distinct tenants
-    // never share a slot -- for the interactive /login/* endpoints, which resolve a real,
-    // header-validated org id (see Endpoints.LinkedInLoginEndpoints.ResolveConfig).
+    // never share a slot.
     //
-    // WP6A-7 STILL OPEN, NOT CLOSED, DO NOT REMOVE THIS NOTE WITHOUT CLOSING IT FOR REAL: the
-    // production per-agent path (DoWork below) has no organization id available to it at all
-    // (confirmed by inspecting HQ.Models.Interfaces.CommandBase<T,TU>.Execute/DoWork,
-    // HQ.Models.Interfaces.ICommand, and HQ.Models.OrchestratorRequest -- none carry a caller org
-    // id, only an optional AgentId that DoWork never receives), so GetBrowser always keys on
-    // Guid.Empty + account label. Two different orgs that both leave AccountLabel at its shared
-    // "default" value will transparently share the same cached LinkedInBrowser and on-disk
-    // profile via nothing more than ordinary tool calls -- no login-endpoint race required. This
-    // is the finding's own confirmed core impact and it is NOT mitigated by the atomic
-    // pre-launch claim in LinkedInLoginSession.StartAsync, which only guards the interactive
-    // login window. Closing it for real needs an org id threaded through HQ.Models'
-    // CommandBase/OrchestratorRequest, a host-wide, cross-repo change out of HQ.Plugins.LinkedIn's
-    // scope; ServiceConfig.AccountLabel's tooltip now warns operators to use a distinct label per
-    // organization as a compensating control until that lands. This is a genuine finding
-    // (WP6A-7) residual and must be carried as a deferred item, not reported as closed.
+    // WP6A-7 (third pass, CLOSED): earlier passes left the production per-agent path (DoWork
+    // below) resolving Guid.Empty for every caller, because CommandBase<T,TU>.Execute/DoWork,
+    // ICommand and OrchestratorRequest carry no caller org id of their own. That gap is closed
+    // here the same way HQ.Plugins.FileStorage's WP6A-5 closed it: HQ.Services.Plugin.PluginService
+    // .InjectOrganizationId force-overwrites `organizationId` onto every plugin tool call's
+    // ServiceRequest JSON, server-side, from the calling agent's authoritative
+    // agent.OrganizationId, before CommandBase.Execute ever deserializes it — see
+    // Models.ServiceRequest.OrganizationId's doc. DoWork now requires that value (fails closed,
+    // see RequireOrganizationId) and threads the REAL org id into GetBrowser, so two different
+    // orgs sharing a default AccountLabel resolve to distinct cached browsers AND distinct
+    // on-disk profiles (LinkedInPaths.ProfileDir(orgId, accountLabel)) — the same directory
+    // LinkedInLoginSession now authenticates that org into (see its OrgId usage). No static or
+    // Guid.Empty-keyed shared browser is reachable from DoWork any more.
     private static readonly RateLimitGate RateLimiter = new();
     private static readonly object BrowserLock = new();
     private static readonly Dictionary<string, LinkedInBrowser> _browsers = new();
 
     /// <summary>
     /// Last config seen by the plugin — used by the login endpoints, which run outside agent
-    /// context. Known, disclosed residual (re-review minor #2): this is a single process-wide
-    /// static written by every org's <see cref="DoWork"/> call, so a login request can, purely by
-    /// timing, read a DIFFERENT org's ancillary settings (AccountLabel, locale, timezone, UA,
-    /// rate limits) here. It no longer enables a cross-org session takeover by itself — see
-    /// <see cref="LinkedInLoginSession.EnsureProfileNotOwnedByAnotherOrg"/> — but is not fully
-    /// org-scoped, because <see cref="DoWork"/> has no caller org id to key a per-org cache by
-    /// (the same host-wide HQ.Models gap as WP6A-7's production-profile residual below).
+    /// context. Known, disclosed residual (re-review minor #2, out of this WP6A-7 pass's scope):
+    /// this is a single process-wide static written by every org's <see cref="DoWork"/> call, so
+    /// a login request can, purely by timing, read a DIFFERENT org's ancillary settings
+    /// (AccountLabel, locale, timezone, UA, rate limits) here. It no longer enables a cross-org
+    /// session takeover by itself — <see cref="GetBrowser"/> now refuses a mismatched org outright
+    /// and resolves a per-org profile — but a per-org config cache (keyed the same way
+    /// <see cref="_browsers"/> now is) would be needed to close this ancillary-settings leak too;
+    /// tracked as a separate follow-up, not this finding's core impact.
     /// </summary>
     internal static ServiceConfig LastConfig { get; private set; }
 
@@ -96,13 +94,32 @@ public class LinkedInCommand :
         return null;
     }
 
+    /// <summary>
+    /// WP6A-7 (third pass): every production tool call must carry a caller-scoped organization
+    /// id. HQ.Services.Plugin.PluginService.InjectOrganizationId force-overwrites
+    /// <see cref="ServiceRequest.OrganizationId"/> with the calling agent's authoritative
+    /// OrganizationId before this plugin ever sees the call — the model cannot forge a different
+    /// tenant's id here. A null/empty value means the call did not come through that host path
+    /// (or org is genuinely absent), so we FAIL CLOSED rather than falling back to the
+    /// unscoped/shared browser and profile. Mirrors HQ.Plugins.FileStorage.FileStorageService
+    /// .RequireOrganizationId (WP6A-5), the sibling fix for the same host-injected field.
+    /// </summary>
+    internal static Guid RequireOrganizationId(Guid? organizationId)
+    {
+        if (organizationId is null || organizationId == Guid.Empty)
+            throw new UnauthorizedAccessException(
+                "Missing organization context; refusing to drive the LinkedIn browser/profile without a caller-scoped organization id.");
+        return organizationId.Value;
+    }
+
     protected override async Task<object> DoWork(ServiceRequest serviceRequest, ServiceConfig config,
         IEnumerable<ToolCall> enumerableToolCalls)
     {
         try
         {
             LastConfig = config;
-            var browser = GetBrowser(config, Logger);
+            var orgId = RequireOrganizationId(serviceRequest.OrganizationId);
+            var browser = GetBrowser(config, Logger, orgId);
             var service = new LinkedInService(browser, config, NotificationService, RateLimiter, Logger);
             return await service.ProcessRequest(RawServiceRequest, config, NotificationService);
         }
@@ -119,13 +136,28 @@ public class LinkedInCommand :
     /// re-launching per call would be slow and detection-prone. Unlike the pre-WP6A-7 single
     /// static slot, a distinct key gets its own cached instance instead of evicting whatever
     /// tenant was cached before it.
+    ///
+    /// WP6A-7 (third pass): <paramref name="orgId"/> is mandatory and must already be the
+    /// caller's real, resolved org (see <see cref="RequireOrganizationId"/> — DoWork never calls
+    /// this with a default/unscoped id). Before handing back a browser, this also refuses when
+    /// the resolved profile directory's ownership marker (see <see cref="LinkedInPaths.ReadProfileOwner"/>)
+    /// already names a DIFFERENT org — defense in depth alongside the per-org directory itself,
+    /// covering a profile directory reused/restored/migrated outside the normal login flow.
+    /// Internal (not private) so it is directly unit-testable without a live Playwright session.
     /// </summary>
-    private static LinkedInBrowser GetBrowser(ServiceConfig config, LogDelegate log, Guid orgId = default)
+    internal static LinkedInBrowser GetBrowser(ServiceConfig config, LogDelegate log, Guid orgId)
     {
         var key = CacheKey(orgId, config.AccountLabel);
 
         if (LinkedInLoginSession.ActiveFor(config.AccountLabel, orgId) is not null)
             throw new InvalidOperationException("LinkedIn login is in progress. Complete the interactive login first, then retry.");
+
+        var profileDir = LinkedInPaths.ProfileDir(orgId, config.AccountLabel);
+        var owner = LinkedInPaths.ReadProfileOwner(profileDir);
+        if (LinkedInPaths.IsProfileOwnedByAnotherOrg(orgId, owner))
+            throw new InvalidOperationException(
+                "This LinkedIn account label's profile is connected by a different organization. " +
+                "Choose a distinct account label for this organization.");
 
         lock (BrowserLock)
         {

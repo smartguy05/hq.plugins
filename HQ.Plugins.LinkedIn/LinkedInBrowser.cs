@@ -31,9 +31,11 @@ public sealed class LinkedInBrowser : ILinkedInBrowser
 
     /// <summary>
     /// <paramref name="orgId"/> namespaces the on-disk profile (see <see cref="LinkedInPaths.ProfileDir"/>,
-    /// WP6A-7). It defaults to <see cref="Guid.Empty"/> for the production per-agent tool-call path
-    /// (<see cref="LinkedInCommand.DoWork"/>), which has no organization id available to it today —
-    /// see the WP6A-7 notes on that call site.
+    /// WP6A-7). Both the production per-agent tool-call path (<see cref="LinkedInCommand.GetBrowser"/>)
+    /// and the interactive login flow (<see cref="LinkedInLoginSession"/>) now always pass the
+    /// caller's real, resolved organization id; it defaults to <see cref="Guid.Empty"/> only for
+    /// an unresolved caller (tenancy disabled), which resolves the same unscoped bucket as before
+    /// WP6A-7.
     /// </summary>
     public LinkedInBrowser(ServiceConfig config, LogDelegate log = null, string displayOverride = null, bool forceHeaded = false, Guid orgId = default)
     {

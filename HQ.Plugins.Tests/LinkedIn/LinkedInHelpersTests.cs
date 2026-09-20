@@ -8,20 +8,22 @@ namespace HQ.Plugins.Tests.LinkedIn;
 
 public class LinkedInHelpersTests
 {
-    // ---- WP6A-7 second re-review: AccountLabel must warn about the still-open production-path
-    // residual (LinkedInCommand.DoWork -> GetBrowser has no caller org id and always resolves
-    // under Guid.Empty), since distinct orgs sharing a label is the one thing an operator can
-    // still do to avoid the collision until an org id is threaded through HQ.Models'
-    // CommandBase/OrchestratorRequest (a host-wide, cross-repo change out of this plugin's scope).
+    // ---- WP6A-7 third pass: the production tool-call path (LinkedInCommand.DoWork -> GetBrowser)
+    // now resolves a real, host-injected caller org id and scopes the profile directory by it,
+    // the same as the interactive login path -- so the tooltip's earlier "distinct orgs MUST use
+    // a distinct AccountLabel or they'll collide" warning is no longer an operator obligation.
     [Fact]
-    public void AccountLabelTooltip_WarnsThatDistinctOrgsMustUseDistinctLabels()
+    public void AccountLabelTooltip_DescribesOrganizationScopingOnBothPaths()
     {
         var property = typeof(ServiceConfig).GetProperty(nameof(ServiceConfig.AccountLabel));
         var tooltip = property!.GetCustomAttribute<TooltipAttribute>();
 
         Assert.NotNull(tooltip);
-        Assert.Contains("must", tooltip!.Text, StringComparison.OrdinalIgnoreCase);
-        Assert.Contains("organization", tooltip.Text, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("organization", tooltip!.Text, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("WP6A-7", tooltip.Text);
+        // The old hard requirement to pick a distinct label per org is gone now that both paths
+        // scope by the real org id automatically.
+        Assert.DoesNotContain("MUST use a distinct AccountLabel", tooltip.Text);
     }
 
     // ---- CsrfFromCookie ----
@@ -82,11 +84,11 @@ public class LinkedInHelpersTests
     }
 
     // ---- WP6A-7 re-review blocking #1: profile-ownership marker ----
-    // LinkedInLoginSession.ProfileOrgId is (deliberately) always Guid.Empty, so the shared,
-    // unscoped profile dir is what login actually authenticates into for every org, by design
-    // (see LinkedInLoginSession.ProfileOrgId's doc). IsProfileOwnedByAnotherOrg/ReadProfileOwner/
-    // WriteProfileOwner are the guard that stops a second, different org from ever being handed a
-    // live noVNC session onto that shared profile once a first org has authenticated it.
+    // Since the third pass, both the login flow and LinkedInCommand.GetBrowser resolve a real,
+    // caller-scoped org id and key ProfileDir by it, so two different orgs no longer even share a
+    // physical directory. IsProfileOwnedByAnotherOrg/ReadProfileOwner/WriteProfileOwner remain the
+    // guard for the shared, unscoped bucket a tenancy-disabled deployment (Guid.Empty) still uses,
+    // and for defense in depth against a manually copied/restored profile directory.
 
     [Theory]
     [InlineData("11111111-1111-1111-1111-111111111111", null, false)] // no prior owner -> allowed

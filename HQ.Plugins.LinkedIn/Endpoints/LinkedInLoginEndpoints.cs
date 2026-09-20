@@ -84,33 +84,30 @@ public static class LinkedInLoginEndpoints
     ///
     /// AccountLabel itself is deliberately <b>not</b> derived from the org id (that was a
     /// regression caught in re-review): <see cref="LinkedInPaths.ProfileDir"/> combines
-    /// (orgId, accountLabel), and overwriting AccountLabel with an org-derived string made the
-    /// login flow authenticate into a directory that <see cref="LinkedInCommand.DoWork"/>'s
-    /// production tool-call path — which has no caller org id available to it yet and always
-    /// resolves under <see cref="Guid.Empty"/>, see the WP6A-7 notes on that call site — could
-    /// never find. Keeping AccountLabel untouched means <see cref="LinkedInLoginSession.ProfileOrgId"/>
-    /// (also <see cref="Guid.Empty"/>) plus this AccountLabel reproduces exactly the profile
-    /// directory production will read from. Since that means every org's login targets the SAME
-    /// directory for a shared AccountLabel, <see cref="LinkedInLoginSession.StartAsync"/> guards
-    /// it with <see cref="LinkedInLoginSession.EnsureProfileNotOwnedByAnotherOrg"/> — a different,
-    /// already-authenticated org is refused rather than handed that org's live session. Fully
-    /// scoping the directory itself by org too (so two orgs never need to negotiate the same
-    /// bucket at all) needs an org id threaded through HQ.Models' CommandBase/OrchestratorRequest
-    /// — a host-wide change out of this plugin's scope (tracked as a follow-up, not fixed here).
+    /// (orgId, accountLabel) on its own, so overwriting AccountLabel with an org-derived string
+    /// would make (orgId, org-derived-label) instead of (orgId, real-label) — an extra,
+    /// unnecessary level of org-scoping that would also make an operator's configured
+    /// AccountLabel meaningless. The org id returned alongside the config is what actually scopes
+    /// the profile directory (see <see cref="LinkedInCommand.GetBrowser"/> and
+    /// <see cref="LinkedInLoginSession.StartAsync"/>, both of which resolve
+    /// <c>LinkedInPaths.ProfileDir(orgId, accountLabel)</c> for this same real, resolved org — closing
+    /// the WP6A-7 residual earlier passes left open, where the production tool-call path had no
+    /// caller org id and always resolved under <see cref="Guid.Empty"/>). Two different, resolved
+    /// orgs therefore no longer even contend for the same directory; <see cref="LinkedInLoginSession.EnsureProfileNotOwnedByAnotherOrg"/>
+    /// and <see cref="LinkedInPaths.TryClaimProfile"/> remain as defense in depth (a manually
+    /// copied/restored profile, or the shared bucket a tenancy-disabled deployment still uses).
     ///
-    /// <b>Known, disclosed residual (re-review minor #2):</b> the ancillary settings this returns
-    /// (AccountLabel, locale, timezone, UA, RequiresConfirmation, rate limits) come from
-    /// <see cref="LinkedInCommand.LastConfig"/>, a single process-wide static last written by
-    /// WHICHEVER org's <see cref="LinkedInCommand.DoWork"/> call ran most recently — not
-    /// necessarily this caller's own org-scoped config. This can't be fixed here either: DoWork
-    /// has no caller org id to key a per-org config cache by (the same host-wide gap as above).
-    /// It no longer enables a cross-org profile/session takeover on its own — that's what
-    /// <see cref="LinkedInLoginSession.EnsureProfileNotOwnedByAnotherOrg"/> now closes — but the
-    /// browser fingerprint (locale/timezone/UA) an org's login uses can still, by timing alone,
-    /// be a different org's settings. Left as a documented follow-up rather than a speculative
-    /// fix that could regress single-tenant/dev deployments (a naive per-org config cache would
-    /// go stale forever for the common Guid.Empty/no-tenancy case, since DoWork never gets a real
-    /// org id to invalidate it by).
+    /// <b>Known, disclosed residual (re-review minor #2, out of WP6A-7's scope):</b> the ancillary
+    /// settings this returns (AccountLabel, locale, timezone, UA, RequiresConfirmation, rate
+    /// limits) come from <see cref="LinkedInCommand.LastConfig"/>, a single process-wide static
+    /// last written by WHICHEVER org's <see cref="LinkedInCommand.DoWork"/> call ran most
+    /// recently — not necessarily this caller's own org-scoped config. It no longer enables a
+    /// cross-org profile/session takeover on its own — that's what the per-org profile directory
+    /// plus <see cref="LinkedInCommand.GetBrowser"/>'s ownership check now close — but the browser
+    /// fingerprint (locale/timezone/UA) an org's login uses can still, by timing alone, be a
+    /// different org's settings. A per-org config cache (now straightforward, since DoWork has a
+    /// real org id to key and invalidate one by) is left as a documented follow-up rather than
+    /// folded into this pass.
     /// </summary>
     internal static (ServiceConfig Config, Guid OrgId) ResolveConfig(HttpContext ctx)
     {

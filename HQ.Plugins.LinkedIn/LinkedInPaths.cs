@@ -47,9 +47,12 @@ public static class LinkedInPaths
     /// Chromium user-data-dir (persistent profile) for a given org + account label.
     /// Keying on the org first (WP6A-7) means two tenants that both leave <c>AccountLabel</c>
     /// at its "default" default can no longer resolve to the same on-disk profile once a real
-    /// org id is known — which today is only the interactive login flow
-    /// (<see cref="Endpoints.LinkedInLoginEndpoints"/>); the production per-agent path has no
-    /// org id available to it yet and keeps resolving under the unscoped bucket.
+    /// org id is known. Both the interactive login flow
+    /// (<see cref="Endpoints.LinkedInLoginEndpoints"/>/<see cref="LinkedInLoginSession"/>) and the
+    /// production per-agent tool-call path (<see cref="LinkedInCommand.DoWork"/>/<see cref="LinkedInCommand.GetBrowser"/>)
+    /// resolve a real, caller-scoped org id and pass it here (third pass, WP6A-7 closed) — an
+    /// unresolved caller (<see cref="Guid.Empty"/>, tenancy disabled) still resolves under the
+    /// pre-WP6A-7 unscoped bucket, unchanged.
     /// </summary>
     public static string ProfileDir(Guid orgId, string accountLabel)
     {
@@ -61,19 +64,20 @@ public static class LinkedInPaths
 
     // ---- WP6A-7 re-review blocking #1: profile-ownership marker ----
     //
-    // LinkedInLoginSession deliberately authenticates every org into the SAME on-disk profile
-    // (ProfileDir(Guid.Empty, accountLabel), via LinkedInLoginSession.ProfileOrgId) so the login
-    // flow and LinkedInCommand.DoWork's production path — which has no caller org id available to
-    // it — always resolve to the identical bucket (see LinkedInLoginSession.ProfileOrgId's doc).
-    // That, by itself, means two different orgs that both leave AccountLabel at its shared
-    // "default" would silently authenticate into (and drive) the exact same LinkedIn identity.
+    // Now that both the login flow and LinkedInCommand.DoWork's production path resolve a real,
+    // caller-scoped org id and key ProfileDir by it (third pass), two different, resolved orgs
+    // no longer even resolve to the same physical directory — so this marker's cross-org check
+    // can't fire between them by construction any more. It remains load-bearing for a
+    // tenancy-disabled deployment, where every caller resolves the SAME unscoped
+    // (ProfileDir(Guid.Empty, accountLabel)) bucket exactly as before WP6A-7, and as defense in
+    // depth against a manually copied/restored profile directory.
     //
     // This marker is the guard for that: the first org to successfully authenticate a given
     // profile directory stamps it with its own org id, and IsProfileOwnedByAnotherOrg refuses a
-    // later /login/start from any OTHER resolved org for that same directory, forcing it to pick
-    // a distinct AccountLabel instead. It intentionally never blocks when either side is
-    // Guid.Empty (tenancy disabled, or no prior owner recorded), which preserves prior behavior
-    // for single-tenant/dev deployments.
+    // later /login/start (or production tool call, see LinkedInCommand.GetBrowser) from any OTHER
+    // resolved org for that same directory, forcing it to pick a distinct AccountLabel instead.
+    // It intentionally never blocks when either side is Guid.Empty (tenancy disabled, or no prior
+    // owner recorded), which preserves prior behavior for single-tenant/dev deployments.
 
     private const string OwnerMarkerFileName = ".hq-owner-org";
 

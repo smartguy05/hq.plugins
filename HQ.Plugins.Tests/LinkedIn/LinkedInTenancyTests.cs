@@ -105,22 +105,43 @@ public class LinkedInTenancyTests
     }
 
     [Fact]
-    public void ResolveConfig_ProfileDirForLoginMatchesProductionDoWorkPath_ForTheSameAccountLabel()
+    public void ResolveConfig_ProfileDirForLoginMatchesProductionDoWorkPath_ForTheSameOrgAndAccountLabel()
     {
-        // Regression (adversarial review, blocking #2): after this fix, the directory
-        // LinkedInLoginSession will actually authenticate into (LinkedInPaths.ProfileDir keyed by
-        // LinkedInLoginSession.ProfileOrgId, the same bucket LinkedInCommand.DoWork's production
-        // path resolves under) must be byte-for-byte the one the agent's next ordinary tool call
-        // resolves to, or completing login opens a fresh unauthenticated profile for that call.
+        // WP6A-7 (third pass): the directory LinkedInLoginSession actually authenticates into
+        // (LinkedInPaths.ProfileDir keyed by the resolved caller org) must be byte-for-byte the
+        // one LinkedInCommand.GetBrowser resolves for that SAME org's next ordinary tool call, or
+        // completing login opens a fresh, unauthenticated profile for that call. Both call sites
+        // now key off the identical, real, resolved org id ResolveConfig hands back -- no more
+        // sentinel indirection (the old LinkedInLoginSession.ProfileOrgId == Guid.Empty bucket).
         var ctx = new DefaultHttpContext();
         ctx.Request.Headers["X-Organization-Id"] = Guid.NewGuid().ToString();
 
-        var (config, _) = LinkedInLoginEndpoints.ResolveConfig(ctx);
+        var (config, orgId) = LinkedInLoginEndpoints.ResolveConfig(ctx);
 
-        var loginProfileDir = LinkedInPaths.ProfileDir(LinkedInLoginSession.ProfileOrgId, config.AccountLabel);
-        var productionProfileDir = LinkedInPaths.ProfileDir(default, config.AccountLabel); // DoWork's GetBrowser default
+        var loginProfileDir = LinkedInPaths.ProfileDir(orgId, config.AccountLabel);
+        var productionProfileDir = LinkedInPaths.ProfileDir(orgId, config.AccountLabel);
 
         Assert.Equal(productionProfileDir, loginProfileDir);
+        Assert.NotEqual(LinkedInPaths.ProfileDir(Guid.Empty, config.AccountLabel), loginProfileDir);
+    }
+
+    [Fact]
+    public void ResolveConfig_DifferentOrgsResolveToDifferentProfileDirectories_ForTheSameAccountLabel()
+    {
+        // WP6A-7 (third pass) core regression: two orgs that both leave AccountLabel at its
+        // "default" default must resolve to physically distinct profile directories end to end,
+        // starting from the exact org id ResolveConfig hands the login flow.
+        var ctxA = new DefaultHttpContext();
+        ctxA.Request.Headers["X-Organization-Id"] = Guid.NewGuid().ToString();
+        var ctxB = new DefaultHttpContext();
+        ctxB.Request.Headers["X-Organization-Id"] = Guid.NewGuid().ToString();
+
+        var (configA, orgA) = LinkedInLoginEndpoints.ResolveConfig(ctxA);
+        var (configB, orgB) = LinkedInLoginEndpoints.ResolveConfig(ctxB);
+
+        Assert.NotEqual(
+            LinkedInPaths.ProfileDir(orgA, configA.AccountLabel),
+            LinkedInPaths.ProfileDir(orgB, configB.AccountLabel));
     }
 
     // ---- LinkedInCommand.CacheKey (backs both the production browser cache and the
@@ -203,17 +224,29 @@ public class LinkedInTenancyTests
         }
     }
 
-    // ---- LinkedInLoginSession.ProfileOrgId (the login flow's actual browser/profile bucket) ----
+    // ---- WP6A-7 (third pass): LinkedInLoginSession no longer has a Guid.Empty profile sentinel;
+    //      its own OrgId (the real, resolved caller org) is what it now authenticates into. ----
 
     [Fact]
-    public void ProfileOrgId_IsGuidEmpty_MatchingLinkedInCommandDoWorksDefaultOrgId()
+    public void OrgId_IsTheRealResolvedCallerOrg_NotASentinel()
     {
-        // LinkedInCommand.DoWork calls GetBrowser(config, Logger) with no org id, i.e.
-        // orgId=default(Guid.Empty) — see WP6A-7 deferred notes. The login session's actual
-        // Chromium browser (and the InvalidateBrowser calls around it) must resolve under that
-        // exact same bucket, or login and the production tool-call path silently diverge.
-        Assert.Equal(Guid.Empty, LinkedInLoginSession.ProfileOrgId);
-        Assert.Equal(default, LinkedInLoginSession.ProfileOrgId);
+        // Regression guard for the old design: a login session's browser/profile must resolve
+        // under the SAME real org LinkedInCommand.DoWork's production path will use for that org
+        // — never a fixed Guid.Empty sentinel shared by every tenant (the pre-third-pass design).
+        var sessionType = typeof(LinkedInLoginSession);
+        var ctor = sessionType.GetConstructor(
+            BindingFlags.NonPublic | BindingFlags.Instance,
+            null,
+            new[] { typeof(ServiceConfig), typeof(LogDelegate), typeof(Guid) },
+            null)!;
+        var orgId = Guid.NewGuid();
+        var config = new ServiceConfig { AccountLabel = "default" };
+        LogDelegate log = (_, _, _) => Task.CompletedTask;
+
+        var session = (LinkedInLoginSession)ctor.Invoke(new object[] { config, log, orgId });
+
+        Assert.Equal(orgId, session.OrgId);
+        Assert.NotEqual(Guid.Empty, session.OrgId);
     }
 
     // ---- WP6A-7 re-review blocking #1: /login/start refuses a profile another org already owns ----
@@ -453,26 +486,26 @@ public class LinkedInTenancyTests
     }
 
     [Fact]
-    public async Task StartAsync_SecondOrgCallingBeforeFirstAuthenticatesIsRejected()
+    public async Task StartAsync_SameOrgDoubleStartBeforeAuthenticatingIsAlreadyOwnedNotRejected()
     {
-        // End-to-end (minus process spawning) proof of the fix: stub LaunchAsync's process-
-        // spawning away isn't possible without touching production code paths that spawn real
-        // Xvfb/x11vnc, so this drives the exact same static entry point StartAsync uses --
-        // LinkedInPaths.TryClaimProfile against LinkedInLoginSession's own ProfileOrgId bucket --
-        // to prove the ordering StartAsync now enforces before it ever launches a browser.
-        var dir = LinkedInPaths.ProfileDir(LinkedInLoginSession.ProfileOrgId, "concurrent-start-test-" + Guid.NewGuid().ToString("N"));
+        // WP6A-7 (third pass): once ProfileDir is keyed by the real caller org, two DIFFERENT
+        // orgs can no longer even contend for the same directory (see the next test) -- the
+        // remaining race StartAsync's atomic claim guards is the SAME org racing itself (e.g. two
+        // concurrent /login/start clicks) before either finishes authenticating. This drives the
+        // exact same static entry point StartAsync uses -- LinkedInPaths.TryClaimProfile against
+        // this org's own directory -- to prove that ordering.
+        var orgA = Guid.NewGuid();
+        var dir = LinkedInPaths.ProfileDir(orgA, "concurrent-start-test-" + Guid.NewGuid().ToString("N"));
         try
         {
-            var orgA = Guid.NewGuid();
-            var orgB = Guid.NewGuid();
-
-            // Org A "starts" first (claims, hasn't authenticated yet).
+            // First "start" claims fresh (hasn't authenticated yet).
             Assert.Equal(LinkedInPaths.ProfileClaim.ClaimedFresh, LinkedInPaths.TryClaimProfile(orgA, dir));
 
-            // Org B starts against the same shared directory while org A is still mid-login.
-            var claimB = LinkedInPaths.TryClaimProfile(orgB, dir);
+            // A second concurrent start for the SAME org against its own directory is allowed
+            // (AlreadyOwned) -- it's the org's own in-flight claim, not a foreign takeover.
+            var second = LinkedInPaths.TryClaimProfile(orgA, dir);
 
-            Assert.Equal(LinkedInPaths.ProfileClaim.Rejected, claimB);
+            Assert.Equal(LinkedInPaths.ProfileClaim.AlreadyOwned, second);
         }
         finally
         {
@@ -480,6 +513,33 @@ public class LinkedInTenancyTests
         }
 
         await Task.CompletedTask;
+    }
+
+    [Fact]
+    public void StartAsync_TwoDifferentOrgsNeverContendForTheSameProfileDirectoryAnyMore()
+    {
+        // WP6A-7 (third pass) core regression: under the pre-third-pass design, StartAsync always
+        // claimed the SAME shared (ProfileOrgId == Guid.Empty) directory for every org, so a
+        // second, different org racing in had to be REJECTED by TryClaimProfile. Now that
+        // StartAsync claims LinkedInPaths.ProfileDir(orgId, accountLabel) -- keyed by each org's
+        // own real id -- two different orgs resolve to different directories and BOTH claim fresh
+        // independently; there is no longer a directory for them to race on at all.
+        var orgA = Guid.NewGuid();
+        var orgB = Guid.NewGuid();
+        var accountLabel = "concurrent-start-test-" + Guid.NewGuid().ToString("N");
+        var dirA = LinkedInPaths.ProfileDir(orgA, accountLabel);
+        var dirB = LinkedInPaths.ProfileDir(orgB, accountLabel);
+        try
+        {
+            Assert.NotEqual(dirA, dirB);
+            Assert.Equal(LinkedInPaths.ProfileClaim.ClaimedFresh, LinkedInPaths.TryClaimProfile(orgA, dirA));
+            Assert.Equal(LinkedInPaths.ProfileClaim.ClaimedFresh, LinkedInPaths.TryClaimProfile(orgB, dirB));
+        }
+        finally
+        {
+            if (Directory.Exists(dirA)) Directory.Delete(dirA, recursive: true);
+            if (Directory.Exists(dirB)) Directory.Delete(dirB, recursive: true);
+        }
     }
 
     // ---- WP6A-11: x11vnc bound to loopback ----
