@@ -6,9 +6,23 @@ using HQ.Plugins.LinkedIn.Models;
 
 namespace HQ.Plugins.Tests.LinkedIn;
 
-public class LinkedInCommandTests
+/// <summary>
+/// Shares the "LinkedIn command static state" collection with <see cref="LinkedInTenancyTests"/>:
+/// <see cref="LinkedInCommand.DoWork"/> below writes the process-wide
+/// <see cref="LinkedInCommand.LastConfig"/> static as a documented side effect, which
+/// <c>LinkedInTenancyTests.ResolveConfig_*</c> reads. Without this shared, non-parallel collection
+/// the two classes could run concurrently on separate threads and race on that static (see
+/// <see cref="LinkedInStaticStateCollection"/> for the full history). The constructor/Dispose
+/// reset additionally makes each test in this class hermetic regardless of ordering.
+/// </summary>
+[Collection("LinkedIn command static state")]
+public class LinkedInCommandTests : IDisposable
 {
     private readonly LinkedInCommand _command = new();
+
+    public LinkedInCommandTests() => LinkedInCommand.ResetForTests();
+
+    public void Dispose() => LinkedInCommand.ResetForTests();
 
     [Fact]
     public void Name_ReturnsLinkedIn() => Assert.Equal("LinkedIn", _command.Name);

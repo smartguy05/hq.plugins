@@ -13,9 +13,23 @@ namespace HQ.Plugins.Tests.LinkedIn;
 /// ASP.NET host or spawning Xvfb/x11vnc — see the P2 cluster ruling: only the host's
 /// MapPluginHttpRoutes auth-policy wiring (owned by C12) needs a WebApplicationFactory-style
 /// test; the plugin-side fix is a set of pure functions this exercises directly.
+///
+/// Shares the "LinkedIn command static state" collection with <see cref="LinkedInCommandTests"/>:
+/// the <c>ResolveConfig_*</c> tests below read the process-wide
+/// <see cref="LinkedInCommand.LastConfig"/> static (via <see cref="LinkedInLoginEndpoints.ResolveConfig"/>),
+/// which <c>LinkedInCommandTests.DoWork_*</c> tests write as a documented side effect of calling
+/// the real <c>DoWork</c>. Without this shared, non-parallel collection the two classes could run
+/// concurrently on separate threads and race on that static (see
+/// <see cref="LinkedInStaticStateCollection"/> for the full history). The constructor/Dispose
+/// reset additionally makes each test in this class hermetic regardless of ordering.
 /// </summary>
-public class LinkedInTenancyTests
+[Collection("LinkedIn command static state")]
+public class LinkedInTenancyTests : IDisposable
 {
+    public LinkedInTenancyTests() => LinkedInCommand.ResetForTests();
+
+    public void Dispose() => LinkedInCommand.ResetForTests();
+
     // ---- LinkedInLoginEndpoints.ResolveCallerOrgId ----
 
     [Fact]

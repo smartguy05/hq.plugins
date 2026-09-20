@@ -184,6 +184,35 @@ public class LinkedInCommand :
         }
     }
 
+    /// <summary>
+    /// Test-only reset hook for the process-wide statics this command caches
+    /// (<see cref="LastConfig"/> and the per-(org, account) browser cache). Production code never
+    /// calls this. It exists so xUnit test classes that drive <see cref="DoWork"/> or
+    /// <see cref="GetBrowser"/> directly (both of which mutate this process-wide state as a
+    /// documented, disclosed side effect — see <see cref="LastConfig"/>'s doc comment) can restore
+    /// a clean slate between tests instead of leaking one test's synthetic
+    /// <c>ServiceConfig.AccountLabel</c> (e.g. "wp6a7-empty-org-&lt;hex&gt;" from
+    /// LinkedInCommandTests.DoWork_EmptyGuidOrganizationId_IsRefused) into
+    /// LinkedInLoginEndpoints.ResolveConfig, which every LinkedInTenancyTests.ResolveConfig_* test
+    /// reads via <see cref="LastConfig"/>. See LinkedInCommandTests and LinkedInTenancyTests'
+    /// shared <c>[Collection("LinkedIn command static state")]</c> for the other half of the fix
+    /// (those two classes must not run concurrently on separate threads either, or resetting here
+    /// alone cannot prevent the race).
+    /// </summary>
+    internal static void ResetForTests()
+    {
+        LastConfig = null;
+        lock (BrowserLock)
+        {
+            foreach (var browser in _browsers.Values)
+            {
+                try { browser.DisposeAsync().AsTask().GetAwaiter().GetResult(); }
+                catch { /* best-effort cleanup; a test's own assertions already ran */ }
+            }
+            _browsers.Clear();
+        }
+    }
+
     // IHasFrontend -----------------------------------------------------------
 
     public FrontendManifest GetFrontendManifest() => new(
