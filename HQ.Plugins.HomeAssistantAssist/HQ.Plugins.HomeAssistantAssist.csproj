@@ -17,6 +17,12 @@
 	</PropertyGroup>
 
 	<ItemGroup>
-		<PackageReference Include="HQ.Models" Version="2.8.0" ExcludeAssets="runtime" PrivateAssets="none" />
+		<PackageReference Include="HQ.Models" Version="2.9.0" ExcludeAssets="runtime" PrivateAssets="none" />
+	</ItemGroup>
+
+	<ItemGroup>
+		<!-- Lets HQ.Plugins.Tests set the internal ResolveHostForTesting seam directly
+		     instead of via reflection (this whole project is owned by cluster P5). -->
+		<InternalsVisibleTo Include="HQ.Plugins.Tests" />
 	</ItemGroup>
 </Project>
