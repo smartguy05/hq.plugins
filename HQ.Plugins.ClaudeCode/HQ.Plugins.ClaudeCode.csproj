@@ -30,4 +30,8 @@
       </None>
     </ItemGroup>
 
+    <ItemGroup>
+      <InternalsVisibleTo Include="HQ.Plugins.Tests" />
+    </ItemGroup>
+
 </Project>
