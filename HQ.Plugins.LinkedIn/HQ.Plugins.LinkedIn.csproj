@@ -27,4 +27,8 @@
         <TargetPath>ui\%(RecursiveDir)%(Filename)%(Extension)</TargetPath>
       </None>
     </ItemGroup>
+
+    <ItemGroup>
+      <InternalsVisibleTo Include="HQ.Plugins.Tests" />
+    </ItemGroup>
 </Project>

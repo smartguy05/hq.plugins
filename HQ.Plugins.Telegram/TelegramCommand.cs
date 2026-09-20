@@ -97,8 +97,8 @@ public class TelegramCommand: CommandBase<ServiceRequest, ServiceConfig>, INotif
             );
         }
         
-        TelegramService.PendingConfirmation = confirmation;
         _service ??= new TelegramService(_botClient, Log, _config, NotificationService, Confirm);
+        _service.SetPendingConfirmation(confirmation, _config.NotificationChatId);
         return _service.SendMessage(
             GetConfirmationMessage(confirmation), 
             _config.NotificationChatId, 

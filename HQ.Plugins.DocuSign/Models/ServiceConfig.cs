@@ -8,6 +8,7 @@ public record ServiceConfig : IPluginConfig
     public string Name { get; set; }
     public string Description { get; set; }
 
+    [Sensitive]
     [Tooltip("Integration Key (Client ID) from the DocuSign app")]
     public string IntegrationKey { get; set; }
 

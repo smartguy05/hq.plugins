@@ -14,6 +14,7 @@ public record ServiceConfig : IPluginConfig
     [Tooltip("Email address associated with the Jira API token")]
     public string Email { get; set; }
 
+    [Sensitive]
     [Tooltip("Jira API token. Generate at https://id.atlassian.net/manage-profile/security/api-tokens")]
     public string ApiToken { get; set; }
 }

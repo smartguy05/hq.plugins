@@ -260,7 +260,7 @@ public class ImageGenerationCommand : CommandBase<ServiceRequest, ServiceConfig>
         }
     }
 
-    private static string SaveImage(ServiceConfig config, string outputFileName, string base64Data, string mimeType)
+    internal static string SaveImage(ServiceConfig config, string outputFileName, string base64Data, string mimeType)
     {
         var extension = mimeType switch
         {
@@ -269,8 +269,15 @@ public class ImageGenerationCommand : CommandBase<ServiceRequest, ServiceConfig>
             _ => ".png"
         };
 
-        var fileName = !string.IsNullOrWhiteSpace(outputFileName)
-            ? outputFileName + extension
+        // outputFileName is model-supplied. Path.GetFileName strips any directory
+        // component (including an absolute path or "../" traversal segments), so only a
+        // bare file name can ever reach Path.Combine below.
+        var sanitizedName = string.IsNullOrWhiteSpace(outputFileName)
+            ? null
+            : Path.GetFileName(outputFileName);
+
+        var fileName = !string.IsNullOrWhiteSpace(sanitizedName)
+            ? sanitizedName + extension
             : $"generated_{DateTime.UtcNow:yyyyMMdd_HHmmss}{extension}";
 
         var directory = !string.IsNullOrWhiteSpace(config.OutputDirectory)
@@ -278,7 +285,15 @@ public class ImageGenerationCommand : CommandBase<ServiceRequest, ServiceConfig>
             : Path.GetTempPath();
 
         Directory.CreateDirectory(directory);
-        var filePath = Path.Combine(directory, fileName);
+        var resolvedDirectory = Path.GetFullPath(directory);
+        var filePath = Path.GetFullPath(Path.Combine(resolvedDirectory, fileName));
+
+        // Belt-and-suspenders containment assertion in case a future change to the
+        // sanitization above (or a platform-specific path quirk) reintroduces an escape.
+        if (!filePath.StartsWith(resolvedDirectory + Path.DirectorySeparatorChar, StringComparison.Ordinal))
+        {
+            throw new InvalidOperationException("Resolved image output path escapes the configured output directory.");
+        }
 
         var imageBytes = Convert.FromBase64String(base64Data);
         File.WriteAllBytes(filePath, imageBytes);

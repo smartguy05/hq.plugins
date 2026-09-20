@@ -8,6 +8,7 @@ public record ServiceConfig : IPluginConfig
     public string Name { get; set; }
     public string Description { get; set; }
 
+    [Sensitive]
     [Tooltip("HubSpot private app access token. Create at Settings > Integrations > Private Apps.")]
     public string AccessToken { get; set; }
 

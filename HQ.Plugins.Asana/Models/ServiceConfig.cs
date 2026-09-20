@@ -8,6 +8,7 @@ public record ServiceConfig : IPluginConfig
     public string Name { get; set; }
     public string Description { get; set; }
 
+    [Sensitive]
     [Tooltip("Asana Personal Access Token. Create at https://app.asana.com/0/my-apps")]
     public string AccessToken { get; set; }
 

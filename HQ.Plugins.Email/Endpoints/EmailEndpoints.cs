@@ -1,8 +1,11 @@
+using System.Net;
+using System.Net.Sockets;
 using HQ.Models.Enums;
 using HQ.Models.Extensions;
 using HQ.Models.Interfaces;
 using HQ.Plugins.Email.Data;
 using HQ.Plugins.Email.Models;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Routing;
@@ -157,16 +160,19 @@ public static class EmailEndpoints
 
         // Verify an account's IMAP/SMTP credentials (config "Test" button). Tests the
         // submitted account as-is — no agent context or stored config involved.
+        //
+        // WP6B-11: this is the only Email route with no agent/tenant check (there is no
+        // agentId — the caller supplies raw connection details), so any authenticated user
+        // could point Imap/Smtp at an internal or metadata-service host:port and use the
+        // differentiated auth/TLS/unreachable/timeout message as a port-scanning oracle.
+        // Locked down three ways: gated behind the TenantAdmin policy, any host that
+        // resolves to a private/loopback/link-local/metadata address is blanked out before
+        // EmailService ever opens a socket to it (reported back as "not configured" rather
+        // than connected-to), and the response carries only a coarse ok/not-ok per protocol
+        // — the differentiated message never leaves this endpoint.
         routes.MapPost("/test-account", async (EmailParameters account) =>
-        {
-            if (account == null) return Results.BadRequest("Missing account");
-            var r = await EmailService.TestAccountAsync(account);
-            return Results.Ok(new
-            {
-                imap = new { ok = r.Imap.Ok, message = r.Imap.Message },
-                smtp = new { ok = r.Smtp.Ok, message = r.Smtp.Message }
-            });
-        });
+            account == null ? Results.BadRequest("Missing account") : Results.Ok(await BuildTestAccountResultAsync(account)))
+            .RequireAuthorization("TenantAdmin");
 
         // On-demand sync for an agent ("Sync now"). Runs a one-off sync with the agent's
         // decrypted config into the same cache the background engine uses.
@@ -253,6 +259,138 @@ public static class EmailEndpoints
     };
 
     private static string NullIfEmpty(string s) => string.IsNullOrWhiteSpace(s) ? null : s;
+
+    // --- WP6B-11: SSRF/port-scan guard for /test-account -------------------------------
+
+    /// <summary>
+    /// Blanks out any Imap/Smtp host that resolves to a private/loopback/link-local/
+    /// metadata destination (so EmailService reports it as "not configured" instead of
+    /// connecting to it), then returns only a coarse ok/not-ok per protocol — never the
+    /// differentiated auth/TLS/unreachable/timeout message <see cref="EmailService"/>
+    /// otherwise produces, which would let an unprivileged caller fingerprint whatever is
+    /// listening on an internal host:port. Internal (not private) so tests can call it
+    /// directly without going through the route's model binding / HTTP pipeline.
+    /// </summary>
+    internal static async Task<object> BuildTestAccountResultAsync(EmailParameters account)
+    {
+        var safeAccount = account with
+        {
+            Imap = IsHostAllowed(account.Imap, out _) ? account.Imap : null,
+            Smtp = IsHostAllowed(account.Smtp, out _) ? account.Smtp : null
+        };
+
+        var r = await EmailService.TestAccountAsync(safeAccount);
+        return new
+        {
+            imap = new { ok = r.Imap.Ok },
+            smtp = new { ok = r.Smtp.Ok }
+        };
+    }
+
+    // Docker-compose service names for this platform's own internal dependencies. Mirrors
+    // HQ.Models.Safety.UrlGuardOptions.DefaultBlockedHosts (this project is still on
+    // HQ.Models 2.8.0, which predates UrlGuard, so the list is duplicated rather than
+    // referenced — keep the two in sync if either changes).
+    private static readonly HashSet<string> BlockedComposeHosts = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "hq-postgres", "hq-redis", "hq-chromadb", "postgres", "redis", "chromadb"
+    };
+
+    /// <summary>
+    /// True when <paramref name="host"/> is safe for this process to open an outbound
+    /// IMAP/SMTP connection to. A blank host is "allowed" here — EmailService already
+    /// reports that as "no host configured" without attempting a connection.
+    ///
+    /// Adversarial-review follow-up: a plain hostname that is not an IP literal and not
+    /// one of the hardcoded internal names used to be allowed unconditionally — but a
+    /// resolvable hostname (an internal admin host, or an attacker-owned domain pointed
+    /// at 169.254.169.254 or a private IP) is exactly the realistic version of this
+    /// finding's own repro (a TenantAdmin-controlled Imap/Smtp host). This project can't
+    /// reference HQ.Models.Safety.UrlGuard directly (still on HQ.Models 2.8.0 — see the
+    /// note on <see cref="BlockedComposeHosts"/>), so DNS resolution is duplicated here
+    /// as plain BCL logic, following the same pattern UrlGuardOptions.ResolveHost uses:
+    /// default to real <see cref="Dns.GetHostAddresses(string)"/>, and check every
+    /// resolved address with the same rules as a literal IP.
+    /// </summary>
+    private static bool IsHostAllowed(string host, out string reason, Func<string, IEnumerable<IPAddress>> resolveHost = null)
+    {
+        if (string.IsNullOrWhiteSpace(host))
+        {
+            reason = null;
+            return true;
+        }
+
+        if (string.Equals(host, "localhost", StringComparison.OrdinalIgnoreCase) ||
+            host.EndsWith(".localhost", StringComparison.OrdinalIgnoreCase))
+        {
+            reason = "host is blocked (localhost).";
+            return false;
+        }
+
+        if (BlockedComposeHosts.Contains(host))
+        {
+            reason = "host is blocked.";
+            return false;
+        }
+
+        if (IPAddress.TryParse(host, out var ip))
+            return IsAddressAllowed(ip, out reason);
+
+        var resolver = resolveHost ?? Dns.GetHostAddresses;
+        IEnumerable<IPAddress> addresses;
+        try
+        {
+            addresses = resolver(host) ?? Array.Empty<IPAddress>();
+        }
+        catch (Exception)
+        {
+            // Could not resolve: not itself a reason to block. EmailService's own
+            // connection attempt will fail on its own (and reports only a coarse ok/not-ok,
+            // per WP6B-11) — there is no oracle value left to leak by letting that happen.
+            reason = null;
+            return true;
+        }
+
+        foreach (var address in addresses)
+        {
+            if (!IsAddressAllowed(address, out reason))
+                return false;
+        }
+
+        reason = null;
+        return true;
+    }
+
+    /// <summary>Rejects loopback, unspecified, link-local (incl. cloud metadata endpoints
+    /// at 169.254.169.254) and the RFC1918/CGNAT private ranges.</summary>
+    private static bool IsAddressAllowed(IPAddress address, out string reason)
+    {
+        var ip = address.IsIPv4MappedToIPv6 ? address.MapToIPv4() : address;
+
+        if (IPAddress.IsLoopback(ip)) { reason = "address is a loopback address."; return false; }
+        if (ip.Equals(IPAddress.Any)) { reason = "address is 0.0.0.0."; return false; }
+        if (ip.Equals(IPAddress.IPv6Any)) { reason = "address is the IPv6 unspecified address [::]."; return false; }
+
+        if (ip.AddressFamily == AddressFamily.InterNetwork)
+        {
+            var b = ip.GetAddressBytes();
+            if (b[0] == 0) { reason = "address is in 0.0.0.0/8."; return false; }
+            if (b[0] == 169 && b[1] == 254) { reason = "address is link-local (169.254.0.0/16) — this includes cloud metadata endpoints."; return false; }
+            if (b[0] == 10) { reason = "address is in the private range 10.0.0.0/8."; return false; }
+            if (b[0] == 172 && b[1] is >= 16 and <= 31) { reason = "address is in the private range 172.16.0.0/12."; return false; }
+            if (b[0] == 192 && b[1] == 168) { reason = "address is in the private range 192.168.0.0/16."; return false; }
+            if (b[0] == 100 && b[1] is >= 64 and <= 127) { reason = "address is in the carrier-grade NAT range 100.64.0.0/10."; return false; }
+        }
+        else if (ip.AddressFamily == AddressFamily.InterNetworkV6)
+        {
+            if (ip.IsIPv6LinkLocal) { reason = "address is IPv6 link-local (fe80::/10)."; return false; }
+            var b = ip.GetAddressBytes();
+            if ((b[0] & 0xFE) == 0xFC) { reason = "address is IPv6 unique-local (fc00::/7)."; return false; }
+        }
+
+        reason = null;
+        return true;
+    }
 
     private static Task NoopLog(LogLevel level, string message, Exception ex = null) => Task.CompletedTask;
 

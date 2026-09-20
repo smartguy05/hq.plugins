@@ -23,17 +23,27 @@ public sealed class LinkedInBrowser : ILinkedInBrowser
     private readonly SemaphoreSlim _gate = new(1, 1);
     private readonly string _displayOverride;
     private readonly bool _forceHeaded;
+    private readonly Guid _orgId;
 
     private IPlaywright _playwright;
     private IBrowserContext _context;
     private IPage _page;
 
-    public LinkedInBrowser(ServiceConfig config, LogDelegate log = null, string displayOverride = null, bool forceHeaded = false)
+    /// <summary>
+    /// <paramref name="orgId"/> namespaces the on-disk profile (see <see cref="LinkedInPaths.ProfileDir"/>,
+    /// WP6A-7). Both the production per-agent tool-call path (<see cref="LinkedInCommand.GetBrowser"/>)
+    /// and the interactive login flow (<see cref="LinkedInLoginSession"/>) now always pass the
+    /// caller's real, resolved organization id; it defaults to <see cref="Guid.Empty"/> only for
+    /// an unresolved caller (tenancy disabled), which resolves the same unscoped bucket as before
+    /// WP6A-7.
+    /// </summary>
+    public LinkedInBrowser(ServiceConfig config, LogDelegate log = null, string displayOverride = null, bool forceHeaded = false, Guid orgId = default)
     {
         _config = config;
         _log = log;
         _displayOverride = displayOverride;
         _forceHeaded = forceHeaded;
+        _orgId = orgId;
     }
 
     /// <summary>
@@ -67,7 +77,7 @@ public sealed class LinkedInBrowser : ILinkedInBrowser
     {
         if (_page is not null) return;
 
-        var profileDir = LinkedInPaths.ProfileDir(_config.AccountLabel);
+        var profileDir = LinkedInPaths.ProfileDir(_orgId, _config.AccountLabel);
         Directory.CreateDirectory(profileDir);
 
         _playwright = await Playwright.CreateAsync();

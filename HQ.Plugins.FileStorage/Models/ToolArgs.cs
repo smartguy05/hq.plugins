@@ -1,3 +1,4 @@
+using System;
 using System.ComponentModel;
 using System.ComponentModel.DataAnnotations;
 using HQ.Models.Helpers;
@@ -9,13 +10,28 @@ namespace HQ.Plugins.FileStorage.Models;
 /// (via <c>ToolSchemaGenerator</c>) and runtime binding. Property names are camel-cased for the
 /// LLM. Fields used by a tool body but NOT advertised to the model are marked <c>[Injected]</c>
 /// (kept out of the schema, still bindable).
+///
+/// WP6A-5 (2026-09 security review): every tool that touches a workspace/team volume now carries
+/// <c>OrganizationId</c>, following the same convention as HQ.Plugins.Tasks — <c>[Required]
+/// Guid? OrganizationId</c> (NOT <c>[Injected]</c>, so it stays visible in the schema like Tasks
+/// does). The host (HQ.Services.Plugin.PluginService.InjectOrganizationId) force-overwrites this
+/// property's value server-side with the caller's authoritative agent.OrganizationId before the
+/// plugin ever sees the call, so any value the model supplies here is discarded. This is what
+/// gives FileStorageService a trustworthy tenant identity for workspace/team volume scoping.
 /// </summary>
 
-/// <summary>Args for tools that take no LLM parameters.</summary>
-public class EmptyArgs;
+/// <summary>Args for tools that take no LLM parameters other than the injected org id.</summary>
+public class ListWorkspacesArgs
+{
+    [Required, Description("Organisation GUID")]
+    public Guid? OrganizationId { get; set; }
+}
 
 public class CreateWorkspaceArgs
 {
+    [Required, Description("Organisation GUID")]
+    public Guid? OrganizationId { get; set; }
+
     [Required, Description("Unique workspace identifier (alphanumeric and hyphens only)")]
     public string WorkspaceId { get; set; }
 
@@ -25,18 +41,27 @@ public class CreateWorkspaceArgs
 
 public class DestroyWorkspaceArgs
 {
+    [Required, Description("Organisation GUID")]
+    public Guid? OrganizationId { get; set; }
+
     [Required, Description("The workspace ID to destroy")]
     public string WorkspaceId { get; set; }
 }
 
 public class WorkspaceStatusArgs
 {
+    [Required, Description("Organisation GUID")]
+    public Guid? OrganizationId { get; set; }
+
     [Required, Description("The workspace ID to inspect")]
     public string WorkspaceId { get; set; }
 }
 
 public class WriteFileArgs
 {
+    [Required, Description("Organisation GUID")]
+    public Guid? OrganizationId { get; set; }
+
     [Required, Description("The workspace ID")]
     public string WorkspaceId { get; set; }
 
@@ -52,6 +77,9 @@ public class WriteFileArgs
 
 public class ReadFileArgs
 {
+    [Required, Description("Organisation GUID")]
+    public Guid? OrganizationId { get; set; }
+
     [Required, Description("The workspace ID")]
     public string WorkspaceId { get; set; }
 
@@ -61,6 +89,9 @@ public class ReadFileArgs
 
 public class ListFilesArgs
 {
+    [Required, Description("Organisation GUID")]
+    public Guid? OrganizationId { get; set; }
+
     [Required, Description("The workspace ID")]
     public string WorkspaceId { get; set; }
 
@@ -70,6 +101,9 @@ public class ListFilesArgs
 
 public class DeleteFileArgs
 {
+    [Required, Description("Organisation GUID")]
+    public Guid? OrganizationId { get; set; }
+
     [Required, Description("The workspace ID")]
     public string WorkspaceId { get; set; }
 
@@ -82,6 +116,9 @@ public class DeleteFileArgs
 
 public class ExecCommandArgs
 {
+    [Required, Description("Organisation GUID")]
+    public Guid? OrganizationId { get; set; }
+
     [Required, Description("The workspace ID")]
     public string WorkspaceId { get; set; }
 
@@ -97,6 +134,9 @@ public class ExecCommandArgs
 
 public class ExecScriptArgs
 {
+    [Required, Description("Organisation GUID")]
+    public Guid? OrganizationId { get; set; }
+
     [Required, Description("The workspace ID")]
     public string WorkspaceId { get; set; }
 
@@ -112,6 +152,9 @@ public class ExecScriptArgs
 
 public class CopyBetweenWorkspacesArgs
 {
+    [Required, Description("Organisation GUID")]
+    public Guid? OrganizationId { get; set; }
+
     [Required, Description("The source workspace ID")]
     public string SourceWorkspaceId { get; set; }
 

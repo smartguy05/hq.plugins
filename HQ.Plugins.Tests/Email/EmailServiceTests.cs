@@ -348,6 +348,34 @@ public class EmailServiceTests
             request), Times.Once);
     }
 
+    // WP6B-13: the human approver must see WHO the email is actually going to, not just its body —
+    // otherwise a prompt-injected agent can keep an innocuous body and redirect `To` to an
+    // attacker address and the confirmation gives the approver nothing to object to.
+    [Fact]
+    public async Task SendEmail_ConfirmationContent_IncludesRecipientSubjectAndAccount()
+    {
+        var request = new SendEmailArgs
+        {
+            To = "attacker@evil.example",
+            Subject = "Quarterly numbers",
+            Account = "work",
+            Body = "<p>Innocuous body</p>"
+        };
+        Confirmation captured = null;
+        _mockNotification
+            .Setup(n => n.RequestConfirmation(
+                It.IsAny<string>(), It.IsAny<Confirmation>(), It.IsAny<IPluginServiceRequest>()))
+            .Callback<string, Confirmation, IPluginServiceRequest>((_, c, _) => captured = c)
+            .ReturnsAsync(new { Success = true, AwaitingConfirmation = true });
+
+        await _service.SendEmail(_config, request);
+
+        Assert.NotNull(captured);
+        Assert.Contains("attacker@evil.example", captured.Content);
+        Assert.Contains("Quarterly numbers", captured.Content);
+        Assert.Contains("work", captured.Content);
+    }
+
     [Fact]
     public async Task SendEmail_ReturnsError_WhenConfirmationIdInvalid()
     {
@@ -389,6 +417,27 @@ public class EmailServiceTests
             "HQ.Plugins.Email",
             It.Is<Confirmation>(c => c.ConfirmationMessage.Contains("delete this email")),
             request), Times.Once);
+    }
+
+    // WP6B-13: DeleteEmailArgs.Body is [Injected] and never actually populated, so the old
+    // `Content = request.Body` confirmation was always blank — the approver could not tell WHICH
+    // email was being deleted. Render the identifying fields instead.
+    [Fact]
+    public async Task DeleteEmail_ConfirmationContent_IncludesMessageIdAndAccount()
+    {
+        var request = new DeleteEmailArgs { MessageId = "msg-123", Account = "work" };
+        Confirmation captured = null;
+        _mockNotification
+            .Setup(n => n.RequestConfirmation(
+                It.IsAny<string>(), It.IsAny<Confirmation>(), It.IsAny<IPluginServiceRequest>()))
+            .Callback<string, Confirmation, IPluginServiceRequest>((_, c, _) => captured = c)
+            .ReturnsAsync(new { Success = true, AwaitingConfirmation = true });
+
+        await _service.DeleteEmail(_config, request);
+
+        Assert.NotNull(captured);
+        Assert.Contains("msg-123", captured.Content);
+        Assert.Contains("work", captured.Content);
     }
 
     [Fact]

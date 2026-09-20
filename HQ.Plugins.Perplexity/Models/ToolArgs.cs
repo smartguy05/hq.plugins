@@ -37,11 +37,16 @@ public class PerplexityDeepResearchArgs
     [Description("Optional. Domains to include, or exclude by prefixing with '-'. Merged with configured defaults.")]
     public List<string> DomainFilters { get; set; }
 
-    /// <summary>Injected by the host — identifies the conversation, used to deliver async results back.</summary>
-    [Injected]
-    public string ConversationId { get; set; }
-
-    /// <summary>Injected by the host — the service that called the tool; used to route async results back.</summary>
-    [Injected]
-    public string RequestingService { get; set; }
+    // WP6B-15: this type intentionally has NO ConversationId/RequestingService properties.
+    // [Injected] only hides a field from the LLM-visible schema (ToolSchemaGenerator) — it does
+    // NOT stop DeserializeArgs from binding a same-named key a model puts in its tool-call JSON
+    // (case-insensitively, regardless of the schema). A previous version bound ConversationId
+    // this way to deliver deep-research results back into the conversation asynchronously; a
+    // prompt-injected model could emit its own "conversationId" and redirect delivery to an
+    // arbitrary (possibly cross-tenant) conversation, on a background thread with no tenant
+    // context. There is no host-trusted per-call conversation id available to a plugin today
+    // (unlike organizationId, which PluginService force-injects before Execute — see
+    // PluginService.InjectOrganizationId) — until a matching host-side force-injection +
+    // tenant-scoped delivery lands, this plugin does not offer conversation-targeted delivery at
+    // all: PerplexityDeepResearch always runs synchronously and returns the answer directly.
 }

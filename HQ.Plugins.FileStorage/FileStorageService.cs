@@ -37,6 +37,52 @@ public partial class FileStorageService
             throw new ArgumentException("workspaceId must contain only alphanumeric characters and hyphens, and must start with an alphanumeric character");
     }
 
+    /// <summary>
+    /// WP6A-5 (High, 2026-09 security review): every workspace/team-scoped tool call must carry
+    /// a caller-scoped organization id. HQ.Services.Plugin.PluginService.InjectOrganizationId
+    /// force-overwrites <c>OrganizationId</c> on the incoming ServiceRequest JSON with the
+    /// calling agent's authoritative OrganizationId before this plugin ever sees the call — the
+    /// model cannot forge a different tenant's id here. A null/empty value means the call did not
+    /// come through that host path (or org is genuinely absent), so we FAIL CLOSED rather than
+    /// falling back to a global/unscoped namespace.
+    /// </summary>
+    private static Guid RequireOrganizationId(Guid? organizationId)
+    {
+        if (organizationId is null || organizationId == Guid.Empty)
+            throw new UnauthorizedAccessException(
+                "Missing organization context; refusing to operate on any workspace without a caller-scoped organization id.");
+        return organizationId.Value;
+    }
+
+    /// <summary>
+    /// WP6A-5 (partial hardening): teamId was previously taken verbatim and used to build the
+    /// shared volume name (hq-team-{teamId}) with no format check at all — unlike workspaceId.
+    /// This does not by itself scope teamId to a caller's org (the plugin has no tenant context
+    /// available to it at all; see the WP6A-5 deferral note), but it does close the separate gap
+    /// of an unvalidated string being used to name a Docker volume.
+    /// </summary>
+    private static void ValidateTeamId(string teamId)
+    {
+        if (string.IsNullOrWhiteSpace(teamId))
+            return;
+        if (!WorkspaceIdPattern().IsMatch(teamId))
+            throw new ArgumentException("teamId must contain only alphanumeric characters and hyphens, and must start with an alphanumeric character");
+    }
+
+    /// <summary>
+    /// WP6A-11 (this cluster's scope): exec commands are attacker/agent-controlled text that was
+    /// previously logged verbatim into the shared log sink. Truncate what reaches the log so a
+    /// large or crafted payload cannot flood or pollute it, while keeping enough of a preview for
+    /// debugging.
+    /// </summary>
+    private static string TruncateForLog(string text, int maxLength = 200)
+    {
+        if (string.IsNullOrEmpty(text)) return text;
+        return text.Length <= maxLength
+            ? text
+            : text[..maxLength] + $"...(truncated, {text.Length} chars total)";
+    }
+
     // ───────────────────────────── Workspace Lifecycle ─────────────────────────────
 
     [Display(Name = "workspace_create")]
@@ -44,11 +90,13 @@ public partial class FileStorageService
     [Parameters(typeof(CreateWorkspaceArgs))]
     public async Task<object> CreateWorkspace(ServiceConfig config, CreateWorkspaceArgs request)
     {
+        var orgId = RequireOrganizationId(request.OrganizationId);
         ValidateWorkspaceId(request.WorkspaceId);
+        ValidateTeamId(request.TeamId);
 
-        await _logger(LogLevel.Info, $"[FileAccess] workspace={request.WorkspaceId} action=create teamId={request.TeamId ?? "none"}");
+        await _logger(LogLevel.Info, $"[FileAccess] org={orgId} workspace={request.WorkspaceId} action=create teamId={request.TeamId ?? "none"}");
 
-        return await _sandbox.CreateWorkspaceAsync(request.WorkspaceId, request.TeamId);
+        return await _sandbox.CreateWorkspaceAsync(orgId, request.WorkspaceId, request.TeamId);
     }
 
     [Display(Name = "workspace_destroy")]
@@ -56,21 +104,24 @@ public partial class FileStorageService
     [Parameters(typeof(DestroyWorkspaceArgs))]
     public async Task<object> DestroyWorkspace(ServiceConfig config, DestroyWorkspaceArgs request)
     {
+        var orgId = RequireOrganizationId(request.OrganizationId);
         ValidateWorkspaceId(request.WorkspaceId);
 
-        await _logger(LogLevel.Info, $"[FileAccess] workspace={request.WorkspaceId} action=destroy");
+        await _logger(LogLevel.Info, $"[FileAccess] org={orgId} workspace={request.WorkspaceId} action=destroy");
 
-        return await _sandbox.DestroyWorkspaceAsync(request.WorkspaceId);
+        return await _sandbox.DestroyWorkspaceAsync(orgId, request.WorkspaceId);
     }
 
     [Display(Name = "workspace_list")]
-    [Description("List all HQ workspaces with their IDs, team associations, and current status.")]
-    [Parameters(typeof(EmptyArgs))]
-    public async Task<object> ListWorkspaces(ServiceConfig config, EmptyArgs request)
+    [Description("List all of your organization's HQ workspaces with their IDs, team associations, and current status.")]
+    [Parameters(typeof(ListWorkspacesArgs))]
+    public async Task<object> ListWorkspaces(ServiceConfig config, ListWorkspacesArgs request)
     {
-        await _logger(LogLevel.Info, "[FileAccess] action=list_workspaces");
+        var orgId = RequireOrganizationId(request.OrganizationId);
 
-        return await _sandbox.ListWorkspacesAsync();
+        await _logger(LogLevel.Info, $"[FileAccess] org={orgId} action=list_workspaces");
+
+        return await _sandbox.ListWorkspacesAsync(orgId);
     }
 
     [Display(Name = "workspace_status")]
@@ -78,11 +129,12 @@ public partial class FileStorageService
     [Parameters(typeof(WorkspaceStatusArgs))]
     public async Task<object> GetWorkspaceStatus(ServiceConfig config, WorkspaceStatusArgs request)
     {
+        var orgId = RequireOrganizationId(request.OrganizationId);
         ValidateWorkspaceId(request.WorkspaceId);
 
-        await _logger(LogLevel.Info, $"[FileAccess] workspace={request.WorkspaceId} action=status");
+        await _logger(LogLevel.Info, $"[FileAccess] org={orgId} workspace={request.WorkspaceId} action=status");
 
-        return await _sandbox.GetStatusAsync(request.WorkspaceId);
+        return await _sandbox.GetStatusAsync(orgId, request.WorkspaceId);
     }
 
     // ───────────────────────────── File Operations ─────────────────────────────
@@ -92,6 +144,7 @@ public partial class FileStorageService
     [Parameters(typeof(WriteFileArgs))]
     public async Task<object> WriteFile(ServiceConfig config, WriteFileArgs request)
     {
+        var orgId = RequireOrganizationId(request.OrganizationId);
         ValidateWorkspaceId(request.WorkspaceId);
         if (string.IsNullOrWhiteSpace(request.FilePath))
             throw new ArgumentException("Missing required parameter: filePath");
@@ -102,9 +155,9 @@ public partial class FileStorageService
             ? Convert.FromBase64String(request.FileContent)
             : Encoding.UTF8.GetBytes(request.FileContent);
 
-        await _logger(LogLevel.Info, $"[FileAccess] workspace={request.WorkspaceId} action=write path={request.FilePath} bytes={content.Length}");
+        await _logger(LogLevel.Info, $"[FileAccess] org={orgId} workspace={request.WorkspaceId} action=write path={request.FilePath} bytes={content.Length}");
 
-        await _sandbox.WriteFileAsync(request.WorkspaceId, request.FilePath, content);
+        await _sandbox.WriteFileAsync(orgId, request.WorkspaceId, request.FilePath, content);
 
         return new
         {
@@ -120,13 +173,14 @@ public partial class FileStorageService
     [Parameters(typeof(ReadFileArgs))]
     public async Task<object> ReadFile(ServiceConfig config, ReadFileArgs request)
     {
+        var orgId = RequireOrganizationId(request.OrganizationId);
         ValidateWorkspaceId(request.WorkspaceId);
         if (string.IsNullOrWhiteSpace(request.FilePath))
             throw new ArgumentException("Missing required parameter: filePath");
 
-        await _logger(LogLevel.Info, $"[FileAccess] workspace={request.WorkspaceId} action=read path={request.FilePath}");
+        await _logger(LogLevel.Info, $"[FileAccess] org={orgId} workspace={request.WorkspaceId} action=read path={request.FilePath}");
 
-        var (fileName, content) = await _sandbox.ReadFileAsync(request.WorkspaceId, request.FilePath);
+        var (fileName, content) = await _sandbox.ReadFileAsync(orgId, request.WorkspaceId, request.FilePath);
 
         return new
         {
@@ -144,13 +198,14 @@ public partial class FileStorageService
     [Parameters(typeof(ListFilesArgs))]
     public async Task<object> ListFiles(ServiceConfig config, ListFilesArgs request)
     {
+        var orgId = RequireOrganizationId(request.OrganizationId);
         ValidateWorkspaceId(request.WorkspaceId);
 
         var path = string.IsNullOrWhiteSpace(request.FilePath) ? "/workspace" : request.FilePath;
 
-        await _logger(LogLevel.Info, $"[FileAccess] workspace={request.WorkspaceId} action=list path={path}");
+        await _logger(LogLevel.Info, $"[FileAccess] org={orgId} workspace={request.WorkspaceId} action=list path={path}");
 
-        var listing = await _sandbox.ListFilesAsync(request.WorkspaceId, path);
+        var listing = await _sandbox.ListFilesAsync(orgId, request.WorkspaceId, path);
 
         return new
         {
@@ -166,6 +221,7 @@ public partial class FileStorageService
     [Parameters(typeof(DeleteFileArgs))]
     public async Task<object> DeleteFile(ServiceConfig config, DeleteFileArgs request)
     {
+        var orgId = RequireOrganizationId(request.OrganizationId);
         ValidateWorkspaceId(request.WorkspaceId);
         if (string.IsNullOrWhiteSpace(request.FilePath))
             throw new ArgumentException("Missing required parameter: filePath");
@@ -174,9 +230,9 @@ public partial class FileStorageService
         if (ProtectedPaths.Contains(normalizedPath))
             throw new ArgumentException($"Cannot delete protected path: {request.FilePath}");
 
-        await _logger(LogLevel.Info, $"[FileAccess] workspace={request.WorkspaceId} action=delete path={request.FilePath} recursive={request.Recursive ?? false}");
+        await _logger(LogLevel.Info, $"[FileAccess] org={orgId} workspace={request.WorkspaceId} action=delete path={request.FilePath} recursive={request.Recursive ?? false}");
 
-        await _sandbox.DeleteFileAsync(request.WorkspaceId, request.FilePath, request.Recursive ?? false);
+        await _sandbox.DeleteFileAsync(orgId, request.WorkspaceId, request.FilePath, request.Recursive ?? false);
 
         return new
         {
@@ -194,16 +250,17 @@ public partial class FileStorageService
     [Parameters(typeof(ExecCommandArgs))]
     public async Task<object> ExecCommand(ServiceConfig config, ExecCommandArgs request)
     {
+        var orgId = RequireOrganizationId(request.OrganizationId);
         ValidateWorkspaceId(request.WorkspaceId);
         if (string.IsNullOrWhiteSpace(request.Command))
             throw new ArgumentException("Missing required parameter: command");
 
         var timeout = Math.Min(request.TimeoutSeconds ?? 30, 300);
 
-        await _logger(LogLevel.Info, $"[FileAccess] workspace={request.WorkspaceId} action=exec command={request.Command}");
+        await _logger(LogLevel.Info, $"[FileAccess] org={orgId} workspace={request.WorkspaceId} action=exec command={TruncateForLog(request.Command)}");
 
         var (stdout, stderr, exitCode) = await _sandbox.ExecAsync(
-            request.WorkspaceId, request.Command, request.WorkingDirectory, timeout);
+            orgId, request.WorkspaceId, request.Command, request.WorkingDirectory, timeout);
 
         return new
         {
@@ -220,6 +277,7 @@ public partial class FileStorageService
     [Parameters(typeof(ExecScriptArgs))]
     public async Task<object> ExecScript(ServiceConfig config, ExecScriptArgs request)
     {
+        var orgId = RequireOrganizationId(request.OrganizationId);
         ValidateWorkspaceId(request.WorkspaceId);
         if (string.IsNullOrWhiteSpace(request.ScriptContent))
             throw new ArgumentException("Missing required parameter: scriptContent");
@@ -238,19 +296,19 @@ public partial class FileStorageService
         var scriptPath = $"/tmp/{scriptName}";
         var timeout = Math.Min(request.TimeoutSeconds ?? 30, 300);
 
-        await _logger(LogLevel.Info, $"[FileAccess] workspace={request.WorkspaceId} action=exec_script type={scriptType}");
+        await _logger(LogLevel.Info, $"[FileAccess] org={orgId} workspace={request.WorkspaceId} action=exec_script type={scriptType}");
 
         // Write script to /tmp via exec+base64 — the Docker archive API can reject
         // writes on read-only rootfs containers even when the target is a writable tmpfs.
         var scriptBytes = Encoding.UTF8.GetBytes(request.ScriptContent);
-        await _sandbox.WriteFileViaExecAsync(request.WorkspaceId, scriptPath, scriptBytes);
+        await _sandbox.WriteFileViaExecAsync(orgId, request.WorkspaceId, scriptPath, scriptBytes);
 
         try
         {
             // Execute via interpreter (since /tmp is noexec)
             var command = $"{interpreter} {scriptPath}";
             var (stdout, stderr, exitCode) = await _sandbox.ExecAsync(
-                request.WorkspaceId, command, "/workspace", timeout);
+                orgId, request.WorkspaceId, command, "/workspace", timeout);
 
             return new
             {
@@ -267,7 +325,7 @@ public partial class FileStorageService
             // Cleanup script
             try
             {
-                await _sandbox.DeleteFileAsync(request.WorkspaceId, scriptPath, false);
+                await _sandbox.DeleteFileAsync(orgId, request.WorkspaceId, scriptPath, false);
             }
             catch
             {
@@ -283,6 +341,7 @@ public partial class FileStorageService
     [Parameters(typeof(CopyBetweenWorkspacesArgs))]
     public async Task<object> CopyBetweenWorkspaces(ServiceConfig config, CopyBetweenWorkspacesArgs request)
     {
+        var orgId = RequireOrganizationId(request.OrganizationId);
         if (string.IsNullOrWhiteSpace(request.SourceWorkspaceId))
             throw new ArgumentException("Missing required parameter: sourceWorkspaceId");
         if (string.IsNullOrWhiteSpace(request.DestWorkspaceId))
@@ -296,13 +355,13 @@ public partial class FileStorageService
         ValidateWorkspaceId(request.DestWorkspaceId);
 
         await _logger(LogLevel.Info,
-            $"[FileAccess] action=copy_between source={request.SourceWorkspaceId}:{request.SourcePath} dest={request.DestWorkspaceId}:{request.DestPath}");
+            $"[FileAccess] org={orgId} action=copy_between source={request.SourceWorkspaceId}:{request.SourcePath} dest={request.DestWorkspaceId}:{request.DestPath}");
 
-        // Read from source
-        var (_, content) = await _sandbox.ReadFileAsync(request.SourceWorkspaceId, request.SourcePath);
+        // Both workspaces are resolved under the SAME caller-scoped org id — a single tool call
+        // must never be able to bridge two different tenants' workspaces.
+        var (_, content) = await _sandbox.ReadFileAsync(orgId, request.SourceWorkspaceId, request.SourcePath);
 
-        // Write to destination
-        await _sandbox.WriteFileAsync(request.DestWorkspaceId, request.DestPath, content);
+        await _sandbox.WriteFileAsync(orgId, request.DestWorkspaceId, request.DestPath, content);
 
         return new
         {

@@ -106,10 +106,25 @@ public class TeamsCommand : CommandBase<ServiceRequest, ServiceConfig>, INotific
         return await _service.DownloadFile(request.DriveItemId);
     }
 
+    /// <summary>
+    /// WP6B-1 test/observability seam: true once the Bot Framework HTTP listener is actively
+    /// listening. False when Initialize refused to start it (blank BotAppId/BotAppPassword) or
+    /// before/after it runs.
+    /// </summary>
+    public bool IsListenerActive => _httpListener?.IsListening ?? false;
+
+    /// <summary>WP6B-1 test/observability seam: the bound HttpListener prefixes, if any.</summary>
+    public IReadOnlyCollection<string> ListenerPrefixes =>
+        _httpListener?.Prefixes?.ToList() ?? new List<string>();
+
     public override async Task<object> Initialize(string configString, LogDelegate log, INotificationService notificationService)
     {
         NotificationService ??= notificationService;
         _staticConfirmationService = notificationService;
+        // Execute() (the tool-call path) sets the base Logger field, but RequestConfirmation can
+        // run before any tool call ever executes (e.g. a scheduled/proactive confirmation), so
+        // Log(...) needs a Logger set from Initialize too, not just from Execute.
+        Logger ??= log;
         await log(LogLevel.Info, "Initializing Teams");
         try
         {
@@ -119,6 +134,25 @@ public class TeamsCommand : CommandBase<ServiceRequest, ServiceConfig>, INotific
             _graphClient = new TeamsGraphClient(config, log);
             _service = new TeamsService(_graphClient, log, config);
             _bot = new TeamsBot(log, config, notificationService, Confirm, _graphClient);
+
+            // WP6B-1: Microsoft.Bot.Connector.Authentication.SimpleCredentialProvider treats a
+            // blank BotAppId as "auth disabled" (IsAuthenticationDisabledAsync() returns true),
+            // which would let ProcessBotFrameworkRequest run inbound activities through the
+            // orchestrator with NO Bot Framework authentication at all. Refuse to open the
+            // listener at all unless both credentials are configured, rather than silently
+            // running unauthenticated.
+            if (string.IsNullOrWhiteSpace(config.BotAppId) || string.IsNullOrWhiteSpace(config.BotAppPassword))
+            {
+                await log(LogLevel.Warning,
+                    "Teams BotAppId/BotAppPassword are not configured; refusing to start the inbound " +
+                    "HTTP listener because Bot Framework request validation self-disables for a blank " +
+                    "AppId (WP6B-1). Outbound Teams tools (send/list/upload/download) remain available.");
+                return new
+                {
+                    Success = true,
+                    Message = "Teams plugin initialized (inbound listener disabled: BotAppId/BotAppPassword not configured)"
+                };
+            }
 
             // Start embedded HTTP listener for Bot Framework messages
             await StartHttpListener(config, log);
@@ -136,7 +170,12 @@ public class TeamsCommand : CommandBase<ServiceRequest, ServiceConfig>, INotific
     {
         if (_httpListener != null) return;
 
-        var prefix = $"http://+:{config.ListenerPort}{config.ListenerPath}/";
+        // WP6B-1: bind loopback only, not "+" (all interfaces). The listener has no ASP.NET
+        // pipeline in front of it (no rate limiting, no request size limit, no security
+        // headers), so it should never be reachable directly from outside the host; anything
+        // that needs to expose it does so deliberately via an explicit reverse-proxy/port
+        // mapping, not by default.
+        var prefix = $"http://127.0.0.1:{config.ListenerPort}{config.ListenerPath}/";
         _httpListener = new HttpListener();
         _httpListener.Prefixes.Add(prefix);
 
@@ -186,6 +225,21 @@ public class TeamsCommand : CommandBase<ServiceRequest, ServiceConfig>, INotific
                 return;
             }
 
+            // WP6B-1: an absent Authorization header must be rejected outright, never passed
+            // through as string.Empty. Initialize() already refuses to start this listener
+            // unless BotAppId/BotAppPassword are both configured, so SimpleCredentialProvider
+            // below always requires real Bot Framework validation — but a missing header is an
+            // unambiguous "unauthenticated caller" and there is no reason to let it reach the
+            // adapter (which would otherwise fail later, but only after deserializing the body).
+            var authHeader = context.Request.Headers["Authorization"];
+            if (string.IsNullOrWhiteSpace(authHeader))
+            {
+                await log(LogLevel.Warning, "Rejected Teams Bot Framework request with no Authorization header");
+                context.Response.StatusCode = 401;
+                context.Response.Close();
+                return;
+            }
+
             using var reader = new System.IO.StreamReader(context.Request.InputStream);
             var body = await reader.ReadToEndAsync();
 
@@ -206,7 +260,7 @@ public class TeamsCommand : CommandBase<ServiceRequest, ServiceConfig>, INotific
 #pragma warning restore CS0618
 
             await adapter.ProcessActivityAsync(
-                context.Request.Headers["Authorization"] ?? string.Empty,
+                authHeader,
                 activity,
                 async (turnContext, cancellationToken) =>
                 {
@@ -235,7 +289,10 @@ public class TeamsCommand : CommandBase<ServiceRequest, ServiceConfig>, INotific
         return _service;
     }
 
-    public Task<object> RequestConfirmation(Confirmation confirmation, OrchestratorRequest request)
+    /// <summary>Test/observability seam: whether a confirmation is pending for <paramref name="channelKey"/>.</summary>
+    public bool HasPendingConfirmationForChannel(string channelKey) => _bot?.HasPendingConfirmation(channelKey) ?? false;
+
+    public async Task<object> RequestConfirmation(Confirmation confirmation, OrchestratorRequest request)
     {
         if (_graphClient == null || _config == null || _staticConfirmationService == null)
         {
@@ -247,10 +304,39 @@ public class TeamsCommand : CommandBase<ServiceRequest, ServiceConfig>, INotific
             );
         }
 
-        TeamsBot.PendingConfirmation = confirmation;
         _service ??= new TeamsService(_graphClient, Log, _config);
-        return _service.SendConfirmationCard(confirmation, _config.NotificationTeamId, _config.NotificationChannelId);
+        var result = await _service.SendConfirmationCard(confirmation, _config.NotificationTeamId, _config.NotificationChannelId);
+
+        // WP6B-4 review follow-up: NotificationChannelId is optional (a Teams bot used only in
+        // 1:1 chat never sets it), and TeamsGetChannelId() returns null for every 1:1 chat --
+        // both coalesce to the same "" key in PendingConfirmationStore. Binding the pending
+        // confirmation to that key regardless of whether SendConfirmationCard actually posted
+        // anywhere meant any stranger who has ever DMed the bot could approve a confirmation
+        // nobody actually saw. Only bind once we know (a) a real channel was configured and
+        // (b) the card was actually posted there.
+        var posted = string.IsNullOrWhiteSpace(_config.NotificationTeamId) ||
+                     string.IsNullOrWhiteSpace(_config.NotificationChannelId)
+            ? false
+            : IsSuccess(result);
+
+        if (posted)
+        {
+            _bot.SetPendingConfirmation(confirmation, _config.NotificationChannelId);
+        }
+        else
+        {
+            await Log(LogLevel.Warning,
+                "Teams confirmation card was not posted to a configured channel (NotificationTeamId/" +
+                "NotificationChannelId unset, or the send failed); refusing to record a pending " +
+                "confirmation, since the blank channel key would otherwise collide with every 1:1 " +
+                "chat with this bot (WP6B-4).");
+        }
+
+        return result;
     }
+
+    private static bool IsSuccess(object result) =>
+        result?.GetType().GetProperty("Success")?.GetValue(result) is true;
 
     public async ValueTask<object> Confirm(string confirmationId, bool confirm)
     {

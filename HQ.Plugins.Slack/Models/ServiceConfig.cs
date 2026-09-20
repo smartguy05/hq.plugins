@@ -14,9 +14,11 @@ public class ServiceConfig : IPluginConfig
     public Guid? AgentId { get; set; }
     public string AgentName { get; set; }
 
+    [Sensitive]
     [Tooltip("Slack app-level token starting with xapp-. Found under Basic Information > App-Level Tokens.")]
     public string AppLevelToken { get; set; }
 
+    [Sensitive]
     [Tooltip("Slack bot token starting with xoxb-. Found under OAuth & Permissions > Bot User OAuth Token.")]
     public string BotToken { get; set; }
 

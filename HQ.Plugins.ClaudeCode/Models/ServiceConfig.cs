@@ -8,6 +8,7 @@ public record ServiceConfig : IPluginConfig
     public string Name { get; set; }
     public string Description { get; set; }
 
+    [Sensitive]
     [Tooltip("Anthropic API key passed as ANTHROPIC_API_KEY env var to the container.")]
     public string AnthropicApiKey { get; set; }
 
@@ -32,8 +33,16 @@ public record ServiceConfig : IPluginConfig
     [Tooltip("Default tool allowlist for Claude Code.")]
     public string AllowedTools { get; set; } = "Bash,Read,Edit,Write,Glob,Grep";
 
+    [Sensitive]
     [Tooltip("GitHub PAT for clone/push/PR operations.")]
     public string GitHubToken { get; set; }
+
+    // WP6A-4: without this, the PAT was attached to the clone URL for ANY https:// host the
+    // caller supplied (repoUrl), letting a single tool argument exfiltrate it to an attacker
+    // server. The token is now only attached when the URL host is github.com or this value.
+    [Tooltip("GitHub Enterprise hostname, if any (e.g. github.mycorp.com). The GitHub PAT is " +
+             "only attached to clone URLs whose host is github.com or this value.")]
+    public string GitHubHost { get; set; }
 
     [Tooltip("Optional comma-separated hostnames to allow. Empty = all traffic allowed.")]
     public string NetworkWhitelist { get; set; }
