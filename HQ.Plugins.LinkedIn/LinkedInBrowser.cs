@@ -23,17 +23,25 @@ public sealed class LinkedInBrowser : ILinkedInBrowser
     private readonly SemaphoreSlim _gate = new(1, 1);
     private readonly string _displayOverride;
     private readonly bool _forceHeaded;
+    private readonly Guid _orgId;
 
     private IPlaywright _playwright;
     private IBrowserContext _context;
     private IPage _page;
 
-    public LinkedInBrowser(ServiceConfig config, LogDelegate log = null, string displayOverride = null, bool forceHeaded = false)
+    /// <summary>
+    /// <paramref name="orgId"/> namespaces the on-disk profile (see <see cref="LinkedInPaths.ProfileDir"/>,
+    /// WP6A-7). It defaults to <see cref="Guid.Empty"/> for the production per-agent tool-call path
+    /// (<see cref="LinkedInCommand.DoWork"/>), which has no organization id available to it today —
+    /// see the WP6A-7 notes on that call site.
+    /// </summary>
+    public LinkedInBrowser(ServiceConfig config, LogDelegate log = null, string displayOverride = null, bool forceHeaded = false, Guid orgId = default)
     {
         _config = config;
         _log = log;
         _displayOverride = displayOverride;
         _forceHeaded = forceHeaded;
+        _orgId = orgId;
     }
 
     /// <summary>
@@ -67,7 +75,7 @@ public sealed class LinkedInBrowser : ILinkedInBrowser
     {
         if (_page is not null) return;
 
-        var profileDir = LinkedInPaths.ProfileDir(_config.AccountLabel);
+        var profileDir = LinkedInPaths.ProfileDir(_orgId, _config.AccountLabel);
         Directory.CreateDirectory(profileDir);
 
         _playwright = await Playwright.CreateAsync();

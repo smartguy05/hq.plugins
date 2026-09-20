@@ -16,7 +16,7 @@ public record ServiceConfig : IPluginConfig
     public string Name { get; set; }
     public string Description { get; set; }
 
-    [Tooltip("Friendly label for the connected LinkedIn account (e.g. 'Primary'). Also keys the on-disk session profile so multiple accounts don't collide.")]
+    [Tooltip("Friendly label for the connected LinkedIn account (e.g. 'Primary'). Also keys the on-disk session profile so multiple accounts don't collide. SECURITY (WP6A-7): the interactive /login/* endpoints scope this label per calling organization, but the ordinary agent tool-call path does not yet -- distinct organizations MUST use a distinct AccountLabel (never leave two orgs both on the 'default' value), or they will share the same authenticated browser/profile.")]
     public string AccountLabel { get; set; } = "default";
 
     [Tooltip("Run the steady-state browser headless. Leave false (headed under a virtual display) — LinkedIn flags headless Chromium more aggressively.")]

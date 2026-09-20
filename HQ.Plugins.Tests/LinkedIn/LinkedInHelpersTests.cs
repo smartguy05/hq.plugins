@@ -1,10 +1,29 @@
+using System.Reflection;
 using System.Text.Json;
+using HQ.Models.Attributes;
 using HQ.Plugins.LinkedIn;
+using HQ.Plugins.LinkedIn.Models;
 
 namespace HQ.Plugins.Tests.LinkedIn;
 
 public class LinkedInHelpersTests
 {
+    // ---- WP6A-7 second re-review: AccountLabel must warn about the still-open production-path
+    // residual (LinkedInCommand.DoWork -> GetBrowser has no caller org id and always resolves
+    // under Guid.Empty), since distinct orgs sharing a label is the one thing an operator can
+    // still do to avoid the collision until an org id is threaded through HQ.Models'
+    // CommandBase/OrchestratorRequest (a host-wide, cross-repo change out of this plugin's scope).
+    [Fact]
+    public void AccountLabelTooltip_WarnsThatDistinctOrgsMustUseDistinctLabels()
+    {
+        var property = typeof(ServiceConfig).GetProperty(nameof(ServiceConfig.AccountLabel));
+        var tooltip = property!.GetCustomAttribute<TooltipAttribute>();
+
+        Assert.NotNull(tooltip);
+        Assert.Contains("must", tooltip!.Text, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("organization", tooltip.Text, StringComparison.OrdinalIgnoreCase);
+    }
+
     // ---- CsrfFromCookie ----
 
     [Theory]
@@ -30,9 +49,94 @@ public class LinkedInHelpersTests
     [Fact]
     public void ProfileDir_IsUnderDataDirAndAccount()
     {
-        var dir = LinkedInPaths.ProfileDir("Primary");
+        var dir = LinkedInPaths.ProfileDir(Guid.Empty, "Primary");
         Assert.Contains("primary", dir);
         Assert.EndsWith("profile", dir);
+    }
+
+    [Fact]
+    public void ProfileDir_UnresolvedOrgMatchesPreWP6A7Shape()
+    {
+        // Guid.Empty (no caller org available, e.g. the production per-agent path) must resolve
+        // to the exact same path as before org-keying existed, so existing single-tenant/dev
+        // deployments and already-authenticated profiles keep working unchanged.
+        var dir = LinkedInPaths.ProfileDir(Guid.Empty, "Primary");
+        Assert.DoesNotContain("org-", dir);
+        Assert.EndsWith(Path.Combine("primary", "profile"), dir);
+    }
+
+    [Fact]
+    public void ProfileDir_DifferentOrgsWithSameAccountLabelDoNotCollide()
+    {
+        // WP6A-7: two tenants that both leave AccountLabel at its "default" default must not
+        // resolve to the same on-disk profile.
+        var orgA = Guid.NewGuid();
+        var orgB = Guid.NewGuid();
+
+        var dirA = LinkedInPaths.ProfileDir(orgA, "default");
+        var dirB = LinkedInPaths.ProfileDir(orgB, "default");
+
+        Assert.NotEqual(dirA, dirB);
+        Assert.Contains(orgA.ToString("N"), dirA);
+        Assert.Contains(orgB.ToString("N"), dirB);
+    }
+
+    // ---- WP6A-7 re-review blocking #1: profile-ownership marker ----
+    // LinkedInLoginSession.ProfileOrgId is (deliberately) always Guid.Empty, so the shared,
+    // unscoped profile dir is what login actually authenticates into for every org, by design
+    // (see LinkedInLoginSession.ProfileOrgId's doc). IsProfileOwnedByAnotherOrg/ReadProfileOwner/
+    // WriteProfileOwner are the guard that stops a second, different org from ever being handed a
+    // live noVNC session onto that shared profile once a first org has authenticated it.
+
+    [Theory]
+    [InlineData("11111111-1111-1111-1111-111111111111", null, false)] // no prior owner -> allowed
+    [InlineData("11111111-1111-1111-1111-111111111111", "00000000-0000-0000-0000-000000000000", false)] // owner unscoped -> allowed
+    [InlineData("00000000-0000-0000-0000-000000000000", "11111111-1111-1111-1111-111111111111", false)] // caller unscoped (tenancy disabled) -> allowed
+    [InlineData("11111111-1111-1111-1111-111111111111", "11111111-1111-1111-1111-111111111111", false)] // same org re-authenticating -> allowed
+    [InlineData("22222222-2222-2222-2222-222222222222", "11111111-1111-1111-1111-111111111111", true)] // different real orgs -> blocked
+    public void IsProfileOwnedByAnotherOrg_OnlyBlocksTwoDifferentRealOrgs(
+        string callerOrgText, string ownerOrgText, bool expectedBlocked)
+    {
+        var callerOrgId = Guid.Parse(callerOrgText);
+        Guid? ownerOrgId = ownerOrgText is null ? null : Guid.Parse(ownerOrgText);
+
+        Assert.Equal(expectedBlocked, LinkedInPaths.IsProfileOwnedByAnotherOrg(callerOrgId, ownerOrgId));
+    }
+
+    [Fact]
+    public void ProfileOwner_RoundTripsThroughMarkerFile()
+    {
+        var dir = Path.Combine(Path.GetTempPath(), "hq-linkedin-owner-test-" + Guid.NewGuid().ToString("N"));
+        try
+        {
+            Assert.Null(LinkedInPaths.ReadProfileOwner(dir)); // nothing written yet
+
+            var orgId = Guid.NewGuid();
+            LinkedInPaths.WriteProfileOwner(dir, orgId);
+
+            Assert.Equal(orgId, LinkedInPaths.ReadProfileOwner(dir));
+        }
+        finally
+        {
+            if (Directory.Exists(dir)) Directory.Delete(dir, recursive: true);
+        }
+    }
+
+    [Fact]
+    public void ProfileOwner_ReadIsResilientToGarbageMarkerContent()
+    {
+        var dir = Path.Combine(Path.GetTempPath(), "hq-linkedin-owner-test-" + Guid.NewGuid().ToString("N"));
+        try
+        {
+            Directory.CreateDirectory(dir);
+            File.WriteAllText(LinkedInPaths.OwnerMarkerPath(dir), "not-a-guid");
+
+            Assert.Null(LinkedInPaths.ReadProfileOwner(dir));
+        }
+        finally
+        {
+            if (Directory.Exists(dir)) Directory.Delete(dir, recursive: true);
+        }
     }
 
     // ---- RateLimitGate ----
